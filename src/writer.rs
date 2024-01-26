@@ -1,5 +1,4 @@
 use crate::ops::ForceAdd as _;
-use crate::success::{FAIL, OK};
 use crate::yaml::size_t;
 use crate::{
     libc, yaml_emitter_t, PointerExt, YAML_ANY_ENCODING, YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING,
@@ -14,7 +13,7 @@ unsafe fn yaml_emitter_set_writer_error(
     emitter.error = YAML_WRITER_ERROR;
     let fresh0 = addr_of_mut!(emitter.problem);
     *fresh0 = problem;
-    FAIL
+    Err(())
 }
 
 /// Flush the accumulated characters to the output.
@@ -26,7 +25,7 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
     let fresh2 = addr_of_mut!(emitter.buffer.pointer);
     *fresh2 = emitter.buffer.start;
     if emitter.buffer.start == emitter.buffer.last {
-        return OK;
+        return Ok(());
     }
     if emitter.encoding == YAML_UTF8_ENCODING {
         if emitter.write_handler.expect("non-null function pointer")(
@@ -39,7 +38,7 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
             *fresh3 = emitter.buffer.start;
             let fresh4 = addr_of_mut!(emitter.buffer.pointer);
             *fresh4 = emitter.buffer.start;
-            return OK;
+            return Ok(());
         } else {
             return yaml_emitter_set_writer_error(
                 emitter,
@@ -134,7 +133,7 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
         *fresh10 = emitter.raw_buffer.start;
         let fresh11 = addr_of_mut!(emitter.raw_buffer.pointer);
         *fresh11 = emitter.raw_buffer.start;
-        OK
+        Ok(())
     } else {
         yaml_emitter_set_writer_error(
             emitter,

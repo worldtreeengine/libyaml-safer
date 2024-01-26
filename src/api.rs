@@ -1,6 +1,5 @@
 use crate::externs::{free, malloc, memcpy, memmove, memset, realloc, strdup, strlen};
 use crate::ops::{ForceAdd as _, ForceMul as _};
-use crate::success::{FAIL, OK};
 use crate::yaml::{size_t, yaml_char_t};
 use crate::{
     libc, yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t, yaml_encoding_t,
@@ -176,7 +175,7 @@ pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), (
     STACK_INIT!(parser.states, yaml_parser_state_t);
     STACK_INIT!(parser.marks, yaml_mark_t);
     STACK_INIT!(parser.tag_directives, yaml_tag_directive_t);
-    OK
+    Ok(())
 }
 
 /// Destroy a parser.
@@ -295,7 +294,7 @@ pub unsafe fn yaml_emitter_initialize(emitter: *mut yaml_emitter_t) -> Result<()
     QUEUE_INIT!(emitter.events, yaml_event_t);
     STACK_INIT!(emitter.indents, libc::c_int);
     STACK_INIT!(emitter.tag_directives, yaml_tag_directive_t);
-    OK
+    Ok(())
 }
 
 /// Destroy an emitter.
@@ -495,16 +494,16 @@ unsafe fn yaml_check_utf8(start: *const yaml_char_t, length: size_t) -> Result<(
             0
         } as libc::c_uint;
         if width == 0 {
-            return FAIL;
+            return Err(());
         }
         if pointer.wrapping_offset(width as isize) > end {
-            return FAIL;
+            return Err(());
         }
         k = 1_u64;
         while k < width as libc::c_ulong {
             octet = *pointer.wrapping_offset(k as isize);
             if octet & 0xC0 != 0x80 {
-                return FAIL;
+                return Err(());
             }
             value = (value << 6).force_add((octet & 0x3F) as libc::c_uint);
             k = k.force_add(1);
@@ -514,11 +513,11 @@ unsafe fn yaml_check_utf8(start: *const yaml_char_t, length: size_t) -> Result<(
             || width == 3 && value >= 0x800
             || width == 4 && value >= 0x10000)
         {
-            return FAIL;
+            return Err(());
         }
         pointer = pointer.wrapping_offset(width as isize);
     }
-    OK
+    Ok(())
 }
 
 /// Create the STREAM-START event.
@@ -536,7 +535,7 @@ pub unsafe fn yaml_stream_start_event_initialize(
     event.start_mark = mark;
     event.end_mark = mark;
     event.data.stream_start.encoding = encoding;
-    OK
+    Ok(())
 }
 
 /// Create the STREAM-END event.
@@ -550,7 +549,7 @@ pub unsafe fn yaml_stream_end_event_initialize(event: &mut yaml_event_t) -> Resu
     event.type_ = YAML_STREAM_END_EVENT;
     event.start_mark = mark;
     event.end_mark = mark;
-    OK
+    Ok(())
 }
 
 /// Create the DOCUMENT-START event.
@@ -651,7 +650,7 @@ pub unsafe fn yaml_document_start_event_initialize(
         let fresh166 = addr_of_mut!(event.data.document_start.tag_directives.end);
         *fresh166 = tag_directives_copy.top;
         event.data.document_start.implicit = implicit;
-        return OK;
+        return Ok(());
     }
     yaml_free(version_directive_copy as *mut libc::c_void);
     while !STACK_EMPTY!(tag_directives_copy) {
@@ -662,7 +661,7 @@ pub unsafe fn yaml_document_start_event_initialize(
     STACK_DEL!(tag_directives_copy);
     yaml_free(value.handle as *mut libc::c_void);
     yaml_free(value.prefix as *mut libc::c_void);
-    FAIL
+    Err(())
 }
 
 /// Create the DOCUMENT-END event.
@@ -683,7 +682,7 @@ pub unsafe fn yaml_document_end_event_initialize(
     event.start_mark = mark;
     event.end_mark = mark;
     event.data.document_end.implicit = implicit;
-    OK
+    Ok(())
 }
 
 /// Create an ALIAS event.
@@ -700,7 +699,7 @@ pub unsafe fn yaml_alias_event_initialize(
     yaml_check_utf8(anchor, strlen(anchor as *mut libc::c_char))?;
     let anchor_copy: *mut yaml_char_t = yaml_strdup(anchor);
     if anchor_copy.is_null() {
-        return FAIL;
+        return Err(());
     }
     *event = yaml_event_t::default();
     event.type_ = YAML_ALIAS_EVENT;
@@ -708,7 +707,7 @@ pub unsafe fn yaml_alias_event_initialize(
     event.end_mark = mark;
     let fresh167 = addr_of_mut!(event.data.alias.anchor);
     *fresh167 = anchor_copy;
-    OK
+    Ok(())
 }
 
 /// Create a SCALAR event.
@@ -793,14 +792,14 @@ pub unsafe fn yaml_scalar_event_initialize(
                 event.data.scalar.plain_implicit = plain_implicit;
                 event.data.scalar.quoted_implicit = quoted_implicit;
                 event.data.scalar.style = style;
-                return OK;
+                return Ok(());
             }
         }
     }
     yaml_free(anchor_copy as *mut libc::c_void);
     yaml_free(tag_copy as *mut libc::c_void);
     yaml_free(value_copy as *mut libc::c_void);
-    FAIL
+    Err(())
 }
 
 /// Create a SEQUENCE-START event.
@@ -864,14 +863,14 @@ pub unsafe fn yaml_sequence_start_event_initialize(
                 *fresh172 = tag_copy;
                 event.data.sequence_start.implicit = implicit;
                 event.data.sequence_start.style = style;
-                return OK;
+                return Ok(());
             }
         }
         _ => {}
     }
     yaml_free(anchor_copy as *mut libc::c_void);
     yaml_free(tag_copy as *mut libc::c_void);
-    FAIL
+    Err(())
 }
 
 /// Create a SEQUENCE-END event.
@@ -885,7 +884,7 @@ pub unsafe fn yaml_sequence_end_event_initialize(event: &mut yaml_event_t) -> Re
     event.type_ = YAML_SEQUENCE_END_EVENT;
     event.start_mark = mark;
     event.end_mark = mark;
-    OK
+    Ok(())
 }
 
 /// Create a MAPPING-START event.
@@ -948,12 +947,12 @@ pub unsafe fn yaml_mapping_start_event_initialize(
             *fresh174 = tag_copy;
             event.data.mapping_start.implicit = implicit;
             event.data.mapping_start.style = style;
-            return OK;
+            return Ok(());
         }
     }
     yaml_free(anchor_copy as *mut libc::c_void);
     yaml_free(tag_copy as *mut libc::c_void);
-    FAIL
+    Err(())
 }
 
 /// Create a MAPPING-END event.
@@ -967,7 +966,7 @@ pub unsafe fn yaml_mapping_end_event_initialize(event: &mut yaml_event_t) -> Res
     event.type_ = YAML_MAPPING_END_EVENT;
     event.start_mark = mark;
     event.end_mark = mark;
-    OK
+    Ok(())
 }
 
 /// Free any memory allocated for an event object.
@@ -1123,7 +1122,7 @@ pub unsafe fn yaml_document_initialize(
         (*document).end_implicit = end_implicit;
         (*document).start_mark = mark;
         (*document).end_mark = mark;
-        return OK;
+        return Ok(());
     }
     STACK_DEL!(nodes);
     yaml_free(version_directive_copy as *mut libc::c_void);
@@ -1135,7 +1134,7 @@ pub unsafe fn yaml_document_initialize(
     STACK_DEL!(tag_directives_copy);
     yaml_free(value.handle as *mut libc::c_void);
     yaml_free(value.prefix as *mut libc::c_void);
-    FAIL
+    Err(())
 }
 
 /// Delete a YAML document and all its nodes.
@@ -1424,7 +1423,7 @@ pub unsafe fn yaml_document_append_sequence_item(
             .items,
         item
     );
-    OK
+    Ok(())
 }
 
 /// Add a pair of a key and a value to a MAPPING node.
@@ -1458,5 +1457,5 @@ pub unsafe fn yaml_document_append_mapping_pair(
             .pairs,
         pair
     );
-    OK
+    Ok(())
 }

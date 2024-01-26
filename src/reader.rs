@@ -1,6 +1,5 @@
 use crate::externs::{memcmp, memmove};
 use crate::ops::ForceAdd as _;
-use crate::success::{FAIL, OK};
 use crate::yaml::{size_t, yaml_char_t};
 use crate::{
     libc, yaml_parser_t, PointerExt, YAML_ANY_ENCODING, YAML_READER_ERROR, YAML_UTF16BE_ENCODING,
@@ -19,7 +18,7 @@ unsafe fn yaml_parser_set_reader_error(
     *fresh0 = problem;
     (*parser).problem_offset = offset;
     (*parser).problem_value = value;
-    FAIL
+    Err(())
 }
 
 const BOM_UTF8: *const libc::c_char = b"\xEF\xBB\xBF\0" as *const u8 as *const libc::c_char;
@@ -87,7 +86,7 @@ unsafe fn yaml_parser_determine_encoding(parser: *mut yaml_parser_t) -> Result<(
     } else {
         (*parser).encoding = YAML_UTF8_ENCODING;
     }
-    OK
+    Ok(())
 }
 
 unsafe fn yaml_parser_update_raw_buffer(parser: *mut yaml_parser_t) -> Result<(), ()> {
@@ -95,10 +94,10 @@ unsafe fn yaml_parser_update_raw_buffer(parser: *mut yaml_parser_t) -> Result<()
     if (*parser).raw_buffer.start == (*parser).raw_buffer.pointer
         && (*parser).raw_buffer.last == (*parser).raw_buffer.end
     {
-        return OK;
+        return Ok(());
     }
     if (*parser).eof {
-        return OK;
+        return Ok(());
     }
     if (*parser).raw_buffer.start < (*parser).raw_buffer.pointer
         && (*parser).raw_buffer.pointer < (*parser).raw_buffer.last
@@ -144,7 +143,7 @@ unsafe fn yaml_parser_update_raw_buffer(parser: *mut yaml_parser_t) -> Result<()
     if size_read == 0 {
         (*parser).eof = true;
     }
-    OK
+    Ok(())
 }
 
 pub(crate) unsafe fn yaml_parser_update_buffer(
@@ -154,10 +153,10 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
     let mut first = true;
     __assert!(((*parser).read_handler).is_some());
     if (*parser).eof && (*parser).raw_buffer.pointer == (*parser).raw_buffer.last {
-        return OK;
+        return Ok(());
     }
     if (*parser).unread >= length {
-        return OK;
+        return Ok(());
     }
     if (*parser).encoding == YAML_ANY_ENCODING {
         yaml_parser_determine_encoding(parser)?;
@@ -447,7 +446,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
             *fresh38 = b'\0';
             let fresh39 = addr_of_mut!((*parser).unread);
             *fresh39 = (*fresh39).force_add(1);
-            return OK;
+            return Ok(());
         }
     }
     if (*parser).offset >= (!0_u64).wrapping_div(2_u64) {
@@ -458,5 +457,5 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
             -1,
         );
     }
-    OK
+    Ok(())
 }
