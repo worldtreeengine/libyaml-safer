@@ -166,11 +166,7 @@ pub(crate) unsafe fn yaml_queue_extend(
 /// for destroying the object using the yaml_parser_delete() function.
 pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), ()> {
     __assert!(!parser.is_null());
-    memset(
-        parser as *mut libc::c_void,
-        0,
-        size_of::<yaml_parser_t>() as libc::c_ulong,
-    );
+    *parser = core::mem::MaybeUninit::zeroed().assume_init();
     BUFFER_INIT!((*parser).raw_buffer, INPUT_RAW_BUFFER_SIZE);
     BUFFER_INIT!((*parser).buffer, INPUT_BUFFER_SIZE);
     QUEUE_INIT!((*parser).tokens, yaml_token_t);
@@ -201,11 +197,7 @@ pub unsafe fn yaml_parser_delete(parser: *mut yaml_parser_t) {
         yaml_free(tag_directive.prefix as *mut libc::c_void);
     }
     STACK_DEL!((*parser).tag_directives);
-    memset(
-        parser as *mut libc::c_void,
-        0,
-        size_of::<yaml_parser_t>() as libc::c_ulong,
-    );
+    *parser = core::mem::MaybeUninit::zeroed().assume_init();
 }
 
 unsafe fn yaml_string_read_handler(
@@ -298,11 +290,7 @@ pub unsafe fn yaml_parser_set_encoding(parser: *mut yaml_parser_t, encoding: yam
 /// for destroying the object using the yaml_emitter_delete() function.
 pub unsafe fn yaml_emitter_initialize(emitter: *mut yaml_emitter_t) -> Result<(), ()> {
     __assert!(!emitter.is_null());
-    memset(
-        emitter as *mut libc::c_void,
-        0,
-        size_of::<yaml_emitter_t>() as libc::c_ulong,
-    );
+    *emitter = core::mem::MaybeUninit::zeroed().assume_init();
     BUFFER_INIT!((*emitter).buffer, OUTPUT_BUFFER_SIZE);
     BUFFER_INIT!((*emitter).raw_buffer, OUTPUT_RAW_BUFFER_SIZE);
     STACK_INIT!((*emitter).states, yaml_emitter_state_t);
@@ -330,11 +318,7 @@ pub unsafe fn yaml_emitter_delete(emitter: *mut yaml_emitter_t) {
     }
     STACK_DEL!((*emitter).tag_directives);
     yaml_free((*emitter).anchors as *mut libc::c_void);
-    memset(
-        emitter as *mut libc::c_void,
-        0,
-        size_of::<yaml_emitter_t>() as libc::c_ulong,
-    );
+    *emitter = core::mem::MaybeUninit::zeroed().assume_init();
 }
 
 unsafe fn yaml_string_write_handler(
@@ -487,11 +471,7 @@ pub unsafe fn yaml_token_delete(token: *mut yaml_token_t) {
         }
         _ => {}
     }
-    memset(
-        token as *mut libc::c_void,
-        0,
-        size_of::<yaml_token_t>() as libc::c_ulong,
-    );
+    *token = yaml_token_t::default();
 }
 
 unsafe fn yaml_check_utf8(start: *const yaml_char_t, length: size_t) -> Result<(), ()> {
@@ -562,11 +542,7 @@ pub unsafe fn yaml_stream_start_event_initialize(
         column: 0_u64,
     };
     __assert!(!event.is_null());
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_STREAM_START_EVENT;
     (*event).start_mark = mark;
     (*event).end_mark = mark;
@@ -582,11 +558,7 @@ pub unsafe fn yaml_stream_end_event_initialize(event: *mut yaml_event_t) -> Resu
         column: 0_u64,
     };
     __assert!(!event.is_null());
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_STREAM_END_EVENT;
     (*event).start_mark = mark;
     (*event).end_mark = mark;
@@ -681,11 +653,7 @@ pub unsafe fn yaml_document_start_event_initialize(
         current_block = 16203760046146113240;
     }
     if current_block != 14964981520188694172 {
-        memset(
-            event as *mut libc::c_void,
-            0,
-            size_of::<yaml_event_t>() as libc::c_ulong,
-        );
+        *event = yaml_event_t::default();
         (*event).type_ = YAML_DOCUMENT_START_EVENT;
         (*event).start_mark = mark;
         (*event).end_mark = mark;
@@ -724,11 +692,7 @@ pub unsafe fn yaml_document_end_event_initialize(
         column: 0_u64,
     };
     __assert!(!event.is_null());
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_DOCUMENT_END_EVENT;
     (*event).start_mark = mark;
     (*event).end_mark = mark;
@@ -753,11 +717,7 @@ pub unsafe fn yaml_alias_event_initialize(
     if anchor_copy.is_null() {
         return FAIL;
     }
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_ALIAS_EVENT;
     (*event).start_mark = mark;
     (*event).end_mark = mark;
@@ -835,11 +795,7 @@ pub unsafe fn yaml_scalar_event_initialize(
                     length as libc::c_ulong,
                 );
                 *value_copy.wrapping_offset(length as isize) = b'\0';
-                memset(
-                    event as *mut libc::c_void,
-                    0,
-                    size_of::<yaml_event_t>() as libc::c_ulong,
-                );
+                *event = yaml_event_t::default();
                 (*event).type_ = YAML_SCALAR_EVENT;
                 (*event).start_mark = mark;
                 (*event).end_mark = mark;
@@ -915,11 +871,7 @@ pub unsafe fn yaml_sequence_start_event_initialize(
                 current_block = 7651349459974463963;
             }
             if current_block != 8817775685815971442 {
-                memset(
-                    event as *mut libc::c_void,
-                    0,
-                    size_of::<yaml_event_t>() as libc::c_ulong,
-                );
+                *event = yaml_event_t::default();
                 (*event).type_ = YAML_SEQUENCE_START_EVENT;
                 (*event).start_mark = mark;
                 (*event).end_mark = mark;
@@ -947,11 +899,7 @@ pub unsafe fn yaml_sequence_end_event_initialize(event: *mut yaml_event_t) -> Re
         column: 0_u64,
     };
     __assert!(!event.is_null());
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_SEQUENCE_END_EVENT;
     (*event).start_mark = mark;
     (*event).end_mark = mark;
@@ -1009,11 +957,7 @@ pub unsafe fn yaml_mapping_start_event_initialize(
             current_block = 7651349459974463963;
         }
         if current_block != 14748279734549812740 {
-            memset(
-                event as *mut libc::c_void,
-                0,
-                size_of::<yaml_event_t>() as libc::c_ulong,
-            );
+            *event = yaml_event_t::default();
             (*event).type_ = YAML_MAPPING_START_EVENT;
             (*event).start_mark = mark;
             (*event).end_mark = mark;
@@ -1039,11 +983,7 @@ pub unsafe fn yaml_mapping_end_event_initialize(event: *mut yaml_event_t) -> Res
         column: 0_u64,
     };
     __assert!(!event.is_null());
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_MAPPING_END_EVENT;
     (*event).start_mark = mark;
     (*event).end_mark = mark;
@@ -1083,11 +1023,7 @@ pub unsafe fn yaml_event_delete(event: *mut yaml_event_t) {
         }
         _ => {}
     }
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
 }
 
 /// Create a YAML document.

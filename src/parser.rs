@@ -1,5 +1,5 @@
 use crate::api::{yaml_free, yaml_malloc, yaml_stack_extend, yaml_strdup};
-use crate::externs::{memcpy, memset, strcmp, strlen};
+use crate::externs::{memcpy, strcmp, strlen};
 use crate::ops::ForceAdd as _;
 use crate::scanner::yaml_parser_fetch_more_tokens;
 use crate::success::{FAIL, OK};
@@ -69,11 +69,7 @@ pub unsafe fn yaml_parser_parse(
 ) -> Result<(), ()> {
     __assert!(!parser.is_null());
     __assert!(!event.is_null());
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     if (*parser).stream_end_produced
         || (*parser).error != YAML_NO_ERROR
         || (*parser).state == YAML_PARSE_END_STATE
@@ -193,11 +189,7 @@ unsafe fn yaml_parser_parse_stream_start(
         return FAIL;
     }
     (*parser).state = YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE;
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_STREAM_START_EVENT;
     (*event).start_mark = (*token).start_mark;
     (*event).end_mark = (*token).start_mark;
@@ -249,11 +241,7 @@ unsafe fn yaml_parser_parse_document_start(
         )?;
         PUSH!((*parser).states, YAML_PARSE_DOCUMENT_END_STATE);
         (*parser).state = YAML_PARSE_BLOCK_NODE_STATE;
-        memset(
-            event as *mut libc::c_void,
-            0,
-            size_of::<yaml_event_t>() as libc::c_ulong,
-        );
+        *event = yaml_event_t::default();
         (*event).type_ = YAML_DOCUMENT_START_EVENT;
         (*event).start_mark = (*token).start_mark;
         (*event).end_mark = (*token).start_mark;
@@ -286,11 +274,7 @@ unsafe fn yaml_parser_parse_document_start(
                 PUSH!((*parser).states, YAML_PARSE_DOCUMENT_END_STATE);
                 (*parser).state = YAML_PARSE_DOCUMENT_CONTENT_STATE;
                 end_mark = (*token).end_mark;
-                memset(
-                    event as *mut libc::c_void,
-                    0,
-                    size_of::<yaml_event_t>() as libc::c_ulong,
-                );
+                *event = yaml_event_t::default();
                 (*event).type_ = YAML_DOCUMENT_START_EVENT;
                 (*event).start_mark = start_mark;
                 (*event).end_mark = end_mark;
@@ -317,11 +301,7 @@ unsafe fn yaml_parser_parse_document_start(
         FAIL
     } else {
         (*parser).state = YAML_PARSE_END_STATE;
-        memset(
-            event as *mut libc::c_void,
-            0,
-            size_of::<yaml_event_t>() as libc::c_ulong,
-        );
+        *event = yaml_event_t::default();
         (*event).type_ = YAML_STREAM_END_EVENT;
         (*event).start_mark = (*token).start_mark;
         (*event).end_mark = (*token).end_mark;
@@ -374,11 +354,7 @@ unsafe fn yaml_parser_parse_document_end(
         yaml_free(tag_directive.prefix as *mut libc::c_void);
     }
     (*parser).state = YAML_PARSE_DOCUMENT_START_STATE;
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_DOCUMENT_END_EVENT;
     (*event).start_mark = start_mark;
     (*event).end_mark = end_mark;
@@ -412,11 +388,7 @@ unsafe fn yaml_parser_parse_node(
     }
     if (*token).type_ == YAML_ALIAS_TOKEN {
         (*parser).state = POP!((*parser).states);
-        memset(
-            event as *mut libc::c_void,
-            0,
-            size_of::<yaml_event_t>() as libc::c_ulong,
-        );
+        *event = yaml_event_t::default();
         (*event).type_ = YAML_ALIAS_EVENT;
         (*event).start_mark = (*token).start_mark;
         (*event).end_mark = (*token).end_mark;
@@ -546,11 +518,7 @@ unsafe fn yaml_parser_parse_node(
                 if indentless_sequence && (*token).type_ == YAML_BLOCK_ENTRY_TOKEN {
                     end_mark = (*token).end_mark;
                     (*parser).state = YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE;
-                    memset(
-                        event as *mut libc::c_void,
-                        0,
-                        size_of::<yaml_event_t>() as libc::c_ulong,
-                    );
+                    *event = yaml_event_t::default();
                     (*event).type_ = YAML_SEQUENCE_START_EVENT;
                     (*event).start_mark = start_mark;
                     (*event).end_mark = end_mark;
@@ -577,11 +545,7 @@ unsafe fn yaml_parser_parse_node(
                         quoted_implicit = true;
                     }
                     (*parser).state = POP!((*parser).states);
-                    memset(
-                        event as *mut libc::c_void,
-                        0,
-                        size_of::<yaml_event_t>() as libc::c_ulong,
-                    );
+                    *event = yaml_event_t::default();
                     (*event).type_ = YAML_SCALAR_EVENT;
                     (*event).start_mark = start_mark;
                     (*event).end_mark = end_mark;
@@ -600,11 +564,7 @@ unsafe fn yaml_parser_parse_node(
                 } else if (*token).type_ == YAML_FLOW_SEQUENCE_START_TOKEN {
                     end_mark = (*token).end_mark;
                     (*parser).state = YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE;
-                    memset(
-                        event as *mut libc::c_void,
-                        0,
-                        size_of::<yaml_event_t>() as libc::c_ulong,
-                    );
+                    *event = yaml_event_t::default();
                     (*event).type_ = YAML_SEQUENCE_START_EVENT;
                     (*event).start_mark = start_mark;
                     (*event).end_mark = end_mark;
@@ -618,11 +578,7 @@ unsafe fn yaml_parser_parse_node(
                 } else if (*token).type_ == YAML_FLOW_MAPPING_START_TOKEN {
                     end_mark = (*token).end_mark;
                     (*parser).state = YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE;
-                    memset(
-                        event as *mut libc::c_void,
-                        0,
-                        size_of::<yaml_event_t>() as libc::c_ulong,
-                    );
+                    *event = yaml_event_t::default();
                     (*event).type_ = YAML_MAPPING_START_EVENT;
                     (*event).start_mark = start_mark;
                     (*event).end_mark = end_mark;
@@ -636,11 +592,7 @@ unsafe fn yaml_parser_parse_node(
                 } else if block && (*token).type_ == YAML_BLOCK_SEQUENCE_START_TOKEN {
                     end_mark = (*token).end_mark;
                     (*parser).state = YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE;
-                    memset(
-                        event as *mut libc::c_void,
-                        0,
-                        size_of::<yaml_event_t>() as libc::c_ulong,
-                    );
+                    *event = yaml_event_t::default();
                     (*event).type_ = YAML_SEQUENCE_START_EVENT;
                     (*event).start_mark = start_mark;
                     (*event).end_mark = end_mark;
@@ -654,11 +606,7 @@ unsafe fn yaml_parser_parse_node(
                 } else if block && (*token).type_ == YAML_BLOCK_MAPPING_START_TOKEN {
                     end_mark = (*token).end_mark;
                     (*parser).state = YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE;
-                    memset(
-                        event as *mut libc::c_void,
-                        0,
-                        size_of::<yaml_event_t>() as libc::c_ulong,
-                    );
+                    *event = yaml_event_t::default();
                     (*event).type_ = YAML_MAPPING_START_EVENT;
                     (*event).start_mark = start_mark;
                     (*event).end_mark = end_mark;
@@ -673,11 +621,7 @@ unsafe fn yaml_parser_parse_node(
                     let value: *mut yaml_char_t = yaml_malloc(1_u64) as *mut yaml_char_t;
                     *value = b'\0';
                     (*parser).state = POP!((*parser).states);
-                    memset(
-                        event as *mut libc::c_void,
-                        0,
-                        size_of::<yaml_event_t>() as libc::c_ulong,
-                    );
+                    *event = yaml_event_t::default();
                     (*event).type_ = YAML_SCALAR_EVENT;
                     (*event).start_mark = start_mark;
                     (*event).end_mark = end_mark;
@@ -747,11 +691,7 @@ unsafe fn yaml_parser_parse_block_sequence_entry(
     } else if (*token).type_ == YAML_BLOCK_END_TOKEN {
         (*parser).state = POP!((*parser).states);
         let _ = POP!((*parser).marks);
-        memset(
-            event as *mut libc::c_void,
-            0,
-            size_of::<yaml_event_t>() as libc::c_ulong,
-        );
+        *event = yaml_event_t::default();
         (*event).type_ = YAML_SEQUENCE_END_EVENT;
         (*event).start_mark = (*token).start_mark;
         (*event).end_mark = (*token).end_mark;
@@ -798,11 +738,7 @@ unsafe fn yaml_parser_parse_indentless_sequence_entry(
         }
     } else {
         (*parser).state = POP!((*parser).states);
-        memset(
-            event as *mut libc::c_void,
-            0,
-            size_of::<yaml_event_t>() as libc::c_ulong,
-        );
+        *event = yaml_event_t::default();
         (*event).type_ = YAML_SEQUENCE_END_EVENT;
         (*event).start_mark = (*token).start_mark;
         (*event).end_mark = (*token).start_mark;
@@ -845,11 +781,7 @@ unsafe fn yaml_parser_parse_block_mapping_key(
     } else if (*token).type_ == YAML_BLOCK_END_TOKEN {
         (*parser).state = POP!((*parser).states);
         let _ = POP!((*parser).marks);
-        memset(
-            event as *mut libc::c_void,
-            0,
-            size_of::<yaml_event_t>() as libc::c_ulong,
-        );
+        *event = yaml_event_t::default();
         (*event).type_ = YAML_MAPPING_END_EVENT;
         (*event).start_mark = (*token).start_mark;
         (*event).end_mark = (*token).end_mark;
@@ -935,11 +867,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
         }
         if (*token).type_ == YAML_KEY_TOKEN {
             (*parser).state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE;
-            memset(
-                event as *mut libc::c_void,
-                0,
-                size_of::<yaml_event_t>() as libc::c_ulong,
-            );
+            *event = yaml_event_t::default();
             (*event).type_ = YAML_MAPPING_START_EVENT;
             (*event).start_mark = (*token).start_mark;
             (*event).end_mark = (*token).end_mark;
@@ -958,11 +886,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
     }
     (*parser).state = POP!((*parser).states);
     let _ = POP!((*parser).marks);
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_SEQUENCE_END_EVENT;
     (*event).start_mark = (*token).start_mark;
     (*event).end_mark = (*token).end_mark;
@@ -1032,11 +956,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_end(
         return FAIL;
     }
     (*parser).state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE;
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_MAPPING_END_EVENT;
     (*event).start_mark = (*token).start_mark;
     (*event).end_mark = (*token).start_mark;
@@ -1100,11 +1020,7 @@ unsafe fn yaml_parser_parse_flow_mapping_key(
     }
     (*parser).state = POP!((*parser).states);
     let _ = POP!((*parser).marks);
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_MAPPING_END_EVENT;
     (*event).start_mark = (*token).start_mark;
     (*event).end_mark = (*token).end_mark;
@@ -1148,11 +1064,7 @@ unsafe fn yaml_parser_process_empty_scalar(
 ) -> Result<(), ()> {
     let value: *mut yaml_char_t = yaml_malloc(1_u64) as *mut yaml_char_t;
     *value = b'\0';
-    memset(
-        event as *mut libc::c_void,
-        0,
-        size_of::<yaml_event_t>() as libc::c_ulong,
-    );
+    *event = yaml_event_t::default();
     (*event).type_ = YAML_SCALAR_EVENT;
     (*event).start_mark = mark;
     (*event).end_mark = mark;

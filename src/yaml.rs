@@ -81,7 +81,7 @@ pub enum yaml_error_type_t {
 }
 
 /// The pointer position.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_mark_t {
@@ -256,6 +256,12 @@ pub struct yaml_token_t {
     pub end_mark: yaml_mark_t,
 }
 
+impl Default for yaml_token_t {
+    fn default() -> Self {
+        unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union unnamed_yaml_token_t_data {
@@ -342,11 +348,12 @@ pub struct unnamed_yaml_token_t_data_tag_directive {
 }
 
 /// Event types.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_event_type_t {
     /// An empty event.
+    #[default]
     YAML_NO_EVENT = 0,
     /// A STREAM-START event.
     YAML_STREAM_START_EVENT = 1,
@@ -458,6 +465,12 @@ pub struct yaml_event_t {
     pub start_mark: yaml_mark_t,
     /// The end of the event.
     pub end_mark: yaml_mark_t,
+}
+
+impl Default for yaml_event_t {
+    fn default() -> Self {
+        unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
+    }
 }
 
 #[derive(Copy, Clone)]
