@@ -1219,7 +1219,6 @@ pub(crate) struct unnamed_yaml_emitter_t_scalar_data {
     pub style: yaml_scalar_style_t,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub(crate) struct yaml_string_t {
     pub start: *mut yaml_char_t,

@@ -90,7 +90,13 @@ macro_rules! JOIN {
 
 macro_rules! CHECK_AT {
     ($string:expr, $octet:expr, $offset:expr) => {
-        *$string.pointer.offset($offset as isize) == $octet
+        CHECK_AT_PTR!($string.pointer, $octet, $offset)
+    };
+}
+
+macro_rules! CHECK_AT_PTR {
+    ($pointer:expr, $octet:expr, $offset:expr) => {
+        *$pointer.offset($offset as isize) == $octet
     };
 }
 
@@ -252,21 +258,34 @@ macro_rules! IS_BLANK {
 
 macro_rules! IS_BREAK_AT {
     ($string:expr, $offset:expr) => {
-        CHECK_AT!($string, b'\r', $offset)
-            || CHECK_AT!($string, b'\n', $offset)
-            || CHECK_AT!($string, b'\xC2', $offset) && CHECK_AT!($string, b'\x85', $offset + 1)
-            || CHECK_AT!($string, b'\xE2', $offset)
-                && CHECK_AT!($string, b'\x80', $offset + 1)
-                && CHECK_AT!($string, b'\xA8', $offset + 2)
-            || CHECK_AT!($string, b'\xE2', $offset)
-                && CHECK_AT!($string, b'\x80', $offset + 1)
-                && CHECK_AT!($string, b'\xA9', $offset + 2)
+        IS_BREAK_AT_PTR!($string.pointer, $offset)
+    };
+}
+
+macro_rules! IS_BREAK_AT_PTR {
+    ($pointer:expr, $offset:expr) => {
+        CHECK_AT_PTR!($pointer, b'\r', $offset)
+            || CHECK_AT_PTR!($pointer, b'\n', $offset)
+            || CHECK_AT_PTR!($pointer, b'\xC2', $offset)
+                && CHECK_AT_PTR!($pointer, b'\x85', $offset + 1)
+            || CHECK_AT_PTR!($pointer, b'\xE2', $offset)
+                && CHECK_AT_PTR!($pointer, b'\x80', $offset + 1)
+                && CHECK_AT_PTR!($pointer, b'\xA8', $offset + 2)
+            || CHECK_AT_PTR!($pointer, b'\xE2', $offset)
+                && CHECK_AT_PTR!($pointer, b'\x80', $offset + 1)
+                && CHECK_AT_PTR!($pointer, b'\xA9', $offset + 2)
     };
 }
 
 macro_rules! IS_BREAK {
     ($string:expr) => {
         IS_BREAK_AT!($string, 0)
+    };
+}
+
+macro_rules! IS_BREAK_PTR {
+    ($pointer:expr) => {
+        IS_BREAK_AT_PTR!($pointer, 0)
     };
 }
 

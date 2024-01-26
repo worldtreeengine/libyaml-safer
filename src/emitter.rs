@@ -1836,7 +1836,7 @@ unsafe fn yaml_emitter_write_double_quoted_scalar(
 
 unsafe fn yaml_emitter_write_block_scalar_hints(
     emitter: &mut yaml_emitter_t,
-    mut string: yaml_string_t,
+    string: &yaml_string_t,
 ) -> Result<(), ()> {
     let mut indent_hint: [libc::c_char; 2] = [0; 2];
     let mut chomp_hint: *const libc::c_char = ptr::null::<libc::c_char>();
@@ -1846,29 +1846,30 @@ unsafe fn yaml_emitter_write_block_scalar_hints(
         yaml_emitter_write_indicator(emitter, indent_hint.as_mut_ptr(), false, false, false)?;
     }
     emitter.open_ended = 0;
-    string.pointer = string.end;
-    if string.start == string.pointer {
+    let mut pointer = string.end;
+
+    if string.start == pointer {
         chomp_hint = b"-\0" as *const u8 as *const libc::c_char;
     } else {
         loop {
-            string.pointer = string.pointer.wrapping_offset(-1);
-            if !(*string.pointer & 0xC0 == 0x80) {
+            pointer = pointer.wrapping_offset(-1);
+            if !(*pointer & 0xC0 == 0x80) {
                 break;
             }
         }
-        if !IS_BREAK!(string) {
+        if !IS_BREAK_PTR!(pointer) {
             chomp_hint = b"-\0" as *const u8 as *const libc::c_char;
-        } else if string.start == string.pointer {
+        } else if string.start == pointer {
             chomp_hint = b"+\0" as *const u8 as *const libc::c_char;
             emitter.open_ended = 2;
         } else {
             loop {
-                string.pointer = string.pointer.wrapping_offset(-1);
-                if !(*string.pointer & 0xC0 == 0x80) {
+                pointer = pointer.wrapping_offset(-1);
+                if !(*pointer & 0xC0 == 0x80) {
                     break;
                 }
             }
-            if IS_BREAK!(string) {
+            if IS_BREAK_PTR!(pointer) {
                 chomp_hint = b"+\0" as *const u8 as *const libc::c_char;
                 emitter.open_ended = 2;
             }
@@ -1894,7 +1895,7 @@ unsafe fn yaml_emitter_write_literal_scalar(
         false,
         false,
     )?;
-    yaml_emitter_write_block_scalar_hints(emitter, string)?;
+    yaml_emitter_write_block_scalar_hints(emitter, &string)?;
     PUT_BREAK(emitter)?;
     emitter.indention = true;
     emitter.whitespace = true;
@@ -1930,7 +1931,7 @@ unsafe fn yaml_emitter_write_folded_scalar(
         false,
         false,
     )?;
-    yaml_emitter_write_block_scalar_hints(emitter, string)?;
+    yaml_emitter_write_block_scalar_hints(emitter, &string)?;
     PUT_BREAK(emitter)?;
     emitter.indention = true;
     emitter.whitespace = true;
