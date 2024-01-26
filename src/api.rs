@@ -425,25 +425,24 @@ pub unsafe fn yaml_emitter_set_break(emitter: &mut yaml_emitter_t, line_break: y
 }
 
 /// Free any memory allocated for a token object.
-pub unsafe fn yaml_token_delete(token: *mut yaml_token_t) {
-    __assert!(!token.is_null());
-    match (*token).type_ {
+pub unsafe fn yaml_token_delete(token: &mut yaml_token_t) {
+    match token.type_ {
         YAML_TAG_DIRECTIVE_TOKEN => {
-            yaml_free((*token).data.tag_directive.handle as *mut libc::c_void);
-            yaml_free((*token).data.tag_directive.prefix as *mut libc::c_void);
+            yaml_free(token.data.tag_directive.handle as *mut libc::c_void);
+            yaml_free(token.data.tag_directive.prefix as *mut libc::c_void);
         }
         YAML_ALIAS_TOKEN => {
-            yaml_free((*token).data.alias.value as *mut libc::c_void);
+            yaml_free(token.data.alias.value as *mut libc::c_void);
         }
         YAML_ANCHOR_TOKEN => {
-            yaml_free((*token).data.anchor.value as *mut libc::c_void);
+            yaml_free(token.data.anchor.value as *mut libc::c_void);
         }
         YAML_TAG_TOKEN => {
-            yaml_free((*token).data.tag.handle as *mut libc::c_void);
-            yaml_free((*token).data.tag.suffix as *mut libc::c_void);
+            yaml_free(token.data.tag.handle as *mut libc::c_void);
+            yaml_free(token.data.tag.suffix as *mut libc::c_void);
         }
         YAML_SCALAR_TOKEN => {
-            yaml_free((*token).data.scalar.value as *mut libc::c_void);
+            yaml_free(token.data.scalar.value as *mut libc::c_void);
         }
         _ => {}
     }
