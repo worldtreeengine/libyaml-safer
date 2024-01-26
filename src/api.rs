@@ -288,33 +288,34 @@ pub unsafe fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yam
 pub unsafe fn yaml_emitter_initialize(emitter: *mut yaml_emitter_t) -> Result<(), ()> {
     __assert!(!emitter.is_null());
     *emitter = core::mem::MaybeUninit::zeroed().assume_init();
-    BUFFER_INIT!((*emitter).buffer, OUTPUT_BUFFER_SIZE);
-    BUFFER_INIT!((*emitter).raw_buffer, OUTPUT_RAW_BUFFER_SIZE);
-    STACK_INIT!((*emitter).states, yaml_emitter_state_t);
-    QUEUE_INIT!((*emitter).events, yaml_event_t);
-    STACK_INIT!((*emitter).indents, libc::c_int);
-    STACK_INIT!((*emitter).tag_directives, yaml_tag_directive_t);
+    let emitter = &mut *emitter;
+    BUFFER_INIT!(emitter.buffer, OUTPUT_BUFFER_SIZE);
+    BUFFER_INIT!(emitter.raw_buffer, OUTPUT_RAW_BUFFER_SIZE);
+    STACK_INIT!(emitter.states, yaml_emitter_state_t);
+    QUEUE_INIT!(emitter.events, yaml_event_t);
+    STACK_INIT!(emitter.indents, libc::c_int);
+    STACK_INIT!(emitter.tag_directives, yaml_tag_directive_t);
     OK
 }
 
 /// Destroy an emitter.
-pub unsafe fn yaml_emitter_delete(emitter: *mut yaml_emitter_t) {
-    __assert!(!emitter.is_null());
-    BUFFER_DEL!((*emitter).buffer);
-    BUFFER_DEL!((*emitter).raw_buffer);
-    STACK_DEL!((*emitter).states);
-    while !QUEUE_EMPTY!((*emitter).events) {
-        yaml_event_delete(addr_of_mut!(DEQUEUE!((*emitter).events)));
+pub unsafe fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
+    BUFFER_DEL!(emitter.buffer);
+    BUFFER_DEL!(emitter.raw_buffer);
+    STACK_DEL!(emitter.states);
+    while !QUEUE_EMPTY!(emitter.events) {
+        let mut event = DEQUEUE!(emitter.events);
+        yaml_event_delete(&mut event);
     }
-    QUEUE_DEL!((*emitter).events);
-    STACK_DEL!((*emitter).indents);
-    while !STACK_EMPTY!((*emitter).tag_directives) {
-        let tag_directive = POP!((*emitter).tag_directives);
+    QUEUE_DEL!(emitter.events);
+    STACK_DEL!(emitter.indents);
+    while !STACK_EMPTY!(emitter.tag_directives) {
+        let tag_directive = POP!(emitter.tag_directives);
         yaml_free(tag_directive.handle as *mut libc::c_void);
         yaml_free(tag_directive.prefix as *mut libc::c_void);
     }
-    STACK_DEL!((*emitter).tag_directives);
-    yaml_free((*emitter).anchors as *mut libc::c_void);
+    STACK_DEL!(emitter.tag_directives);
+    yaml_free(emitter.anchors as *mut libc::c_void);
     *emitter = core::mem::MaybeUninit::zeroed().assume_init();
 }
 
@@ -323,12 +324,12 @@ unsafe fn yaml_string_write_handler(
     buffer: *mut libc::c_uchar,
     size: size_t,
 ) -> libc::c_int {
-    let emitter: *mut yaml_emitter_t = data as *mut yaml_emitter_t;
-    if (*emitter)
+    let emitter = &mut *(data as *mut yaml_emitter_t);
+    if emitter
         .output
         .string
         .size
-        .wrapping_sub(*(*emitter).output.string.size_written)
+        .wrapping_sub(*emitter.output.string.size_written)
         < size
     {
         memcpy(
@@ -336,16 +337,16 @@ unsafe fn yaml_string_write_handler(
                 .output
                 .string
                 .buffer
-                .wrapping_offset(*(*emitter).output.string.size_written as isize)
+                .wrapping_offset(*emitter.output.string.size_written as isize)
                 as *mut libc::c_void,
             buffer as *const libc::c_void,
             (*emitter)
                 .output
                 .string
                 .size
-                .wrapping_sub(*(*emitter).output.string.size_written),
+                .wrapping_sub(*emitter.output.string.size_written),
         );
-        *(*emitter).output.string.size_written = (*emitter).output.string.size;
+        *emitter.output.string.size_written = emitter.output.string.size;
         return 0;
     }
     memcpy(
@@ -353,12 +354,12 @@ unsafe fn yaml_string_write_handler(
             .output
             .string
             .buffer
-            .wrapping_offset(*(*emitter).output.string.size_written as isize)
+            .wrapping_offset(*emitter.output.string.size_written as isize)
             as *mut libc::c_void,
         buffer as *const libc::c_void,
         size,
     );
-    let fresh153 = addr_of_mut!((*(*emitter).output.string.size_written));
+    let fresh153 = addr_of_mut!((*emitter.output.string.size_written));
     *fresh153 = (*fresh153 as libc::c_ulong).force_add(size) as size_t;
     1
 }
@@ -370,79 +371,71 @@ unsafe fn yaml_string_write_handler(
 /// bytes. If the buffer is smaller than required, the emitter produces the
 /// YAML_WRITE_ERROR error.
 pub unsafe fn yaml_emitter_set_output_string(
-    emitter: *mut yaml_emitter_t,
+    emitter: &mut yaml_emitter_t,
     output: *mut libc::c_uchar,
     size: size_t,
     size_written: *mut size_t,
 ) {
-    __assert!(!emitter.is_null());
-    __assert!(((*emitter).write_handler).is_none());
+    __assert!((emitter.write_handler).is_none());
     __assert!(!output.is_null());
-    let fresh154 = addr_of_mut!((*emitter).write_handler);
+    let fresh154 = addr_of_mut!(emitter.write_handler);
     *fresh154 = Some(
         yaml_string_write_handler
             as unsafe fn(*mut libc::c_void, *mut libc::c_uchar, size_t) -> libc::c_int,
     );
-    let fresh155 = addr_of_mut!((*emitter).write_handler_data);
-    *fresh155 = emitter as *mut libc::c_void;
-    let fresh156 = addr_of_mut!((*emitter).output.string.buffer);
+    let fresh155 = addr_of_mut!(emitter.write_handler_data);
+    *fresh155 = emitter as *mut _ as *mut libc::c_void;
+    let fresh156 = addr_of_mut!(emitter.output.string.buffer);
     *fresh156 = output;
-    (*emitter).output.string.size = size;
-    let fresh157 = addr_of_mut!((*emitter).output.string.size_written);
+    emitter.output.string.size = size;
+    let fresh157 = addr_of_mut!(emitter.output.string.size_written);
     *fresh157 = size_written;
     *size_written = 0_u64;
 }
 
 /// Set a generic output handler.
 pub unsafe fn yaml_emitter_set_output(
-    emitter: *mut yaml_emitter_t,
+    emitter: &mut yaml_emitter_t,
     handler: yaml_write_handler_t,
     data: *mut libc::c_void,
 ) {
-    __assert!(!emitter.is_null());
-    __assert!(((*emitter).write_handler).is_none());
-    let fresh161 = addr_of_mut!((*emitter).write_handler);
+    __assert!(emitter.write_handler.is_none());
+    let fresh161 = addr_of_mut!(emitter.write_handler);
     *fresh161 = Some(handler);
-    let fresh162 = addr_of_mut!((*emitter).write_handler_data);
+    let fresh162 = addr_of_mut!(emitter.write_handler_data);
     *fresh162 = data;
 }
 
 /// Set the output encoding.
-pub unsafe fn yaml_emitter_set_encoding(emitter: *mut yaml_emitter_t, encoding: yaml_encoding_t) {
-    __assert!(!emitter.is_null());
-    __assert!((*emitter).encoding == YAML_ANY_ENCODING);
-    (*emitter).encoding = encoding;
+pub unsafe fn yaml_emitter_set_encoding(emitter: &mut yaml_emitter_t, encoding: yaml_encoding_t) {
+    __assert!(emitter.encoding == YAML_ANY_ENCODING);
+    emitter.encoding = encoding;
 }
 
 /// Set if the output should be in the "canonical" format as in the YAML
 /// specification.
-pub unsafe fn yaml_emitter_set_canonical(emitter: *mut yaml_emitter_t, canonical: bool) {
-    __assert!(!emitter.is_null());
-    (*emitter).canonical = canonical;
+pub unsafe fn yaml_emitter_set_canonical(emitter: &mut yaml_emitter_t, canonical: bool) {
+    emitter.canonical = canonical;
 }
 
 /// Set the indentation increment.
-pub unsafe fn yaml_emitter_set_indent(emitter: *mut yaml_emitter_t, indent: libc::c_int) {
-    __assert!(!emitter.is_null());
-    (*emitter).best_indent = if 1 < indent && indent < 10 { indent } else { 2 };
+pub unsafe fn yaml_emitter_set_indent(emitter: &mut yaml_emitter_t, indent: libc::c_int) {
+    emitter.best_indent = if 1 < indent && indent < 10 { indent } else { 2 };
 }
 
 /// Set the preferred line width. -1 means unlimited.
-pub unsafe fn yaml_emitter_set_width(emitter: *mut yaml_emitter_t, width: libc::c_int) {
-    __assert!(!emitter.is_null());
-    (*emitter).best_width = if width >= 0 { width } else { -1 };
+pub unsafe fn yaml_emitter_set_width(emitter: &mut yaml_emitter_t, width: libc::c_int) {
+    emitter.best_width = if width >= 0 { width } else { -1 };
 }
 
 /// Set if unescaped non-ASCII characters are allowed.
-pub unsafe fn yaml_emitter_set_unicode(emitter: *mut yaml_emitter_t, unicode: bool) {
-    __assert!(!emitter.is_null());
-    (*emitter).unicode = unicode;
+pub unsafe fn yaml_emitter_set_unicode(emitter: &mut yaml_emitter_t, unicode: bool) {
+    emitter.unicode = unicode;
 }
 
 /// Set the preferred line break.
-pub unsafe fn yaml_emitter_set_break(emitter: *mut yaml_emitter_t, line_break: yaml_break_t) {
-    __assert!(!emitter.is_null());
-    (*emitter).line_break = line_break;
+pub unsafe fn yaml_emitter_set_break(emitter: &mut yaml_emitter_t, line_break: yaml_break_t) {
+    emitter.line_break = line_break;
 }
 
 /// Free any memory allocated for a token object.
@@ -530,7 +523,7 @@ unsafe fn yaml_check_utf8(start: *const yaml_char_t, length: size_t) -> Result<(
 
 /// Create the STREAM-START event.
 pub unsafe fn yaml_stream_start_event_initialize(
-    event: *mut yaml_event_t,
+    event: &mut yaml_event_t,
     encoding: yaml_encoding_t,
 ) -> Result<(), ()> {
     let mark = yaml_mark_t {
@@ -538,27 +531,25 @@ pub unsafe fn yaml_stream_start_event_initialize(
         line: 0_u64,
         column: 0_u64,
     };
-    __assert!(!event.is_null());
     *event = yaml_event_t::default();
-    (*event).type_ = YAML_STREAM_START_EVENT;
-    (*event).start_mark = mark;
-    (*event).end_mark = mark;
-    (*event).data.stream_start.encoding = encoding;
+    event.type_ = YAML_STREAM_START_EVENT;
+    event.start_mark = mark;
+    event.end_mark = mark;
+    event.data.stream_start.encoding = encoding;
     OK
 }
 
 /// Create the STREAM-END event.
-pub unsafe fn yaml_stream_end_event_initialize(event: *mut yaml_event_t) -> Result<(), ()> {
+pub unsafe fn yaml_stream_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
     let mark = yaml_mark_t {
         index: 0_u64,
         line: 0_u64,
         column: 0_u64,
     };
-    __assert!(!event.is_null());
     *event = yaml_event_t::default();
-    (*event).type_ = YAML_STREAM_END_EVENT;
-    (*event).start_mark = mark;
-    (*event).end_mark = mark;
+    event.type_ = YAML_STREAM_END_EVENT;
+    event.start_mark = mark;
+    event.end_mark = mark;
     OK
 }
 
@@ -567,7 +558,7 @@ pub unsafe fn yaml_stream_end_event_initialize(event: *mut yaml_event_t) -> Resu
 /// The `implicit` argument is considered as a stylistic parameter and may be
 /// ignored by the emitter.
 pub unsafe fn yaml_document_start_event_initialize(
-    event: *mut yaml_event_t,
+    event: &mut yaml_event_t,
     version_directive: *mut yaml_version_directive_t,
     tag_directives_start: *mut yaml_tag_directive_t,
     tag_directives_end: *mut yaml_tag_directive_t,
@@ -595,7 +586,6 @@ pub unsafe fn yaml_document_start_event_initialize(
         handle: ptr::null_mut::<yaml_char_t>(),
         prefix: ptr::null_mut::<yaml_char_t>(),
     };
-    __assert!(!event.is_null());
     __assert!(
         !tag_directives_start.is_null() && !tag_directives_end.is_null()
             || tag_directives_start == tag_directives_end
@@ -651,16 +641,16 @@ pub unsafe fn yaml_document_start_event_initialize(
     }
     if current_block != 14964981520188694172 {
         *event = yaml_event_t::default();
-        (*event).type_ = YAML_DOCUMENT_START_EVENT;
-        (*event).start_mark = mark;
-        (*event).end_mark = mark;
-        let fresh164 = addr_of_mut!((*event).data.document_start.version_directive);
+        event.type_ = YAML_DOCUMENT_START_EVENT;
+        event.start_mark = mark;
+        event.end_mark = mark;
+        let fresh164 = addr_of_mut!(event.data.document_start.version_directive);
         *fresh164 = version_directive_copy;
-        let fresh165 = addr_of_mut!((*event).data.document_start.tag_directives.start);
+        let fresh165 = addr_of_mut!(event.data.document_start.tag_directives.start);
         *fresh165 = tag_directives_copy.start;
-        let fresh166 = addr_of_mut!((*event).data.document_start.tag_directives.end);
+        let fresh166 = addr_of_mut!(event.data.document_start.tag_directives.end);
         *fresh166 = tag_directives_copy.top;
-        (*event).data.document_start.implicit = implicit;
+        event.data.document_start.implicit = implicit;
         return OK;
     }
     yaml_free(version_directive_copy as *mut libc::c_void);
@@ -680,7 +670,7 @@ pub unsafe fn yaml_document_start_event_initialize(
 /// The `implicit` argument is considered as a stylistic parameter and may be
 /// ignored by the emitter.
 pub unsafe fn yaml_document_end_event_initialize(
-    event: *mut yaml_event_t,
+    event: &mut yaml_event_t,
     implicit: bool,
 ) -> Result<(), ()> {
     let mark = yaml_mark_t {
@@ -688,18 +678,17 @@ pub unsafe fn yaml_document_end_event_initialize(
         line: 0_u64,
         column: 0_u64,
     };
-    __assert!(!event.is_null());
     *event = yaml_event_t::default();
-    (*event).type_ = YAML_DOCUMENT_END_EVENT;
-    (*event).start_mark = mark;
-    (*event).end_mark = mark;
-    (*event).data.document_end.implicit = implicit;
+    event.type_ = YAML_DOCUMENT_END_EVENT;
+    event.start_mark = mark;
+    event.end_mark = mark;
+    event.data.document_end.implicit = implicit;
     OK
 }
 
 /// Create an ALIAS event.
 pub unsafe fn yaml_alias_event_initialize(
-    event: *mut yaml_event_t,
+    event: &mut yaml_event_t,
     anchor: *const yaml_char_t,
 ) -> Result<(), ()> {
     let mark = yaml_mark_t {
@@ -707,7 +696,6 @@ pub unsafe fn yaml_alias_event_initialize(
         line: 0_u64,
         column: 0_u64,
     };
-    __assert!(!event.is_null());
     __assert!(!anchor.is_null());
     yaml_check_utf8(anchor, strlen(anchor as *mut libc::c_char))?;
     let anchor_copy: *mut yaml_char_t = yaml_strdup(anchor);
@@ -715,10 +703,10 @@ pub unsafe fn yaml_alias_event_initialize(
         return FAIL;
     }
     *event = yaml_event_t::default();
-    (*event).type_ = YAML_ALIAS_EVENT;
-    (*event).start_mark = mark;
-    (*event).end_mark = mark;
-    let fresh167 = addr_of_mut!((*event).data.alias.anchor);
+    event.type_ = YAML_ALIAS_EVENT;
+    event.start_mark = mark;
+    event.end_mark = mark;
+    let fresh167 = addr_of_mut!(event.data.alias.anchor);
     *fresh167 = anchor_copy;
     OK
 }
@@ -731,7 +719,7 @@ pub unsafe fn yaml_alias_event_initialize(
 /// `quoted_implicit` flags must be set.
 ///
 pub unsafe fn yaml_scalar_event_initialize(
-    event: *mut yaml_event_t,
+    event: &mut yaml_event_t,
     anchor: *const yaml_char_t,
     tag: *const yaml_char_t,
     value: *const yaml_char_t,
@@ -749,7 +737,6 @@ pub unsafe fn yaml_scalar_event_initialize(
     let mut anchor_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let mut tag_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let mut value_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
-    __assert!(!event.is_null());
     __assert!(!value.is_null());
     if !anchor.is_null() {
         if yaml_check_utf8(anchor, strlen(anchor as *mut libc::c_char)).is_err() {
@@ -793,19 +780,19 @@ pub unsafe fn yaml_scalar_event_initialize(
                 );
                 *value_copy.wrapping_offset(length as isize) = b'\0';
                 *event = yaml_event_t::default();
-                (*event).type_ = YAML_SCALAR_EVENT;
-                (*event).start_mark = mark;
-                (*event).end_mark = mark;
-                let fresh168 = addr_of_mut!((*event).data.scalar.anchor);
+                event.type_ = YAML_SCALAR_EVENT;
+                event.start_mark = mark;
+                event.end_mark = mark;
+                let fresh168 = addr_of_mut!(event.data.scalar.anchor);
                 *fresh168 = anchor_copy;
-                let fresh169 = addr_of_mut!((*event).data.scalar.tag);
+                let fresh169 = addr_of_mut!(event.data.scalar.tag);
                 *fresh169 = tag_copy;
-                let fresh170 = addr_of_mut!((*event).data.scalar.value);
+                let fresh170 = addr_of_mut!(event.data.scalar.value);
                 *fresh170 = value_copy;
-                (*event).data.scalar.length = length as size_t;
-                (*event).data.scalar.plain_implicit = plain_implicit;
-                (*event).data.scalar.quoted_implicit = quoted_implicit;
-                (*event).data.scalar.style = style;
+                event.data.scalar.length = length as size_t;
+                event.data.scalar.plain_implicit = plain_implicit;
+                event.data.scalar.quoted_implicit = quoted_implicit;
+                event.data.scalar.style = style;
                 return OK;
             }
         }
@@ -822,7 +809,7 @@ pub unsafe fn yaml_scalar_event_initialize(
 ///
 /// Either the `tag` attribute or the `implicit` flag must be set.
 pub unsafe fn yaml_sequence_start_event_initialize(
-    event: *mut yaml_event_t,
+    event: &mut yaml_event_t,
     anchor: *const yaml_char_t,
     tag: *const yaml_char_t,
     implicit: bool,
@@ -836,7 +823,6 @@ pub unsafe fn yaml_sequence_start_event_initialize(
     };
     let mut anchor_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let mut tag_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
-    __assert!(!event.is_null());
     if !anchor.is_null() {
         if yaml_check_utf8(anchor, strlen(anchor as *mut libc::c_char)).is_err() {
             current_block = 8817775685815971442;
@@ -869,15 +855,15 @@ pub unsafe fn yaml_sequence_start_event_initialize(
             }
             if current_block != 8817775685815971442 {
                 *event = yaml_event_t::default();
-                (*event).type_ = YAML_SEQUENCE_START_EVENT;
-                (*event).start_mark = mark;
-                (*event).end_mark = mark;
-                let fresh171 = addr_of_mut!((*event).data.sequence_start.anchor);
+                event.type_ = YAML_SEQUENCE_START_EVENT;
+                event.start_mark = mark;
+                event.end_mark = mark;
+                let fresh171 = addr_of_mut!(event.data.sequence_start.anchor);
                 *fresh171 = anchor_copy;
-                let fresh172 = addr_of_mut!((*event).data.sequence_start.tag);
+                let fresh172 = addr_of_mut!(event.data.sequence_start.tag);
                 *fresh172 = tag_copy;
-                (*event).data.sequence_start.implicit = implicit;
-                (*event).data.sequence_start.style = style;
+                event.data.sequence_start.implicit = implicit;
+                event.data.sequence_start.style = style;
                 return OK;
             }
         }
@@ -889,17 +875,16 @@ pub unsafe fn yaml_sequence_start_event_initialize(
 }
 
 /// Create a SEQUENCE-END event.
-pub unsafe fn yaml_sequence_end_event_initialize(event: *mut yaml_event_t) -> Result<(), ()> {
+pub unsafe fn yaml_sequence_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
     let mark = yaml_mark_t {
         index: 0_u64,
         line: 0_u64,
         column: 0_u64,
     };
-    __assert!(!event.is_null());
     *event = yaml_event_t::default();
-    (*event).type_ = YAML_SEQUENCE_END_EVENT;
-    (*event).start_mark = mark;
-    (*event).end_mark = mark;
+    event.type_ = YAML_SEQUENCE_END_EVENT;
+    event.start_mark = mark;
+    event.end_mark = mark;
     OK
 }
 
@@ -909,7 +894,7 @@ pub unsafe fn yaml_sequence_end_event_initialize(event: *mut yaml_event_t) -> Re
 ///
 /// Either the `tag` attribute or the `implicit` flag must be set.
 pub unsafe fn yaml_mapping_start_event_initialize(
-    event: *mut yaml_event_t,
+    event: &mut yaml_event_t,
     anchor: *const yaml_char_t,
     tag: *const yaml_char_t,
     implicit: bool,
@@ -923,7 +908,6 @@ pub unsafe fn yaml_mapping_start_event_initialize(
     };
     let mut anchor_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let mut tag_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
-    __assert!(!event.is_null());
     if !anchor.is_null() {
         if yaml_check_utf8(anchor, strlen(anchor as *mut libc::c_char)).is_err() {
             current_block = 14748279734549812740;
@@ -955,15 +939,15 @@ pub unsafe fn yaml_mapping_start_event_initialize(
         }
         if current_block != 14748279734549812740 {
             *event = yaml_event_t::default();
-            (*event).type_ = YAML_MAPPING_START_EVENT;
-            (*event).start_mark = mark;
-            (*event).end_mark = mark;
-            let fresh173 = addr_of_mut!((*event).data.mapping_start.anchor);
+            event.type_ = YAML_MAPPING_START_EVENT;
+            event.start_mark = mark;
+            event.end_mark = mark;
+            let fresh173 = addr_of_mut!(event.data.mapping_start.anchor);
             *fresh173 = anchor_copy;
-            let fresh174 = addr_of_mut!((*event).data.mapping_start.tag);
+            let fresh174 = addr_of_mut!(event.data.mapping_start.tag);
             *fresh174 = tag_copy;
-            (*event).data.mapping_start.implicit = implicit;
-            (*event).data.mapping_start.style = style;
+            event.data.mapping_start.implicit = implicit;
+            event.data.mapping_start.style = style;
             return OK;
         }
     }
@@ -973,50 +957,48 @@ pub unsafe fn yaml_mapping_start_event_initialize(
 }
 
 /// Create a MAPPING-END event.
-pub unsafe fn yaml_mapping_end_event_initialize(event: *mut yaml_event_t) -> Result<(), ()> {
+pub unsafe fn yaml_mapping_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
     let mark = yaml_mark_t {
         index: 0_u64,
         line: 0_u64,
         column: 0_u64,
     };
-    __assert!(!event.is_null());
     *event = yaml_event_t::default();
-    (*event).type_ = YAML_MAPPING_END_EVENT;
-    (*event).start_mark = mark;
-    (*event).end_mark = mark;
+    event.type_ = YAML_MAPPING_END_EVENT;
+    event.start_mark = mark;
+    event.end_mark = mark;
     OK
 }
 
 /// Free any memory allocated for an event object.
-pub unsafe fn yaml_event_delete(event: *mut yaml_event_t) {
+pub unsafe fn yaml_event_delete(event: &mut yaml_event_t) {
     let mut tag_directive: *mut yaml_tag_directive_t;
-    __assert!(!event.is_null());
-    match (*event).type_ {
+    match event.type_ {
         YAML_DOCUMENT_START_EVENT => {
-            yaml_free((*event).data.document_start.version_directive as *mut libc::c_void);
-            tag_directive = (*event).data.document_start.tag_directives.start;
-            while tag_directive != (*event).data.document_start.tag_directives.end {
+            yaml_free(event.data.document_start.version_directive as *mut libc::c_void);
+            tag_directive = event.data.document_start.tag_directives.start;
+            while tag_directive != event.data.document_start.tag_directives.end {
                 yaml_free((*tag_directive).handle as *mut libc::c_void);
                 yaml_free((*tag_directive).prefix as *mut libc::c_void);
                 tag_directive = tag_directive.wrapping_offset(1);
             }
-            yaml_free((*event).data.document_start.tag_directives.start as *mut libc::c_void);
+            yaml_free(event.data.document_start.tag_directives.start as *mut libc::c_void);
         }
         YAML_ALIAS_EVENT => {
-            yaml_free((*event).data.alias.anchor as *mut libc::c_void);
+            yaml_free(event.data.alias.anchor as *mut libc::c_void);
         }
         YAML_SCALAR_EVENT => {
-            yaml_free((*event).data.scalar.anchor as *mut libc::c_void);
-            yaml_free((*event).data.scalar.tag as *mut libc::c_void);
-            yaml_free((*event).data.scalar.value as *mut libc::c_void);
+            yaml_free(event.data.scalar.anchor as *mut libc::c_void);
+            yaml_free(event.data.scalar.tag as *mut libc::c_void);
+            yaml_free(event.data.scalar.value as *mut libc::c_void);
         }
         YAML_SEQUENCE_START_EVENT => {
-            yaml_free((*event).data.sequence_start.anchor as *mut libc::c_void);
-            yaml_free((*event).data.sequence_start.tag as *mut libc::c_void);
+            yaml_free(event.data.sequence_start.anchor as *mut libc::c_void);
+            yaml_free(event.data.sequence_start.tag as *mut libc::c_void);
         }
         YAML_MAPPING_START_EVENT => {
-            yaml_free((*event).data.mapping_start.anchor as *mut libc::c_void);
-            yaml_free((*event).data.mapping_start.tag as *mut libc::c_void);
+            yaml_free(event.data.mapping_start.anchor as *mut libc::c_void);
+            yaml_free(event.data.mapping_start.tag as *mut libc::c_void);
         }
         _ => {}
     }

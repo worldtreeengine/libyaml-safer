@@ -46,10 +46,10 @@ pub(crate) unsafe fn unsafe_main(
     mut stdout: &mut dyn Write,
 ) -> Result<(), Box<dyn Error>> {
     let mut emitter = MaybeUninit::<yaml_emitter_t>::uninit();
-    let emitter = emitter.as_mut_ptr();
-    if yaml_emitter_initialize(emitter).is_err() {
+    if yaml_emitter_initialize(emitter.as_mut_ptr()).is_err() {
         return Err("Could not initalize the emitter object".into());
     }
+    let mut emitter = emitter.assume_init();
 
     unsafe fn write_to_stdio(data: *mut c_void, buffer: *mut u8, size: u64) -> i32 {
         let stdout: *mut &mut dyn Write = data.cast();
@@ -60,13 +60,13 @@ pub(crate) unsafe fn unsafe_main(
         }
     }
 
-    yaml_emitter_set_output(emitter, write_to_stdio, addr_of_mut!(stdout).cast());
-    yaml_emitter_set_canonical(emitter, false);
-    yaml_emitter_set_unicode(emitter, false);
+    yaml_emitter_set_output(&mut emitter, write_to_stdio, addr_of_mut!(stdout).cast());
+    yaml_emitter_set_canonical(&mut emitter, false);
+    yaml_emitter_set_unicode(&mut emitter, false);
 
     let mut buf = ReadBuf::new();
-    let mut event = MaybeUninit::<yaml_event_t>::uninit();
-    let event = event.as_mut_ptr();
+    let mut event = yaml_event_t::default();
+
     let result = loop {
         let line = match buf.get_line(stdin) {
             Some(line) => line,
@@ -76,13 +76,13 @@ pub(crate) unsafe fn unsafe_main(
         let mut anchor = [0u8; 256];
         let mut tag = [0u8; 256];
         let result = if line.starts_with(b"+STR") {
-            yaml_stream_start_event_initialize(event, YAML_UTF8_ENCODING)
+            yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING)
         } else if line.starts_with(b"-STR") {
-            yaml_stream_end_event_initialize(event)
+            yaml_stream_end_event_initialize(&mut event)
         } else if line.starts_with(b"+DOC") {
             let implicit = !line[4..].starts_with(b" ---");
             yaml_document_start_event_initialize(
-                event,
+                &mut event,
                 ptr::null_mut::<yaml_version_directive_t>(),
                 ptr::null_mut::<yaml_tag_directive_t>(),
                 ptr::null_mut::<yaml_tag_directive_t>(),
@@ -90,34 +90,34 @@ pub(crate) unsafe fn unsafe_main(
             )
         } else if line.starts_with(b"-DOC") {
             let implicit = !line[4..].starts_with(b" ...");
-            yaml_document_end_event_initialize(event, implicit)
+            yaml_document_end_event_initialize(&mut event, implicit)
         } else if line.starts_with(b"+MAP") {
             yaml_mapping_start_event_initialize(
-                event,
+                &mut event,
                 get_anchor(b'&', line, anchor.as_mut_ptr()),
                 get_tag(line, tag.as_mut_ptr()),
                 false,
                 YAML_BLOCK_MAPPING_STYLE,
             )
         } else if line.starts_with(b"-MAP") {
-            yaml_mapping_end_event_initialize(event)
+            yaml_mapping_end_event_initialize(&mut event)
         } else if line.starts_with(b"+SEQ") {
             yaml_sequence_start_event_initialize(
-                event,
+                &mut event,
                 get_anchor(b'&', line, anchor.as_mut_ptr()),
                 get_tag(line, tag.as_mut_ptr()),
                 false,
                 YAML_BLOCK_SEQUENCE_STYLE,
             )
         } else if line.starts_with(b"-SEQ") {
-            yaml_sequence_end_event_initialize(event)
+            yaml_sequence_end_event_initialize(&mut event)
         } else if line.starts_with(b"=VAL") {
             let mut value = [0i8; 1024];
             let mut style = YAML_ANY_SCALAR_STYLE;
             get_value(line, value.as_mut_ptr(), &mut style);
             let implicit = get_tag(line, tag.as_mut_ptr()).is_null();
             yaml_scalar_event_initialize(
-                event,
+                &mut event,
                 get_anchor(b'&', line, anchor.as_mut_ptr()),
                 get_tag(line, tag.as_mut_ptr()),
                 value.as_mut_ptr() as *mut u8,
@@ -127,7 +127,7 @@ pub(crate) unsafe fn unsafe_main(
                 style,
             )
         } else if line.starts_with(b"=ALI") {
-            yaml_alias_event_initialize(event, get_anchor(b'*', line, anchor.as_mut_ptr()))
+            yaml_alias_event_initialize(&mut event, get_anchor(b'*', line, anchor.as_mut_ptr()))
         } else {
             let line = line as *mut [u8] as *mut i8;
             break Err(format!("Unknown event: '{}'", CStr::from_ptr(line)).into());
@@ -136,7 +136,7 @@ pub(crate) unsafe fn unsafe_main(
         if result.is_err() {
             break Err("Memory error: Not enough memory for creating an event".into());
         }
-        if yaml_emitter_emit(emitter, event).is_err() {
+        if yaml_emitter_emit(&mut emitter, &event).is_err() {
             break Err(match (*emitter).error {
                 YAML_MEMORY_ERROR => "Memory error: Not enough memory for emitting".into(),
                 YAML_WRITER_ERROR => {
@@ -151,7 +151,7 @@ pub(crate) unsafe fn unsafe_main(
         }
     };
 
-    yaml_emitter_delete(emitter);
+    yaml_emitter_delete(&mut emitter);
     result
 }
 
