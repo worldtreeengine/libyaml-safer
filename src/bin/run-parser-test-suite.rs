@@ -14,6 +14,15 @@
 mod cstr;
 
 use self::cstr::CStr;
+use libyaml_safer::{
+    yaml_event_delete, yaml_event_t, yaml_event_type_t, yaml_parser_delete, yaml_parser_initialize,
+    yaml_parser_parse, yaml_parser_set_input, yaml_parser_t, YAML_ALIAS_EVENT,
+    YAML_DOCUMENT_END_EVENT, YAML_DOCUMENT_START_EVENT, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
+    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_MAPPING_END_EVENT,
+    YAML_MAPPING_START_EVENT, YAML_NO_EVENT, YAML_PLAIN_SCALAR_STYLE, YAML_SCALAR_EVENT,
+    YAML_SEQUENCE_END_EVENT, YAML_SEQUENCE_START_EVENT, YAML_SINGLE_QUOTED_SCALAR_STYLE,
+    YAML_STREAM_END_EVENT, YAML_STREAM_START_EVENT,
+};
 use std::env;
 use std::error::Error;
 use std::ffi::c_void;
@@ -24,15 +33,6 @@ use std::mem::MaybeUninit;
 use std::process::{self, ExitCode};
 use std::ptr::addr_of_mut;
 use std::slice;
-use unsafe_libyaml::{
-    yaml_event_delete, yaml_event_t, yaml_event_type_t, yaml_parser_delete, yaml_parser_initialize,
-    yaml_parser_parse, yaml_parser_set_input, yaml_parser_t, YAML_ALIAS_EVENT,
-    YAML_DOCUMENT_END_EVENT, YAML_DOCUMENT_START_EVENT, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_MAPPING_END_EVENT,
-    YAML_MAPPING_START_EVENT, YAML_NO_EVENT, YAML_PLAIN_SCALAR_STYLE, YAML_SCALAR_EVENT,
-    YAML_SEQUENCE_END_EVENT, YAML_SEQUENCE_START_EVENT, YAML_SINGLE_QUOTED_SCALAR_STYLE,
-    YAML_STREAM_END_EVENT, YAML_STREAM_START_EVENT,
-};
 
 pub(crate) unsafe fn unsafe_main(
     mut stdin: &mut dyn Read,

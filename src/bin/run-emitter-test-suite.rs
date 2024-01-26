@@ -17,16 +17,7 @@
 mod cstr;
 
 use self::cstr::CStr;
-use std::env;
-use std::error::Error;
-use std::ffi::c_void;
-use std::fs::File;
-use std::io::{self, Read, Write};
-use std::mem::MaybeUninit;
-use std::process::{self, ExitCode};
-use std::ptr::{self, addr_of_mut};
-use std::slice;
-use unsafe_libyaml::{
+use libyaml_safer::{
     yaml_alias_event_initialize, yaml_document_end_event_initialize,
     yaml_document_start_event_initialize, yaml_emitter_delete, yaml_emitter_emit,
     yaml_emitter_initialize, yaml_emitter_set_canonical, yaml_emitter_set_output,
@@ -40,6 +31,15 @@ use unsafe_libyaml::{
     YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
     YAML_WRITER_ERROR,
 };
+use std::env;
+use std::error::Error;
+use std::ffi::c_void;
+use std::fs::File;
+use std::io::{self, Read, Write};
+use std::mem::MaybeUninit;
+use std::process::{self, ExitCode};
+use std::ptr::{self, addr_of_mut};
+use std::slice;
 
 pub(crate) unsafe fn unsafe_main(
     stdin: &mut dyn Read,
