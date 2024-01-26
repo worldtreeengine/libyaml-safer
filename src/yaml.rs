@@ -859,7 +859,7 @@ pub struct yaml_parser_t {
     #[cfg(doc)]
     pub problem: *const libc::c_char,
     #[cfg(not(doc))]
-    pub(crate) problem: *const libc::c_char,
+    pub(crate) problem: Option<&'static str>,
     /// The byte about which the problem occured.
     #[cfg(doc)]
     pub problem_offset: size_t,
@@ -879,7 +879,7 @@ pub struct yaml_parser_t {
     #[cfg(doc)]
     pub context: *const libc::c_char,
     #[cfg(not(doc))]
-    pub(crate) context: *const libc::c_char,
+    pub(crate) context: Option<&'static str>,
     /// The context position.
     #[cfg(doc)]
     pub context_mark: yaml_mark_t,

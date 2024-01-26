@@ -9,12 +9,12 @@ use core::ptr::addr_of_mut;
 
 unsafe fn yaml_parser_set_reader_error(
     parser: &mut yaml_parser_t,
-    problem: *const libc::c_char,
+    problem: &'static str,
     offset: size_t,
     value: libc::c_int,
 ) -> Result<(), ()> {
     parser.error = YAML_READER_ERROR;
-    parser.problem = problem;
+    parser.problem = Some(problem);
     parser.problem_offset = offset;
     parser.problem_value = value;
     Err(())
@@ -119,12 +119,7 @@ unsafe fn yaml_parser_update_raw_buffer(parser: &mut yaml_parser_t) -> Result<()
         addr_of_mut!(size_read),
     ) == 0
     {
-        return yaml_parser_set_reader_error(
-            parser,
-            b"input error\0" as *const u8 as *const libc::c_char,
-            parser.offset,
-            -1,
-        );
+        return yaml_parser_set_reader_error(parser, "input error", parser.offset, -1);
     }
     parser.raw_buffer.last = parser.raw_buffer.last.wrapping_offset(size_read as isize);
     if size_read == 0 {
@@ -197,7 +192,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                     if width == 0 {
                         return yaml_parser_set_reader_error(
                             parser,
-                            b"invalid leading UTF-8 octet\0" as *const u8 as *const libc::c_char,
+                            "invalid leading UTF-8 octet",
                             parser.offset,
                             octet as libc::c_int,
                         );
@@ -206,8 +201,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                         if parser.eof {
                             return yaml_parser_set_reader_error(
                                 parser,
-                                b"incomplete UTF-8 octet sequence\0" as *const u8
-                                    as *const libc::c_char,
+                                "incomplete UTF-8 octet sequence",
                                 parser.offset,
                                 -1,
                             );
@@ -231,8 +225,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                             if octet & 0xC0 != 0x80 {
                                 return yaml_parser_set_reader_error(
                                     parser,
-                                    b"invalid trailing UTF-8 octet\0" as *const u8
-                                        as *const libc::c_char,
+                                    "invalid trailing UTF-8 octet",
                                     parser.offset.force_add(k),
                                     octet as libc::c_int,
                                 );
@@ -247,8 +240,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                         {
                             return yaml_parser_set_reader_error(
                                 parser,
-                                b"invalid length of a UTF-8 sequence\0" as *const u8
-                                    as *const libc::c_char,
+                                "invalid length of a UTF-8 sequence",
                                 parser.offset,
                                 -1,
                             );
@@ -256,7 +248,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                         if value >= 0xD800 && value <= 0xDFFF || value > 0x10FFFF {
                             return yaml_parser_set_reader_error(
                                 parser,
-                                b"invalid Unicode character\0" as *const u8 as *const libc::c_char,
+                                "invalid Unicode character",
                                 parser.offset,
                                 value as libc::c_int,
                             );
@@ -278,8 +270,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                         if parser.eof {
                             return yaml_parser_set_reader_error(
                                 parser,
-                                b"incomplete UTF-16 character\0" as *const u8
-                                    as *const libc::c_char,
+                                "incomplete UTF-16 character",
                                 parser.offset,
                                 -1,
                             );
@@ -294,8 +285,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                         if value & 0xFC00 == 0xDC00 {
                             return yaml_parser_set_reader_error(
                                 parser,
-                                b"unexpected low surrogate area\0" as *const u8
-                                    as *const libc::c_char,
+                                "unexpected low surrogate area",
                                 parser.offset,
                                 value as libc::c_int,
                             );
@@ -306,8 +296,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                                 if parser.eof {
                                     return yaml_parser_set_reader_error(
                                         parser,
-                                        b"incomplete UTF-16 surrogate pair\0" as *const u8
-                                            as *const libc::c_char,
+                                        "incomplete UTF-16 surrogate pair",
                                         parser.offset,
                                         -1,
                                     );
@@ -329,8 +318,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
                                 if value2 & 0xFC00 != 0xDC00 {
                                     return yaml_parser_set_reader_error(
                                         parser,
-                                        b"expected low surrogate area\0" as *const u8
-                                            as *const libc::c_char,
+                                        "expected low surrogate area",
                                         parser.offset.force_add(2_u64),
                                         value2 as libc::c_int,
                                     );
@@ -360,7 +348,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
             {
                 return yaml_parser_set_reader_error(
                     parser,
-                    b"control characters are not allowed\0" as *const u8 as *const libc::c_char,
+                    "control characters are not allowed",
                     parser.offset,
                     value as libc::c_int,
                 );
@@ -415,12 +403,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
         }
     }
     if parser.offset >= (!0_u64).wrapping_div(2_u64) {
-        return yaml_parser_set_reader_error(
-            parser,
-            b"input is too long\0" as *const u8 as *const libc::c_char,
-            parser.offset,
-            -1,
-        );
+        return yaml_parser_set_reader_error(parser, "input is too long", parser.offset, -1);
     }
     Ok(())
 }

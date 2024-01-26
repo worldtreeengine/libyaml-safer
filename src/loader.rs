@@ -76,26 +76,26 @@ pub unsafe fn yaml_parser_load(
 
 unsafe fn yaml_parser_set_composer_error(
     parser: &mut yaml_parser_t,
-    problem: *const libc::c_char,
+    problem: &'static str,
     problem_mark: yaml_mark_t,
 ) -> Result<(), ()> {
     parser.error = YAML_COMPOSER_ERROR;
-    parser.problem = problem;
+    parser.problem = Some(problem);
     parser.problem_mark = problem_mark;
     Err(())
 }
 
 unsafe fn yaml_parser_set_composer_error_context(
     parser: &mut yaml_parser_t,
-    context: *const libc::c_char,
+    context: &'static str,
     context_mark: yaml_mark_t,
-    problem: *const libc::c_char,
+    problem: &'static str,
     problem_mark: yaml_mark_t,
 ) -> Result<(), ()> {
     parser.error = YAML_COMPOSER_ERROR;
-    parser.context = context;
+    parser.context = Some(context);
     parser.context_mark = context_mark;
-    parser.problem = problem;
+    parser.problem = Some(problem);
     parser.problem_mark = problem_mark;
     Err(())
 }
@@ -199,9 +199,9 @@ unsafe fn yaml_parser_register_anchor(
             yaml_free(anchor as *mut libc::c_void);
             return yaml_parser_set_composer_error_context(
                 parser,
-                b"found duplicate anchor; first occurrence\0" as *const u8 as *const libc::c_char,
+                "found duplicate anchor; first occurrence",
                 (*alias_data).mark,
-                b"second occurrence\0" as *const u8 as *const libc::c_char,
+                "second occurrence",
                 (*data).mark,
             );
         }
@@ -281,11 +281,7 @@ unsafe fn yaml_parser_load_alias(
         alias_data = alias_data.wrapping_offset(1);
     }
     yaml_free(anchor as *mut libc::c_void);
-    yaml_parser_set_composer_error(
-        parser,
-        b"found undefined alias\0" as *const u8 as *const libc::c_char,
-        (*event).start_mark,
-    )
+    yaml_parser_set_composer_error(parser, "found undefined alias", (*event).start_mark)
 }
 
 unsafe fn yaml_parser_load_scalar(
