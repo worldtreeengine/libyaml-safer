@@ -190,7 +190,6 @@ pub enum yaml_token_type_t {
 }
 
 /// The token structure.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_token_t {
@@ -378,7 +377,6 @@ pub enum yaml_event_type_t {
 }
 
 /// The event structure.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_event_t {
@@ -706,7 +704,6 @@ pub struct yaml_node_pair_t {
 }
 
 /// The document structure.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_document_t {
@@ -850,7 +847,6 @@ pub struct yaml_alias_data_t {
 ///
 /// All members are internal. Manage the structure using the `yaml_parser_`
 /// family of functions.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_parser_t {
@@ -1057,7 +1053,6 @@ pub(crate) struct yaml_anchors_t {
 ///
 /// All members are internal. Manage the structure using the `yaml_emitter_`
 /// family of functions.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_emitter_t {

@@ -478,13 +478,11 @@ macro_rules! ENQUEUE {
 }
 
 macro_rules! DEQUEUE {
-    ($queue:expr) => {
-        *{
-            let head = $queue.head;
-            $queue.head = $queue.head.wrapping_offset(1);
-            head
-        }
-    };
+    ($queue:expr) => {{
+        let head = $queue.head;
+        $queue.head = $queue.head.wrapping_offset(1);
+        core::ptr::read(head)
+    }};
 }
 
 macro_rules! QUEUE_INSERT {

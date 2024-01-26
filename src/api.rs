@@ -183,7 +183,7 @@ pub unsafe fn yaml_parser_delete(parser: &mut yaml_parser_t) {
     BUFFER_DEL!(parser.raw_buffer);
     BUFFER_DEL!(parser.buffer);
     while !QUEUE_EMPTY!(parser.tokens) {
-        yaml_token_delete(addr_of_mut!(DEQUEUE!(parser.tokens)));
+        yaml_token_delete(&mut DEQUEUE!(parser.tokens));
     }
     QUEUE_DEL!(parser.tokens);
     STACK_DEL!(parser.indents);

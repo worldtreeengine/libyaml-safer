@@ -405,8 +405,6 @@ unsafe fn yaml_parser_roll_indent(
     type_: yaml_token_type_t,
     mark: yaml_mark_t,
 ) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     if parser.flow_level != 0 {
         return Ok(());
     }
@@ -417,17 +415,17 @@ unsafe fn yaml_parser_roll_indent(
             return Err(());
         }
         parser.indent = column as libc::c_int;
-        *token = yaml_token_t::default();
-        (*token).type_ = type_;
-        (*token).start_mark = mark;
-        (*token).end_mark = mark;
+        let mut token = yaml_token_t::default();
+        token.type_ = type_;
+        token.start_mark = mark;
+        token.end_mark = mark;
         if number == -1_i64 {
-            ENQUEUE!(parser.tokens, *token);
+            ENQUEUE!(parser.tokens, token);
         } else {
             QUEUE_INSERT!(
                 parser.tokens,
                 (number as libc::c_ulong).wrapping_sub(parser.tokens_parsed),
-                *token
+                token
             );
         }
     }
@@ -681,18 +679,16 @@ unsafe fn yaml_parser_fetch_key(parser: &mut yaml_parser_t) -> Result<(), ()> {
 }
 
 unsafe fn yaml_parser_fetch_value(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     let simple_key: *mut yaml_simple_key_t = parser.simple_keys.top.wrapping_offset(-1_isize);
     if (*simple_key).possible {
-        *token = yaml_token_t::default();
-        (*token).type_ = YAML_KEY_TOKEN;
-        (*token).start_mark = (*simple_key).mark;
-        (*token).end_mark = (*simple_key).mark;
+        let mut token = yaml_token_t::default();
+        token.type_ = YAML_KEY_TOKEN;
+        token.start_mark = (*simple_key).mark;
+        token.end_mark = (*simple_key).mark;
         QUEUE_INSERT!(
             parser.tokens,
             ((*simple_key).token_number).wrapping_sub(parser.tokens_parsed),
-            *token
+            token
         );
         if yaml_parser_roll_indent(
             parser,
@@ -736,11 +732,11 @@ unsafe fn yaml_parser_fetch_value(parser: &mut yaml_parser_t) -> Result<(), ()> 
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
     let end_mark: yaml_mark_t = parser.mark;
-    *token = yaml_token_t::default();
-    (*token).type_ = YAML_VALUE_TOKEN;
-    (*token).start_mark = start_mark;
-    (*token).end_mark = end_mark;
-    ENQUEUE!(parser.tokens, *token);
+    let mut token = yaml_token_t::default();
+    token.type_ = YAML_VALUE_TOKEN;
+    token.start_mark = start_mark;
+    token.end_mark = end_mark;
+    ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
