@@ -11,8 +11,7 @@ unsafe fn yaml_emitter_set_writer_error(
     problem: *const libc::c_char,
 ) -> Result<(), ()> {
     emitter.error = YAML_WRITER_ERROR;
-    let fresh0 = addr_of_mut!(emitter.problem);
-    *fresh0 = problem;
+    emitter.problem = problem;
     Err(())
 }
 
@@ -20,10 +19,8 @@ unsafe fn yaml_emitter_set_writer_error(
 pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     __assert!((emitter.write_handler).is_some());
     __assert!(emitter.encoding != YAML_ANY_ENCODING);
-    let fresh1 = addr_of_mut!(emitter.buffer.last);
-    *fresh1 = emitter.buffer.pointer;
-    let fresh2 = addr_of_mut!(emitter.buffer.pointer);
-    *fresh2 = emitter.buffer.start;
+    emitter.buffer.last = emitter.buffer.pointer;
+    emitter.buffer.pointer = emitter.buffer.start;
     if emitter.buffer.start == emitter.buffer.last {
         return Ok(());
     }
@@ -34,10 +31,8 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
             emitter.buffer.last.c_offset_from(emitter.buffer.start) as size_t,
         ) != 0
         {
-            let fresh3 = addr_of_mut!(emitter.buffer.last);
-            *fresh3 = emitter.buffer.start;
-            let fresh4 = addr_of_mut!(emitter.buffer.pointer);
-            *fresh4 = emitter.buffer.start;
+            emitter.buffer.last = emitter.buffer.start;
+            emitter.buffer.pointer = emitter.buffer.start;
             return Ok(());
         } else {
             return yaml_emitter_set_writer_error(
@@ -89,13 +84,13 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
             value = (value << 6).force_add((octet & 0x3F) as libc::c_uint);
             k = k.force_add(1);
         }
-        let fresh5 = addr_of_mut!(emitter.buffer.pointer);
+        let fresh5 = &mut emitter.buffer.pointer;
         *fresh5 = (*fresh5).wrapping_offset(width as isize);
         if value < 0x10000 {
             *emitter.raw_buffer.last.wrapping_offset(high as isize) = (value >> 8) as libc::c_uchar;
             *emitter.raw_buffer.last.wrapping_offset(low as isize) =
                 (value & 0xFF) as libc::c_uchar;
-            let fresh6 = addr_of_mut!(emitter.raw_buffer.last);
+            let fresh6 = &mut emitter.raw_buffer.last;
             *fresh6 = (*fresh6).wrapping_offset(2_isize);
         } else {
             value = value.wrapping_sub(0x10000);
@@ -112,7 +107,7 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
                 .raw_buffer
                 .last
                 .wrapping_offset((low + 2) as isize) = (value & 0xFF) as libc::c_uchar;
-            let fresh7 = addr_of_mut!(emitter.raw_buffer.last);
+            let fresh7 = &mut emitter.raw_buffer.last;
             *fresh7 = (*fresh7).wrapping_offset(4_isize);
         }
     }
@@ -125,14 +120,10 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
             .c_offset_from(emitter.raw_buffer.start) as size_t,
     ) != 0
     {
-        let fresh8 = addr_of_mut!(emitter.buffer.last);
-        *fresh8 = emitter.buffer.start;
-        let fresh9 = addr_of_mut!(emitter.buffer.pointer);
-        *fresh9 = emitter.buffer.start;
-        let fresh10 = addr_of_mut!(emitter.raw_buffer.last);
-        *fresh10 = emitter.raw_buffer.start;
-        let fresh11 = addr_of_mut!(emitter.raw_buffer.pointer);
-        *fresh11 = emitter.raw_buffer.start;
+        emitter.buffer.last = emitter.buffer.start;
+        emitter.buffer.pointer = emitter.buffer.start;
+        emitter.raw_buffer.last = emitter.raw_buffer.start;
+        emitter.raw_buffer.pointer = emitter.raw_buffer.start;
         Ok(())
     } else {
         yaml_emitter_set_writer_error(

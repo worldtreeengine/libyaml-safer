@@ -35,16 +35,11 @@ struct loader_ctx {
 /// the parser.
 pub unsafe fn yaml_parser_load(
     parser: &mut yaml_parser_t,
-    document: *mut yaml_document_t,
+    document: &mut yaml_document_t,
 ) -> Result<(), ()> {
     let current_block: u64;
     let mut event = yaml_event_t::default();
-    __assert!(!document.is_null());
-    memset(
-        document as *mut libc::c_void,
-        0,
-        size_of::<yaml_document_t>() as libc::c_ulong,
-    );
+    *document = core::mem::MaybeUninit::zeroed().assume_init();
     STACK_INIT!((*document).nodes, yaml_node_t);
     if !parser.stream_start_produced {
         if let Err(()) = yaml_parser_parse(parser, &mut event) {
@@ -65,20 +60,17 @@ pub unsafe fn yaml_parser_load(
                 return Ok(());
             }
             STACK_INIT!(parser.aliases, yaml_alias_data_t);
-            let fresh6 = addr_of_mut!(parser.document);
-            *fresh6 = document;
+            parser.document = document;
             if let Ok(()) = yaml_parser_load_document(parser, &mut event) {
                 yaml_parser_delete_aliases(parser);
-                let fresh7 = addr_of_mut!(parser.document);
-                *fresh7 = ptr::null_mut::<yaml_document_t>();
+                parser.document = ptr::null_mut::<yaml_document_t>();
                 return Ok(());
             }
         }
     }
     yaml_parser_delete_aliases(parser);
     yaml_document_delete(document);
-    let fresh8 = addr_of_mut!(parser.document);
-    *fresh8 = ptr::null_mut::<yaml_document_t>();
+    parser.document = ptr::null_mut::<yaml_document_t>();
     Err(())
 }
 
@@ -88,8 +80,7 @@ unsafe fn yaml_parser_set_composer_error(
     problem_mark: yaml_mark_t,
 ) -> Result<(), ()> {
     parser.error = YAML_COMPOSER_ERROR;
-    let fresh9 = addr_of_mut!(parser.problem);
-    *fresh9 = problem;
+    parser.problem = problem;
     parser.problem_mark = problem_mark;
     Err(())
 }
@@ -102,11 +93,9 @@ unsafe fn yaml_parser_set_composer_error_context(
     problem_mark: yaml_mark_t,
 ) -> Result<(), ()> {
     parser.error = YAML_COMPOSER_ERROR;
-    let fresh10 = addr_of_mut!(parser.context);
-    *fresh10 = context;
+    parser.context = context;
     parser.context_mark = context_mark;
-    let fresh11 = addr_of_mut!(parser.problem);
-    *fresh11 = problem;
+    parser.problem = problem;
     parser.problem_mark = problem_mark;
     Err(())
 }
@@ -128,12 +117,9 @@ unsafe fn yaml_parser_load_document(
         top: ptr::null_mut::<libc::c_int>(),
     };
     __assert!(event.type_ == YAML_DOCUMENT_START_EVENT);
-    let fresh16 = addr_of_mut!((*parser.document).version_directive);
-    *fresh16 = event.data.document_start.version_directive;
-    let fresh17 = addr_of_mut!((*parser.document).tag_directives.start);
-    *fresh17 = event.data.document_start.tag_directives.start;
-    let fresh18 = addr_of_mut!((*parser.document).tag_directives.end);
-    *fresh18 = event.data.document_start.tag_directives.end;
+    (*parser.document).version_directive = event.data.document_start.version_directive;
+    (*parser.document).tag_directives.start = event.data.document_start.tag_directives.start;
+    (*parser.document).tag_directives.end = event.data.document_start.tag_directives.end;
     (*parser.document).start_implicit = event.data.document_start.implicit;
     (*parser.document).start_mark = event.start_mark;
     STACK_INIT!(ctx, libc::c_int);

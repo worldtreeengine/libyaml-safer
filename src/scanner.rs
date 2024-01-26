@@ -137,7 +137,7 @@ pub unsafe fn yaml_parser_scan(
     }
     *token = DEQUEUE!(parser.tokens);
     parser.token_available = false;
-    let fresh2 = addr_of_mut!(parser.tokens_parsed);
+    let fresh2 = &mut parser.tokens_parsed;
     *fresh2 = (*fresh2).force_add(1);
     if (*token).type_ == YAML_STREAM_END_TOKEN {
         parser.stream_end_produced = true;
@@ -152,11 +152,9 @@ unsafe fn yaml_parser_set_scanner_error(
     problem: *const libc::c_char,
 ) {
     parser.error = YAML_SCANNER_ERROR;
-    let fresh3 = addr_of_mut!(parser.context);
-    *fresh3 = context;
+    parser.context = context;
     parser.context_mark = context_mark;
-    let fresh4 = addr_of_mut!(parser.problem);
-    *fresh4 = problem;
+    parser.problem = problem;
     parser.problem_mark = parser.mark;
 }
 
@@ -390,14 +388,14 @@ unsafe fn yaml_parser_increase_flow_level(parser: &mut yaml_parser_t) -> Result<
         parser.error = YAML_MEMORY_ERROR;
         return Err(());
     }
-    let fresh7 = addr_of_mut!(parser.flow_level);
+    let fresh7 = &mut parser.flow_level;
     *fresh7 += 1;
     Ok(())
 }
 
 unsafe fn yaml_parser_decrease_flow_level(parser: &mut yaml_parser_t) {
     if parser.flow_level != 0 {
-        let fresh8 = addr_of_mut!(parser.flow_level);
+        let fresh8 = &mut parser.flow_level;
         *fresh8 -= 1;
         let _ = POP!(parser.simple_keys);
     }
@@ -485,7 +483,7 @@ unsafe fn yaml_parser_fetch_stream_end(parser: &mut yaml_parser_t) -> Result<(),
     let token = token.as_mut_ptr();
     if parser.mark.column != 0_u64 {
         parser.mark.column = 0_u64;
-        let fresh22 = addr_of_mut!(parser.mark.line);
+        let fresh22 = &mut parser.mark.line;
         *fresh22 = (*fresh22).force_add(1);
     }
     yaml_parser_unroll_indent(parser, -1_i64);
@@ -929,10 +927,8 @@ unsafe fn yaml_parser_scan_directive(
                 (*token).type_ = YAML_TAG_DIRECTIVE_TOKEN;
                 (*token).start_mark = start_mark;
                 (*token).end_mark = end_mark;
-                let fresh112 = addr_of_mut!((*token).data.tag_directive.handle);
-                *fresh112 = handle;
-                let fresh113 = addr_of_mut!((*token).data.tag_directive.prefix);
-                *fresh113 = prefix;
+                (*token).data.tag_directive.handle = handle;
+                (*token).data.tag_directive.prefix = prefix;
                 current_block = 17407779659766490442;
             }
         } else {
@@ -1285,15 +1281,13 @@ unsafe fn yaml_parser_scan_anchor(
                     (*token).type_ = YAML_ANCHOR_TOKEN;
                     (*token).start_mark = start_mark;
                     (*token).end_mark = end_mark;
-                    let fresh220 = addr_of_mut!((*token).data.anchor.value);
-                    *fresh220 = string.start;
+                    (*token).data.anchor.value = string.start;
                 } else {
                     *token = yaml_token_t::default();
                     (*token).type_ = YAML_ALIAS_TOKEN;
                     (*token).start_mark = start_mark;
                     (*token).end_mark = end_mark;
-                    let fresh221 = addr_of_mut!((*token).data.alias.value);
-                    *fresh221 = string.start;
+                    (*token).data.alias.value = string.start;
                 }
                 return Ok(());
             }
@@ -1412,10 +1406,8 @@ unsafe fn yaml_parser_scan_tag(
                     (*token).type_ = YAML_TAG_TOKEN;
                     (*token).start_mark = start_mark;
                     (*token).end_mark = end_mark;
-                    let fresh234 = addr_of_mut!((*token).data.tag.handle);
-                    *fresh234 = handle;
-                    let fresh235 = addr_of_mut!((*token).data.tag.suffix);
-                    *fresh235 = suffix;
+                    (*token).data.tag.handle = handle;
+                    (*token).data.tag.suffix = suffix;
                     return Ok(());
                 }
             }
@@ -1674,7 +1666,7 @@ unsafe fn yaml_parser_scan_uri_escapes(
             );
             return Err(());
         }
-        let fresh368 = addr_of_mut!((*string).pointer);
+        let fresh368 = &mut (*string).pointer;
         let fresh369 = *fresh368;
         *fresh368 = (*fresh368).wrapping_offset(1);
         *fresh369 = octet;
@@ -2358,8 +2350,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
         (*token).type_ = YAML_SCALAR_TOKEN;
         (*token).start_mark = start_mark;
         (*token).end_mark = end_mark;
-        let fresh716 = addr_of_mut!((*token).data.scalar.value);
-        *fresh716 = string.start;
+        (*token).data.scalar.value = string.start;
         (*token).data.scalar.length = string.pointer.c_offset_from(string.start) as size_t;
         (*token).data.scalar.style = if single {
             YAML_SINGLE_QUOTED_SCALAR_STYLE
@@ -2535,8 +2526,7 @@ unsafe fn yaml_parser_scan_plain_scalar(
         (*token).type_ = YAML_SCALAR_TOKEN;
         (*token).start_mark = start_mark;
         (*token).end_mark = end_mark;
-        let fresh842 = addr_of_mut!((*token).data.scalar.value);
-        *fresh842 = string.start;
+        (*token).data.scalar.value = string.start;
         (*token).data.scalar.length = string.pointer.c_offset_from(string.start) as size_t;
         (*token).data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
         if leading_blanks {

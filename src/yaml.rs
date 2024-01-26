@@ -1140,6 +1140,7 @@ pub struct yaml_emitter_t {
     /// The last assigned anchor id.
     pub(crate) last_anchor_id: libc::c_int,
     /// The currently emitted document.
+    // NOTE: This is owned by the emitter.
     pub(crate) document: *mut yaml_document_t,
 }
 

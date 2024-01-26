@@ -33,11 +33,11 @@ unsafe fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
 
 unsafe fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
     FLUSH(emitter)?;
-    let fresh40 = addr_of_mut!(emitter.buffer.pointer);
+    let fresh40 = &mut emitter.buffer.pointer;
     let fresh41 = *fresh40;
     *fresh40 = (*fresh40).wrapping_offset(1);
     *fresh41 = value;
-    let fresh42 = addr_of_mut!(emitter.column);
+    let fresh42 = &mut emitter.column;
     *fresh42 += 1;
     Ok(())
 }
@@ -45,27 +45,27 @@ unsafe fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
 unsafe fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     FLUSH(emitter)?;
     if emitter.line_break == YAML_CR_BREAK {
-        let fresh62 = addr_of_mut!(emitter.buffer.pointer);
+        let fresh62 = &mut emitter.buffer.pointer;
         let fresh63 = *fresh62;
         *fresh62 = (*fresh62).wrapping_offset(1);
         *fresh63 = b'\r';
     } else if emitter.line_break == YAML_LN_BREAK {
-        let fresh64 = addr_of_mut!(emitter.buffer.pointer);
+        let fresh64 = &mut emitter.buffer.pointer;
         let fresh65 = *fresh64;
         *fresh64 = (*fresh64).wrapping_offset(1);
         *fresh65 = b'\n';
     } else if emitter.line_break == YAML_CRLN_BREAK {
-        let fresh66 = addr_of_mut!(emitter.buffer.pointer);
+        let fresh66 = &mut emitter.buffer.pointer;
         let fresh67 = *fresh66;
         *fresh66 = (*fresh66).wrapping_offset(1);
         *fresh67 = b'\r';
-        let fresh68 = addr_of_mut!(emitter.buffer.pointer);
+        let fresh68 = &mut emitter.buffer.pointer;
         let fresh69 = *fresh68;
         *fresh68 = (*fresh68).wrapping_offset(1);
         *fresh69 = b'\n';
     };
     emitter.column = 0;
-    let fresh70 = addr_of_mut!(emitter.line);
+    let fresh70 = &mut emitter.line;
     *fresh70 += 1;
     Ok(())
 }
@@ -73,7 +73,7 @@ unsafe fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
 unsafe fn WRITE(emitter: &mut yaml_emitter_t, string: &mut yaml_string_t) -> Result<(), ()> {
     FLUSH(emitter)?;
     COPY!(emitter.buffer, *string);
-    let fresh107 = addr_of_mut!(emitter.column);
+    let fresh107 = &mut emitter.column;
     *fresh107 += 1;
     Ok(())
 }
@@ -86,7 +86,7 @@ unsafe fn WRITE_BREAK(emitter: &mut yaml_emitter_t, string: &mut yaml_string_t) 
     } else {
         COPY!(emitter.buffer, *string);
         emitter.column = 0;
-        let fresh300 = addr_of_mut!(emitter.line);
+        let fresh300 = &mut emitter.line;
         *fresh300 += 1;
     }
     Ok(())
@@ -97,8 +97,7 @@ unsafe fn yaml_emitter_set_emitter_error(
     problem: *const libc::c_char,
 ) -> Result<(), ()> {
     emitter.error = YAML_EMITTER_ERROR;
-    let fresh0 = addr_of_mut!(emitter.problem);
-    *fresh0 = problem;
+    emitter.problem = problem;
     Err(())
 }
 
@@ -513,11 +512,11 @@ unsafe fn yaml_emitter_emit_flow_sequence_item(
             false,
         )?;
         yaml_emitter_increase_indent(emitter, true, false);
-        let fresh12 = addr_of_mut!(emitter.flow_level);
+        let fresh12 = &mut emitter.flow_level;
         *fresh12 += 1;
     }
     if (*event).type_ == YAML_SEQUENCE_END_EVENT {
-        let fresh13 = addr_of_mut!(emitter.flow_level);
+        let fresh13 = &mut emitter.flow_level;
         *fresh13 -= 1;
         emitter.indent = POP!(emitter.indents);
         if emitter.canonical && !first {
@@ -570,14 +569,14 @@ unsafe fn yaml_emitter_emit_flow_mapping_key(
             false,
         )?;
         yaml_emitter_increase_indent(emitter, true, false);
-        let fresh18 = addr_of_mut!(emitter.flow_level);
+        let fresh18 = &mut emitter.flow_level;
         *fresh18 += 1;
     }
     if (*event).type_ == YAML_MAPPING_END_EVENT {
         if STACK_EMPTY!(emitter.indents) {
             return Err(());
         }
-        let fresh19 = addr_of_mut!(emitter.flow_level);
+        let fresh19 = &mut emitter.flow_level;
         *fresh19 -= 1;
         emitter.indent = POP!(emitter.indents);
         if emitter.canonical && !first {
@@ -944,8 +943,7 @@ unsafe fn yaml_emitter_select_scalar_style(
         }
     }
     if no_tag && !(*event).data.scalar.quoted_implicit && style != YAML_PLAIN_SCALAR_STYLE {
-        let fresh46 = addr_of_mut!(emitter.tag_data.handle);
-        *fresh46 = b"!\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
+        emitter.tag_data.handle = b"!\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
         emitter.tag_data.handle_length = 1_u64;
     }
     emitter.scalar_data.style = style;
@@ -1154,8 +1152,7 @@ unsafe fn yaml_emitter_analyze_anchor(
         }
         MOVE!(string);
     }
-    let fresh47 = addr_of_mut!(emitter.anchor_data.anchor);
-    *fresh47 = string.start;
+    emitter.anchor_data.anchor = string.start;
     emitter.anchor_data.anchor_length = string.end.c_offset_from(string.start) as size_t;
     emitter.anchor_data.alias = alias;
     Ok(())
@@ -1184,11 +1181,9 @@ unsafe fn yaml_emitter_analyze_tag(
                 prefix_length,
             ) == 0
         {
-            let fresh48 = addr_of_mut!(emitter.tag_data.handle);
-            *fresh48 = (*tag_directive).handle;
+            emitter.tag_data.handle = (*tag_directive).handle;
             emitter.tag_data.handle_length = strlen((*tag_directive).handle as *mut libc::c_char);
-            let fresh49 = addr_of_mut!(emitter.tag_data.suffix);
-            *fresh49 = string.start.wrapping_offset(prefix_length as isize);
+            emitter.tag_data.suffix = string.start.wrapping_offset(prefix_length as isize);
             emitter.tag_data.suffix_length = (string.end.c_offset_from(string.start)
                 as libc::c_ulong)
                 .wrapping_sub(prefix_length);
@@ -1196,8 +1191,7 @@ unsafe fn yaml_emitter_analyze_tag(
         }
         tag_directive = tag_directive.wrapping_offset(1);
     }
-    let fresh50 = addr_of_mut!(emitter.tag_data.suffix);
-    *fresh50 = string.start;
+    emitter.tag_data.suffix = string.start;
     emitter.tag_data.suffix_length = string.end.c_offset_from(string.start) as size_t;
     Ok(())
 }
@@ -1222,8 +1216,7 @@ unsafe fn yaml_emitter_analyze_scalar(
     let mut previous_space = false;
     let mut previous_break = false;
     let mut string = STRING_ASSIGN!(value, length);
-    let fresh51 = addr_of_mut!(emitter.scalar_data.value);
-    *fresh51 = value;
+    emitter.scalar_data.value = value;
     emitter.scalar_data.length = length;
     if string.start == string.end {
         emitter.scalar_data.multiline = false;
@@ -1374,17 +1367,13 @@ unsafe fn yaml_emitter_analyze_event(
     emitter: &mut yaml_emitter_t,
     event: *mut yaml_event_t,
 ) -> Result<(), ()> {
-    let fresh52 = addr_of_mut!(emitter.anchor_data.anchor);
-    *fresh52 = ptr::null_mut::<yaml_char_t>();
+    emitter.anchor_data.anchor = ptr::null_mut::<yaml_char_t>();
     emitter.anchor_data.anchor_length = 0_u64;
-    let fresh53 = addr_of_mut!(emitter.tag_data.handle);
-    *fresh53 = ptr::null_mut::<yaml_char_t>();
+    emitter.tag_data.handle = ptr::null_mut::<yaml_char_t>();
     emitter.tag_data.handle_length = 0_u64;
-    let fresh54 = addr_of_mut!(emitter.tag_data.suffix);
-    *fresh54 = ptr::null_mut::<yaml_char_t>();
+    emitter.tag_data.suffix = ptr::null_mut::<yaml_char_t>();
     emitter.tag_data.suffix_length = 0_u64;
-    let fresh55 = addr_of_mut!(emitter.scalar_data.value);
-    *fresh55 = ptr::null_mut::<yaml_char_t>();
+    emitter.scalar_data.value = ptr::null_mut::<yaml_char_t>();
     emitter.scalar_data.length = 0_u64;
     match (*event).type_ {
         YAML_ALIAS_EVENT => yaml_emitter_analyze_anchor(emitter, (*event).data.alias.anchor, true),
@@ -1433,15 +1422,15 @@ unsafe fn yaml_emitter_analyze_event(
 
 unsafe fn yaml_emitter_write_bom(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     FLUSH(emitter)?;
-    let fresh56 = addr_of_mut!(emitter.buffer.pointer);
+    let fresh56 = &mut emitter.buffer.pointer;
     let fresh57 = *fresh56;
     *fresh56 = (*fresh56).wrapping_offset(1);
     *fresh57 = b'\xEF';
-    let fresh58 = addr_of_mut!(emitter.buffer.pointer);
+    let fresh58 = &mut emitter.buffer.pointer;
     let fresh59 = *fresh58;
     *fresh58 = (*fresh58).wrapping_offset(1);
     *fresh59 = b'\xBB';
-    let fresh60 = addr_of_mut!(emitter.buffer.pointer);
+    let fresh60 = &mut emitter.buffer.pointer;
     let fresh61 = *fresh60;
     *fresh60 = (*fresh60).wrapping_offset(1);
     *fresh61 = b'\xBF';

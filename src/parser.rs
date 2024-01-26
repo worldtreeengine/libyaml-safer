@@ -43,11 +43,9 @@ unsafe fn PEEK_TOKEN(parser: &mut yaml_parser_t) -> *mut yaml_token_t {
 
 unsafe fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
     parser.token_available = false;
-    let fresh3 = addr_of_mut!(parser.tokens_parsed);
-    *fresh3 = (*fresh3).wrapping_add(1);
+    parser.tokens_parsed = parser.tokens_parsed.wrapping_add(1);
     parser.stream_end_produced = (*parser.tokens.head).type_ == YAML_STREAM_END_TOKEN;
-    let fresh4 = addr_of_mut!(parser.tokens.head);
-    *fresh4 = (*fresh4).wrapping_offset(1);
+    parser.tokens.head = parser.tokens.head.wrapping_offset(1);
 }
 
 /// Parse the input stream and produce the next parsing event.
@@ -82,8 +80,7 @@ unsafe fn yaml_parser_set_parser_error(
     problem_mark: yaml_mark_t,
 ) {
     parser.error = YAML_PARSER_ERROR;
-    let fresh0 = addr_of_mut!(parser.problem);
-    *fresh0 = problem;
+    parser.problem = problem;
     parser.problem_mark = problem_mark;
 }
 
@@ -95,11 +92,9 @@ unsafe fn yaml_parser_set_parser_error_context(
     problem_mark: yaml_mark_t,
 ) {
     parser.error = YAML_PARSER_ERROR;
-    let fresh1 = addr_of_mut!(parser.context);
-    *fresh1 = context;
+    parser.context = context;
     parser.context_mark = context_mark;
-    let fresh2 = addr_of_mut!(parser.problem);
-    *fresh2 = problem;
+    parser.problem = problem;
     parser.problem_mark = problem_mark;
 }
 
@@ -242,12 +237,9 @@ unsafe fn yaml_parser_parse_document_start(
         event.type_ = YAML_DOCUMENT_START_EVENT;
         event.start_mark = (*token).start_mark;
         event.end_mark = (*token).start_mark;
-        let fresh9 = addr_of_mut!(event.data.document_start.version_directive);
-        *fresh9 = ptr::null_mut::<yaml_version_directive_t>();
-        let fresh10 = addr_of_mut!(event.data.document_start.tag_directives.start);
-        *fresh10 = ptr::null_mut::<yaml_tag_directive_t>();
-        let fresh11 = addr_of_mut!(event.data.document_start.tag_directives.end);
-        *fresh11 = ptr::null_mut::<yaml_tag_directive_t>();
+        event.data.document_start.version_directive = ptr::null_mut();
+        event.data.document_start.tag_directives.start = ptr::null_mut();
+        event.data.document_start.tag_directives.end = ptr::null_mut();
         event.data.document_start.implicit = true;
         Ok(())
     } else if (*token).type_ != YAML_STREAM_END_TOKEN {
@@ -275,12 +267,9 @@ unsafe fn yaml_parser_parse_document_start(
                 event.type_ = YAML_DOCUMENT_START_EVENT;
                 event.start_mark = start_mark;
                 event.end_mark = end_mark;
-                let fresh14 = addr_of_mut!(event.data.document_start.version_directive);
-                *fresh14 = version_directive;
-                let fresh15 = addr_of_mut!(event.data.document_start.tag_directives.start);
-                *fresh15 = tag_directives.start;
-                let fresh16 = addr_of_mut!(event.data.document_start.tag_directives.end);
-                *fresh16 = tag_directives.end;
+                event.data.document_start.version_directive = version_directive;
+                event.data.document_start.tag_directives.start = tag_directives.start;
+                event.data.document_start.tag_directives.end = tag_directives.end;
                 event.data.document_start.implicit = false;
                 SKIP_TOKEN(parser);
                 tag_directives.end = ptr::null_mut::<yaml_tag_directive_t>();
@@ -389,8 +378,7 @@ unsafe fn yaml_parser_parse_node(
         event.type_ = YAML_ALIAS_EVENT;
         event.start_mark = (*token).start_mark;
         event.end_mark = (*token).end_mark;
-        let fresh26 = addr_of_mut!(event.data.alias.anchor);
-        *fresh26 = (*token).data.alias.value;
+        event.data.alias.anchor = (*token).data.alias.value;
         SKIP_TOKEN(parser);
         Ok(())
     } else {
@@ -519,10 +507,8 @@ unsafe fn yaml_parser_parse_node(
                     event.type_ = YAML_SEQUENCE_START_EVENT;
                     event.start_mark = start_mark;
                     event.end_mark = end_mark;
-                    let fresh37 = addr_of_mut!(event.data.sequence_start.anchor);
-                    *fresh37 = anchor;
-                    let fresh38 = addr_of_mut!(event.data.sequence_start.tag);
-                    *fresh38 = tag;
+                    event.data.sequence_start.anchor = anchor;
+                    event.data.sequence_start.tag = tag;
                     event.data.sequence_start.implicit = implicit;
                     event.data.sequence_start.style = YAML_BLOCK_SEQUENCE_STYLE;
                     return Ok(());
@@ -546,12 +532,9 @@ unsafe fn yaml_parser_parse_node(
                     event.type_ = YAML_SCALAR_EVENT;
                     event.start_mark = start_mark;
                     event.end_mark = end_mark;
-                    let fresh40 = addr_of_mut!(event.data.scalar.anchor);
-                    *fresh40 = anchor;
-                    let fresh41 = addr_of_mut!(event.data.scalar.tag);
-                    *fresh41 = tag;
-                    let fresh42 = addr_of_mut!(event.data.scalar.value);
-                    *fresh42 = (*token).data.scalar.value;
+                    event.data.scalar.anchor = anchor;
+                    event.data.scalar.tag = tag;
+                    event.data.scalar.value = (*token).data.scalar.value;
                     event.data.scalar.length = (*token).data.scalar.length;
                     event.data.scalar.plain_implicit = plain_implicit;
                     event.data.scalar.quoted_implicit = quoted_implicit;
@@ -565,10 +548,8 @@ unsafe fn yaml_parser_parse_node(
                     event.type_ = YAML_SEQUENCE_START_EVENT;
                     event.start_mark = start_mark;
                     event.end_mark = end_mark;
-                    let fresh45 = addr_of_mut!(event.data.sequence_start.anchor);
-                    *fresh45 = anchor;
-                    let fresh46 = addr_of_mut!(event.data.sequence_start.tag);
-                    *fresh46 = tag;
+                    event.data.sequence_start.anchor = anchor;
+                    event.data.sequence_start.tag = tag;
                     event.data.sequence_start.implicit = implicit;
                     event.data.sequence_start.style = YAML_FLOW_SEQUENCE_STYLE;
                     return Ok(());
@@ -579,10 +560,8 @@ unsafe fn yaml_parser_parse_node(
                     event.type_ = YAML_MAPPING_START_EVENT;
                     event.start_mark = start_mark;
                     event.end_mark = end_mark;
-                    let fresh47 = addr_of_mut!(event.data.mapping_start.anchor);
-                    *fresh47 = anchor;
-                    let fresh48 = addr_of_mut!(event.data.mapping_start.tag);
-                    *fresh48 = tag;
+                    event.data.mapping_start.anchor = anchor;
+                    event.data.mapping_start.tag = tag;
                     event.data.mapping_start.implicit = implicit;
                     event.data.mapping_start.style = YAML_FLOW_MAPPING_STYLE;
                     return Ok(());
@@ -593,10 +572,8 @@ unsafe fn yaml_parser_parse_node(
                     event.type_ = YAML_SEQUENCE_START_EVENT;
                     event.start_mark = start_mark;
                     event.end_mark = end_mark;
-                    let fresh49 = addr_of_mut!(event.data.sequence_start.anchor);
-                    *fresh49 = anchor;
-                    let fresh50 = addr_of_mut!(event.data.sequence_start.tag);
-                    *fresh50 = tag;
+                    event.data.sequence_start.anchor = anchor;
+                    event.data.sequence_start.tag = tag;
                     event.data.sequence_start.implicit = implicit;
                     event.data.sequence_start.style = YAML_BLOCK_SEQUENCE_STYLE;
                     return Ok(());
@@ -607,10 +584,8 @@ unsafe fn yaml_parser_parse_node(
                     event.type_ = YAML_MAPPING_START_EVENT;
                     event.start_mark = start_mark;
                     event.end_mark = end_mark;
-                    let fresh51 = addr_of_mut!(event.data.mapping_start.anchor);
-                    *fresh51 = anchor;
-                    let fresh52 = addr_of_mut!(event.data.mapping_start.tag);
-                    *fresh52 = tag;
+                    event.data.mapping_start.anchor = anchor;
+                    event.data.mapping_start.tag = tag;
                     event.data.mapping_start.implicit = implicit;
                     event.data.mapping_start.style = YAML_BLOCK_MAPPING_STYLE;
                     return Ok(());
@@ -622,12 +597,9 @@ unsafe fn yaml_parser_parse_node(
                     event.type_ = YAML_SCALAR_EVENT;
                     event.start_mark = start_mark;
                     event.end_mark = end_mark;
-                    let fresh54 = addr_of_mut!(event.data.scalar.anchor);
-                    *fresh54 = anchor;
-                    let fresh55 = addr_of_mut!(event.data.scalar.tag);
-                    *fresh55 = tag;
-                    let fresh56 = addr_of_mut!(event.data.scalar.value);
-                    *fresh56 = value;
+                    event.data.scalar.anchor = anchor;
+                    event.data.scalar.tag = tag;
+                    event.data.scalar.value = value;
                     event.data.scalar.length = 0_u64;
                     event.data.scalar.plain_implicit = implicit;
                     event.data.scalar.quoted_implicit = false;
@@ -871,10 +843,8 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
             event.type_ = YAML_MAPPING_START_EVENT;
             event.start_mark = (*token).start_mark;
             event.end_mark = (*token).end_mark;
-            let fresh99 = addr_of_mut!(event.data.mapping_start.anchor);
-            *fresh99 = ptr::null_mut::<yaml_char_t>();
-            let fresh100 = addr_of_mut!(event.data.mapping_start.tag);
-            *fresh100 = ptr::null_mut::<yaml_char_t>();
+            event.data.mapping_start.anchor = ptr::null_mut();
+            event.data.mapping_start.tag = ptr::null_mut();
             event.data.mapping_start.implicit = true;
             event.data.mapping_start.style = YAML_FLOW_MAPPING_STYLE;
             SKIP_TOKEN(parser);
@@ -1069,12 +1039,9 @@ unsafe fn yaml_parser_process_empty_scalar(
     event.type_ = YAML_SCALAR_EVENT;
     event.start_mark = mark;
     event.end_mark = mark;
-    let fresh138 = addr_of_mut!(event.data.scalar.anchor);
-    *fresh138 = ptr::null_mut::<yaml_char_t>();
-    let fresh139 = addr_of_mut!(event.data.scalar.tag);
-    *fresh139 = ptr::null_mut::<yaml_char_t>();
-    let fresh140 = addr_of_mut!(event.data.scalar.value);
-    *fresh140 = value;
+    event.data.scalar.anchor = ptr::null_mut::<yaml_char_t>();
+    event.data.scalar.tag = ptr::null_mut::<yaml_char_t>();
+    event.data.scalar.value = value;
     event.data.scalar.length = 0_u64;
     event.data.scalar.plain_implicit = true;
     event.data.scalar.quoted_implicit = false;

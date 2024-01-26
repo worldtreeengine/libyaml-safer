@@ -72,8 +72,7 @@ pub unsafe fn yaml_emitter_dump(
         column: 0_u64,
     };
     __assert!(!document.is_null());
-    let fresh0 = addr_of_mut!(emitter.document);
-    *fresh0 = document;
+    emitter.document = document;
     if !emitter.opened {
         if yaml_emitter_open(emitter).is_err() {
             current_block = 5018439318894558507;
@@ -92,8 +91,7 @@ pub unsafe fn yaml_emitter_dump(
                 }
             } else {
                 __assert!(emitter.opened);
-                let fresh1 = addr_of_mut!(emitter.anchors);
-                *fresh1 = yaml_malloc(
+                emitter.anchors = yaml_malloc(
                     (size_of::<yaml_anchors_t>() as libc::c_ulong)
                         .force_mul((*document).nodes.top.c_offset_from((*document).nodes.start)
                             as libc::c_ulong),
@@ -138,9 +136,8 @@ pub unsafe fn yaml_emitter_dump(
 unsafe fn yaml_emitter_delete_document_and_anchors(emitter: &mut yaml_emitter_t) {
     let mut index: libc::c_int;
     if emitter.anchors.is_null() {
-        yaml_document_delete(emitter.document);
-        let fresh2 = addr_of_mut!(emitter.document);
-        *fresh2 = ptr::null_mut::<yaml_document_t>();
+        yaml_document_delete(&mut *emitter.document);
+        emitter.document = ptr::null_mut::<yaml_document_t>();
         return;
     }
     index = 0;
@@ -170,11 +167,9 @@ unsafe fn yaml_emitter_delete_document_and_anchors(emitter: &mut yaml_emitter_t)
     }
     STACK_DEL!((*emitter.document).nodes);
     yaml_free(emitter.anchors as *mut libc::c_void);
-    let fresh6 = addr_of_mut!(emitter.anchors);
-    *fresh6 = ptr::null_mut::<yaml_anchors_t>();
+    emitter.anchors = ptr::null_mut::<yaml_anchors_t>();
     emitter.last_anchor_id = 0;
-    let fresh7 = addr_of_mut!(emitter.document);
-    *fresh7 = ptr::null_mut::<yaml_document_t>();
+    emitter.document = ptr::null_mut::<yaml_document_t>();
 }
 
 unsafe fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: libc::c_int) {
@@ -216,7 +211,7 @@ unsafe fn yaml_emitter_anchor_node(emitter: &mut yaml_emitter_t, index: libc::c_
             _ => {}
         }
     } else if (*emitter.anchors.wrapping_offset((index - 1) as isize)).references == 2 {
-        let fresh9 = addr_of_mut!(emitter.last_anchor_id);
+        let fresh9 = &mut emitter.last_anchor_id;
         *fresh9 += 1;
         (*emitter.anchors.wrapping_offset((index - 1) as isize)).anchor = *fresh9;
     }
