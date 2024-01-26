@@ -748,9 +748,7 @@ pub unsafe fn yaml_alias_event_initialize(
     };
     __assert!(!event.is_null());
     __assert!(!anchor.is_null());
-    if yaml_check_utf8(anchor, strlen(anchor as *mut libc::c_char)).is_err() {
-        return FAIL;
-    }
+    yaml_check_utf8(anchor, strlen(anchor as *mut libc::c_char))?;
     let anchor_copy: *mut yaml_char_t = yaml_strdup(anchor);
     if anchor_copy.is_null() {
         return FAIL;
@@ -829,7 +827,7 @@ pub unsafe fn yaml_scalar_event_initialize(
             if length < 0 {
                 length = strlen(value as *mut libc::c_char) as libc::c_int;
             }
-            if yaml_check_utf8(value, length as size_t).is_ok() {
+            if let Ok(()) = yaml_check_utf8(value, length as size_t) {
                 value_copy = yaml_malloc(length.force_add(1) as size_t) as *mut yaml_char_t;
                 memcpy(
                     value_copy as *mut libc::c_void,
@@ -1330,13 +1328,13 @@ pub unsafe fn yaml_document_add_scalar(
     if tag.is_null() {
         tag = b"tag:yaml.org,2002:str\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
     }
-    if yaml_check_utf8(tag, strlen(tag as *mut libc::c_char)).is_ok() {
+    if let Ok(()) = yaml_check_utf8(tag, strlen(tag as *mut libc::c_char)) {
         tag_copy = yaml_strdup(tag);
         if !tag_copy.is_null() {
             if length < 0 {
                 length = strlen(value as *mut libc::c_char) as libc::c_int;
             }
-            if yaml_check_utf8(value, length as size_t).is_ok() {
+            if let Ok(()) = yaml_check_utf8(value, length as size_t) {
                 value_copy = yaml_malloc(length.force_add(1) as size_t) as *mut yaml_char_t;
                 memcpy(
                     value_copy as *mut libc::c_void,
@@ -1399,7 +1397,7 @@ pub unsafe fn yaml_document_add_sequence(
     if tag.is_null() {
         tag = b"tag:yaml.org,2002:seq\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
     }
-    if yaml_check_utf8(tag, strlen(tag as *mut libc::c_char)).is_ok() {
+    if let Ok(()) = yaml_check_utf8(tag, strlen(tag as *mut libc::c_char)) {
         tag_copy = yaml_strdup(tag);
         if !tag_copy.is_null() {
             STACK_INIT!(items, yaml_node_item_t);
@@ -1458,7 +1456,7 @@ pub unsafe fn yaml_document_add_mapping(
     if tag.is_null() {
         tag = b"tag:yaml.org,2002:map\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
     }
-    if yaml_check_utf8(tag, strlen(tag as *mut libc::c_char)).is_ok() {
+    if let Ok(()) = yaml_check_utf8(tag, strlen(tag as *mut libc::c_char)) {
         tag_copy = yaml_strdup(tag);
         if !tag_copy.is_null() {
             STACK_INIT!(pairs, yaml_node_pair_t);

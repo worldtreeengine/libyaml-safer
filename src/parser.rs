@@ -241,16 +241,12 @@ unsafe fn yaml_parser_parse_document_start(
         && (*token).type_ != YAML_DOCUMENT_START_TOKEN
         && (*token).type_ != YAML_STREAM_END_TOKEN
     {
-        if yaml_parser_process_directives(
+        yaml_parser_process_directives(
             parser,
             ptr::null_mut::<*mut yaml_version_directive_t>(),
             ptr::null_mut::<*mut yaml_tag_directive_t>(),
             ptr::null_mut::<*mut yaml_tag_directive_t>(),
-        )
-        .is_err()
-        {
-            return FAIL;
-        }
+        )?;
         PUSH!((*parser).states, YAML_PARSE_DOCUMENT_END_STATE);
         (*parser).state = YAML_PARSE_BLOCK_NODE_STATE;
         memset(
@@ -272,16 +268,12 @@ unsafe fn yaml_parser_parse_document_start(
     } else if (*token).type_ != YAML_STREAM_END_TOKEN {
         let end_mark: yaml_mark_t;
         let start_mark: yaml_mark_t = (*token).start_mark;
-        if yaml_parser_process_directives(
+        yaml_parser_process_directives(
             parser,
             addr_of_mut!(version_directive),
             addr_of_mut!(tag_directives.start),
             addr_of_mut!(tag_directives.end),
-        )
-        .is_err()
-        {
-            return FAIL;
-        }
+        )?;
         token = PEEK_TOKEN(parser);
         if !token.is_null() {
             if (*token).type_ != YAML_DOCUMENT_START_TOKEN {
@@ -1254,8 +1246,8 @@ unsafe fn yaml_parser_process_directives(
                     handle: (*token).data.tag_directive.handle,
                     prefix: (*token).data.tag_directive.prefix,
                 };
-                if yaml_parser_append_tag_directive(parser, value, false, (*token).start_mark)
-                    .is_err()
+                if let Err(()) =
+                    yaml_parser_append_tag_directive(parser, value, false, (*token).start_mark)
                 {
                     current_block = 17143798186130252483;
                     break;
@@ -1276,14 +1268,12 @@ unsafe fn yaml_parser_process_directives(
                     current_block = 18377268871191777778;
                     break;
                 }
-                if yaml_parser_append_tag_directive(
+                if let Err(()) = yaml_parser_append_tag_directive(
                     parser,
                     *default_tag_directive,
                     true,
                     (*token).start_mark,
-                )
-                .is_err()
-                {
+                ) {
                     current_block = 17143798186130252483;
                     break;
                 }

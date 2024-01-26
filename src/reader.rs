@@ -34,9 +34,7 @@ unsafe fn yaml_parser_determine_encoding(parser: *mut yaml_parser_t) -> Result<(
             .c_offset_from((*parser).raw_buffer.pointer) as libc::c_long)
             < 3_i64
     {
-        if yaml_parser_update_raw_buffer(parser).is_err() {
-            return FAIL;
-        }
+        yaml_parser_update_raw_buffer(parser)?;
     }
     if (*parser)
         .raw_buffer
@@ -162,9 +160,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
         return OK;
     }
     if (*parser).encoding == YAML_ANY_ENCODING {
-        if yaml_parser_determine_encoding(parser).is_err() {
-            return FAIL;
-        }
+        yaml_parser_determine_encoding(parser)?;
     }
     if (*parser).buffer.start < (*parser).buffer.pointer
         && (*parser).buffer.pointer < (*parser).buffer.last
@@ -190,9 +186,7 @@ pub(crate) unsafe fn yaml_parser_update_buffer(
     }
     while (*parser).unread < length {
         if !first || (*parser).raw_buffer.pointer == (*parser).raw_buffer.last {
-            if yaml_parser_update_raw_buffer(parser).is_err() {
-                return FAIL;
-            }
+            yaml_parser_update_raw_buffer(parser)?;
         }
         first = false;
         while (*parser).raw_buffer.pointer != (*parser).raw_buffer.last {
