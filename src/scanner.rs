@@ -137,8 +137,7 @@ pub unsafe fn yaml_parser_scan(
     }
     *token = DEQUEUE!(parser.tokens);
     parser.token_available = false;
-    let fresh2 = &mut parser.tokens_parsed;
-    *fresh2 = (*fresh2).force_add(1);
+    parser.tokens_parsed = parser.tokens_parsed.force_add(1);
     if (*token).type_ == YAML_STREAM_END_TOKEN {
         parser.stream_end_produced = true;
     }
@@ -388,15 +387,13 @@ unsafe fn yaml_parser_increase_flow_level(parser: &mut yaml_parser_t) -> Result<
         parser.error = YAML_MEMORY_ERROR;
         return Err(());
     }
-    let fresh7 = &mut parser.flow_level;
-    *fresh7 += 1;
+    parser.flow_level += 1;
     Ok(())
 }
 
 unsafe fn yaml_parser_decrease_flow_level(parser: &mut yaml_parser_t) {
     if parser.flow_level != 0 {
-        let fresh8 = &mut parser.flow_level;
-        *fresh8 -= 1;
+        parser.flow_level -= 1;
         let _ = POP!(parser.simple_keys);
     }
 }
@@ -483,8 +480,7 @@ unsafe fn yaml_parser_fetch_stream_end(parser: &mut yaml_parser_t) -> Result<(),
     let token = token.as_mut_ptr();
     if parser.mark.column != 0_u64 {
         parser.mark.column = 0_u64;
-        let fresh22 = &mut parser.mark.line;
-        *fresh22 = (*fresh22).force_add(1);
+        parser.mark.line = parser.mark.line.force_add(1);
     }
     yaml_parser_unroll_indent(parser, -1_i64);
     if yaml_parser_remove_simple_key(parser).is_err() {
@@ -1666,10 +1662,9 @@ unsafe fn yaml_parser_scan_uri_escapes(
             );
             return Err(());
         }
-        let fresh368 = &mut (*string).pointer;
-        let fresh369 = *fresh368;
-        *fresh368 = (*fresh368).wrapping_offset(1);
-        *fresh369 = octet;
+        let p = string.pointer;
+        string.pointer = string.pointer.wrapping_offset(1);
+        *p = octet;
         SKIP(parser);
         SKIP(parser);
         SKIP(parser);
@@ -1834,10 +1829,10 @@ unsafe fn yaml_parser_scan_block_scalar(
                                             {
                                                 if *trailing_breaks.start == b'\0' {
                                                     STRING_EXTEND!(string);
-                                                    let fresh418 = string.pointer;
+                                                    let p = string.pointer;
                                                     string.pointer =
                                                         string.pointer.wrapping_offset(1);
-                                                    *fresh418 = b' ';
+                                                    *p = b' ';
                                                 }
                                                 CLEAR!(leading_break);
                                             } else {
@@ -1887,9 +1882,7 @@ unsafe fn yaml_parser_scan_block_scalar(
                                                 (*token).type_ = YAML_SCALAR_TOKEN;
                                                 (*token).start_mark = start_mark;
                                                 (*token).end_mark = end_mark;
-                                                let fresh479 =
-                                                    addr_of_mut!((*token).data.scalar.value);
-                                                *fresh479 = string.start;
+                                                (*token).data.scalar.value = string.start;
                                                 (*token).data.scalar.length =
                                                     string.pointer.c_offset_from(string.start)
                                                         as size_t;
@@ -2035,9 +2028,9 @@ unsafe fn yaml_parser_scan_flow_scalar(
                     && CHECK_AT!(parser.buffer, b'\'', 1)
                 {
                     STRING_EXTEND!(string);
-                    let fresh521 = string.pointer;
+                    let p = string.pointer;
                     string.pointer = string.pointer.wrapping_offset(1);
-                    *fresh521 = b'\'';
+                    *p = b'\'';
                     SKIP(parser);
                     SKIP(parser);
                 } else {

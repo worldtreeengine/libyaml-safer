@@ -33,48 +33,45 @@ unsafe fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
 
 unsafe fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
     FLUSH(emitter)?;
-    let fresh40 = &mut emitter.buffer.pointer;
-    let fresh41 = *fresh40;
-    *fresh40 = (*fresh40).wrapping_offset(1);
-    *fresh41 = value;
-    let fresh42 = &mut emitter.column;
-    *fresh42 += 1;
+    let p = &mut emitter.buffer.pointer;
+    let old_p = *p;
+    *p = (*p).wrapping_offset(1);
+    *old_p = value;
+    emitter.column += 1;
     Ok(())
 }
 
 unsafe fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     FLUSH(emitter)?;
     if emitter.line_break == YAML_CR_BREAK {
-        let fresh62 = &mut emitter.buffer.pointer;
-        let fresh63 = *fresh62;
-        *fresh62 = (*fresh62).wrapping_offset(1);
-        *fresh63 = b'\r';
+        let p = &mut emitter.buffer.pointer;
+        let old_p = *p;
+        *p = (*p).wrapping_offset(1);
+        *old_p = b'\r';
     } else if emitter.line_break == YAML_LN_BREAK {
-        let fresh64 = &mut emitter.buffer.pointer;
-        let fresh65 = *fresh64;
-        *fresh64 = (*fresh64).wrapping_offset(1);
-        *fresh65 = b'\n';
+        let p = &mut emitter.buffer.pointer;
+        let old_p = *p;
+        *p = (*p).wrapping_offset(1);
+        *old_p = b'\n';
     } else if emitter.line_break == YAML_CRLN_BREAK {
-        let fresh66 = &mut emitter.buffer.pointer;
-        let fresh67 = *fresh66;
-        *fresh66 = (*fresh66).wrapping_offset(1);
-        *fresh67 = b'\r';
-        let fresh68 = &mut emitter.buffer.pointer;
-        let fresh69 = *fresh68;
-        *fresh68 = (*fresh68).wrapping_offset(1);
-        *fresh69 = b'\n';
+        let p = &mut emitter.buffer.pointer;
+        let old_p = *p;
+        *p = (*p).wrapping_offset(1);
+        *old_p = b'\r';
+        let p = &mut emitter.buffer.pointer;
+        let old_p = *p;
+        *p = (*p).wrapping_offset(1);
+        *old_p = b'\n';
     };
     emitter.column = 0;
-    let fresh70 = &mut emitter.line;
-    *fresh70 += 1;
+    emitter.line += 1;
     Ok(())
 }
 
 unsafe fn WRITE(emitter: &mut yaml_emitter_t, string: &mut yaml_string_t) -> Result<(), ()> {
     FLUSH(emitter)?;
     COPY!(emitter.buffer, *string);
-    let fresh107 = &mut emitter.column;
-    *fresh107 += 1;
+    emitter.column += 1;
     Ok(())
 }
 
@@ -82,12 +79,11 @@ unsafe fn WRITE_BREAK(emitter: &mut yaml_emitter_t, string: &mut yaml_string_t) 
     FLUSH(emitter)?;
     if CHECK!(*string, b'\n') {
         let _ = PUT_BREAK(emitter);
-        (*string).pointer = (*string).pointer.wrapping_offset(1);
+        string.pointer = string.pointer.wrapping_offset(1);
     } else {
         COPY!(emitter.buffer, *string);
         emitter.column = 0;
-        let fresh300 = &mut emitter.line;
-        *fresh300 += 1;
+        emitter.line += 1;
     }
     Ok(())
 }
@@ -512,12 +508,10 @@ unsafe fn yaml_emitter_emit_flow_sequence_item(
             false,
         )?;
         yaml_emitter_increase_indent(emitter, true, false);
-        let fresh12 = &mut emitter.flow_level;
-        *fresh12 += 1;
+        emitter.flow_level += 1;
     }
     if (*event).type_ == YAML_SEQUENCE_END_EVENT {
-        let fresh13 = &mut emitter.flow_level;
-        *fresh13 -= 1;
+        emitter.flow_level -= 1;
         emitter.indent = POP!(emitter.indents);
         if emitter.canonical && !first {
             yaml_emitter_write_indicator(
@@ -569,15 +563,13 @@ unsafe fn yaml_emitter_emit_flow_mapping_key(
             false,
         )?;
         yaml_emitter_increase_indent(emitter, true, false);
-        let fresh18 = &mut emitter.flow_level;
-        *fresh18 += 1;
+        emitter.flow_level += 1;
     }
     if (*event).type_ == YAML_MAPPING_END_EVENT {
         if STACK_EMPTY!(emitter.indents) {
             return Err(());
         }
-        let fresh19 = &mut emitter.flow_level;
-        *fresh19 -= 1;
+        emitter.flow_level -= 1;
         emitter.indent = POP!(emitter.indents);
         if emitter.canonical && !first {
             yaml_emitter_write_indicator(
@@ -1422,18 +1414,18 @@ unsafe fn yaml_emitter_analyze_event(
 
 unsafe fn yaml_emitter_write_bom(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     FLUSH(emitter)?;
-    let fresh56 = &mut emitter.buffer.pointer;
-    let fresh57 = *fresh56;
-    *fresh56 = (*fresh56).wrapping_offset(1);
-    *fresh57 = b'\xEF';
-    let fresh58 = &mut emitter.buffer.pointer;
-    let fresh59 = *fresh58;
-    *fresh58 = (*fresh58).wrapping_offset(1);
-    *fresh59 = b'\xBB';
-    let fresh60 = &mut emitter.buffer.pointer;
-    let fresh61 = *fresh60;
-    *fresh60 = (*fresh60).wrapping_offset(1);
-    *fresh61 = b'\xBF';
+    let p = &mut emitter.buffer.pointer;
+    let old_pointer = *p;
+    *p = (*p).wrapping_offset(1);
+    *old_pointer = b'\xEF';
+    let p = &mut emitter.buffer.pointer;
+    let old_pointer = *p;
+    *p = (*p).wrapping_offset(1);
+    *old_pointer = b'\xBB';
+    let p = &mut emitter.buffer.pointer;
+    let old_pointer = *p;
+    *p = (*p).wrapping_offset(1);
+    *old_pointer = b'\xBF';
     Ok(())
 }
 
@@ -1544,14 +1536,14 @@ unsafe fn yaml_emitter_write_tag_content(
         } else {
             let mut width = WIDTH!(string);
             loop {
-                let fresh207 = width;
+                let prev_width = width;
                 width -= 1;
-                if !(fresh207 != 0) {
+                if !(prev_width != 0) {
                     break;
                 }
-                let fresh208 = string.pointer;
+                let prev_pointer = string.pointer;
                 string.pointer = string.pointer.wrapping_offset(1);
-                let value = *fresh208;
+                let value = *prev_pointer;
                 PUT(emitter, b'%')?;
                 PUT(
                     emitter,

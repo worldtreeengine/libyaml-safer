@@ -508,7 +508,7 @@ macro_rules! QUEUE_INSERT {
                 .wrapping_mul(size_of::<yaml_token_t>() as libc::c_ulong),
         );
         *$queue.head.wrapping_offset($index as isize) = $value;
-        let fresh14 = &mut $queue.tail;
-        *fresh14 = (*fresh14).wrapping_offset(1);
+        let tail = &mut $queue.tail;
+        *tail = (*tail).wrapping_offset(1);
     }};
 }
