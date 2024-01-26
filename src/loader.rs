@@ -35,13 +35,11 @@ struct loader_ctx {
 /// calls of yaml_parser_scan() or yaml_parser_parse(). Doing this will break
 /// the parser.
 pub unsafe fn yaml_parser_load(
-    parser: *mut yaml_parser_t,
+    parser: &mut yaml_parser_t,
     document: *mut yaml_document_t,
 ) -> Result<(), ()> {
     let current_block: u64;
-    let mut event = MaybeUninit::<yaml_event_t>::uninit();
-    let event = event.as_mut_ptr();
-    __assert!(!parser.is_null());
+    let mut event = yaml_event_t::default();
     __assert!(!document.is_null());
     memset(
         document as *mut libc::c_void,
@@ -50,10 +48,10 @@ pub unsafe fn yaml_parser_load(
     );
     STACK_INIT!((*document).nodes, yaml_node_t);
     if !(*parser).stream_start_produced {
-        if let Err(()) = yaml_parser_parse(parser, event) {
+        if let Err(()) = yaml_parser_parse(parser, &mut event) {
             current_block = 6234624449317607669;
         } else {
-            __assert!((*event).type_ == YAML_STREAM_START_EVENT);
+            __assert!(event.type_ == YAML_STREAM_START_EVENT);
             current_block = 7815301370352969686;
         }
     } else {
@@ -63,14 +61,14 @@ pub unsafe fn yaml_parser_load(
         if (*parser).stream_end_produced {
             return OK;
         }
-        if let Ok(()) = yaml_parser_parse(parser, event) {
-            if (*event).type_ == YAML_STREAM_END_EVENT {
+        if let Ok(()) = yaml_parser_parse(parser, &mut event) {
+            if event.type_ == YAML_STREAM_END_EVENT {
                 return OK;
             }
             STACK_INIT!((*parser).aliases, yaml_alias_data_t);
             let fresh6 = addr_of_mut!((*parser).document);
             *fresh6 = document;
-            if let Ok(()) = yaml_parser_load_document(parser, event) {
+            if let Ok(()) = yaml_parser_load_document(parser, &mut event) {
                 yaml_parser_delete_aliases(parser);
                 let fresh7 = addr_of_mut!((*parser).document);
                 *fresh7 = ptr::null_mut::<yaml_document_t>();
@@ -122,23 +120,23 @@ unsafe fn yaml_parser_delete_aliases(parser: *mut yaml_parser_t) {
 }
 
 unsafe fn yaml_parser_load_document(
-    parser: *mut yaml_parser_t,
-    event: *mut yaml_event_t,
+    parser: &mut yaml_parser_t,
+    event: &mut yaml_event_t,
 ) -> Result<(), ()> {
     let mut ctx = loader_ctx {
         start: ptr::null_mut::<libc::c_int>(),
         end: ptr::null_mut::<libc::c_int>(),
         top: ptr::null_mut::<libc::c_int>(),
     };
-    __assert!((*event).type_ == YAML_DOCUMENT_START_EVENT);
-    let fresh16 = addr_of_mut!((*(*parser).document).version_directive);
-    *fresh16 = (*event).data.document_start.version_directive;
-    let fresh17 = addr_of_mut!((*(*parser).document).tag_directives.start);
-    *fresh17 = (*event).data.document_start.tag_directives.start;
-    let fresh18 = addr_of_mut!((*(*parser).document).tag_directives.end);
-    *fresh18 = (*event).data.document_start.tag_directives.end;
-    (*(*parser).document).start_implicit = (*event).data.document_start.implicit;
-    (*(*parser).document).start_mark = (*event).start_mark;
+    __assert!(event.type_ == YAML_DOCUMENT_START_EVENT);
+    let fresh16 = addr_of_mut!((*parser.document).version_directive);
+    *fresh16 = event.data.document_start.version_directive;
+    let fresh17 = addr_of_mut!((*parser.document).tag_directives.start);
+    *fresh17 = event.data.document_start.tag_directives.start;
+    let fresh18 = addr_of_mut!((*parser.document).tag_directives.end);
+    *fresh18 = event.data.document_start.tag_directives.end;
+    (*parser.document).start_implicit = event.data.document_start.implicit;
+    (*parser.document).start_mark = event.start_mark;
     STACK_INIT!(ctx, libc::c_int);
     if let Err(()) = yaml_parser_load_nodes(parser, addr_of_mut!(ctx)) {
         STACK_DEL!(ctx);
@@ -149,43 +147,42 @@ unsafe fn yaml_parser_load_document(
 }
 
 unsafe fn yaml_parser_load_nodes(
-    parser: *mut yaml_parser_t,
+    parser: &mut yaml_parser_t,
     ctx: *mut loader_ctx,
 ) -> Result<(), ()> {
-    let mut event = MaybeUninit::<yaml_event_t>::uninit();
-    let event = event.as_mut_ptr();
+    let mut event = yaml_event_t::default();
     loop {
-        yaml_parser_parse(parser, event)?;
-        match (*event).type_ {
+        yaml_parser_parse(parser, &mut event)?;
+        match event.type_ {
             YAML_ALIAS_EVENT => {
-                yaml_parser_load_alias(parser, event, ctx)?;
+                yaml_parser_load_alias(parser, &mut event, ctx)?;
             }
             YAML_SCALAR_EVENT => {
-                yaml_parser_load_scalar(parser, event, ctx)?;
+                yaml_parser_load_scalar(parser, &mut event, ctx)?;
             }
             YAML_SEQUENCE_START_EVENT => {
-                yaml_parser_load_sequence(parser, event, ctx)?;
+                yaml_parser_load_sequence(parser, &mut event, ctx)?;
             }
             YAML_SEQUENCE_END_EVENT => {
-                yaml_parser_load_sequence_end(parser, event, ctx)?;
+                yaml_parser_load_sequence_end(parser, &mut event, ctx)?;
             }
             YAML_MAPPING_START_EVENT => {
-                yaml_parser_load_mapping(parser, event, ctx)?;
+                yaml_parser_load_mapping(parser, &mut event, ctx)?;
             }
             YAML_MAPPING_END_EVENT => {
-                yaml_parser_load_mapping_end(parser, event, ctx)?;
+                yaml_parser_load_mapping_end(parser, &mut event, ctx)?;
             }
             YAML_DOCUMENT_END_EVENT => {}
             _ => {
                 __assert!(false);
             }
         }
-        if (*event).type_ == YAML_DOCUMENT_END_EVENT {
+        if event.type_ == YAML_DOCUMENT_END_EVENT {
             break;
         }
     }
-    (*(*parser).document).end_implicit = (*event).data.document_end.implicit;
-    (*(*parser).document).end_mark = (*event).end_mark;
+    (*parser.document).end_implicit = event.data.document_end.implicit;
+    (*parser.document).end_mark = event.end_mark;
     OK
 }
 

@@ -39,10 +39,10 @@ pub(crate) unsafe fn unsafe_main(
     stdout: &mut dyn Write,
 ) -> Result<(), Box<dyn Error>> {
     let mut parser = MaybeUninit::<yaml_parser_t>::uninit();
-    let parser = parser.as_mut_ptr();
-    if yaml_parser_initialize(parser).is_err() {
+    if yaml_parser_initialize(parser.as_mut_ptr()).is_err() {
         return Err("Could not initialize the parser object".into());
     }
+    let mut parser = parser.assume_init();
 
     unsafe fn read_from_stdio(
         data: *mut c_void,
@@ -61,14 +61,13 @@ pub(crate) unsafe fn unsafe_main(
         }
     }
 
-    yaml_parser_set_input(parser, read_from_stdio, addr_of_mut!(stdin).cast());
+    yaml_parser_set_input(&mut parser, read_from_stdio, addr_of_mut!(stdin).cast());
 
-    let mut event = MaybeUninit::<yaml_event_t>::uninit();
-    let event = event.as_mut_ptr();
+    let mut event = yaml_event_t::default();
     loop {
-        if yaml_parser_parse(parser, event).is_err() {
+        if yaml_parser_parse(&mut parser, &mut event).is_err() {
             let mut error = format!("Parse error: {}", CStr::from_ptr((*parser).problem));
-            if (*parser).problem_mark.line != 0 || (*parser).problem_mark.column != 0 {
+            if parser.problem_mark.line != 0 || (*parser).problem_mark.column != 0 {
                 let _ = write!(
                     error,
                     "\nLine: {} Column: {}",
@@ -76,11 +75,11 @@ pub(crate) unsafe fn unsafe_main(
                     ((*parser).problem_mark.column).wrapping_add(1_u64),
                 );
             }
-            yaml_parser_delete(parser);
+            yaml_parser_delete(&mut parser);
             return Err(error.into());
         }
 
-        let type_: yaml_event_type_t = (*event).type_;
+        let type_: yaml_event_type_t = event.type_;
         if type_ == YAML_NO_EVENT {
             let _ = writeln!(stdout, "???");
         } else if type_ == YAML_STREAM_START_EVENT {
@@ -89,30 +88,30 @@ pub(crate) unsafe fn unsafe_main(
             let _ = writeln!(stdout, "-STR");
         } else if type_ == YAML_DOCUMENT_START_EVENT {
             let _ = write!(stdout, "+DOC");
-            if !(*event).data.document_start.implicit {
+            if !event.data.document_start.implicit {
                 let _ = write!(stdout, " ---");
             }
             let _ = writeln!(stdout);
         } else if type_ == YAML_DOCUMENT_END_EVENT {
             let _ = write!(stdout, "-DOC");
-            if !(*event).data.document_end.implicit {
+            if !event.data.document_end.implicit {
                 let _ = write!(stdout, " ...");
             }
             let _ = writeln!(stdout);
         } else if type_ == YAML_MAPPING_START_EVENT {
             let _ = write!(stdout, "+MAP");
-            if !(*event).data.mapping_start.anchor.is_null() {
+            if !event.data.mapping_start.anchor.is_null() {
                 let _ = write!(
                     stdout,
                     " &{}",
-                    CStr::from_ptr((*event).data.mapping_start.anchor as *const i8),
+                    CStr::from_ptr(event.data.mapping_start.anchor as *const i8),
                 );
             }
-            if !(*event).data.mapping_start.tag.is_null() {
+            if !event.data.mapping_start.tag.is_null() {
                 let _ = write!(
                     stdout,
                     " <{}>",
-                    CStr::from_ptr((*event).data.mapping_start.tag as *const i8),
+                    CStr::from_ptr(event.data.mapping_start.tag as *const i8),
                 );
             }
             let _ = writeln!(stdout);
@@ -120,18 +119,18 @@ pub(crate) unsafe fn unsafe_main(
             let _ = writeln!(stdout, "-MAP");
         } else if type_ == YAML_SEQUENCE_START_EVENT {
             let _ = write!(stdout, "+SEQ");
-            if !(*event).data.sequence_start.anchor.is_null() {
+            if !event.data.sequence_start.anchor.is_null() {
                 let _ = write!(
                     stdout,
                     " &{}",
-                    CStr::from_ptr((*event).data.sequence_start.anchor as *const i8),
+                    CStr::from_ptr(event.data.sequence_start.anchor as *const i8),
                 );
             }
-            if !(*event).data.sequence_start.tag.is_null() {
+            if !event.data.sequence_start.tag.is_null() {
                 let _ = write!(
                     stdout,
                     " <{}>",
-                    CStr::from_ptr((*event).data.sequence_start.tag as *const i8),
+                    CStr::from_ptr(event.data.sequence_start.tag as *const i8),
                 );
             }
             let _ = writeln!(stdout);
@@ -139,21 +138,21 @@ pub(crate) unsafe fn unsafe_main(
             let _ = writeln!(stdout, "-SEQ");
         } else if type_ == YAML_SCALAR_EVENT {
             let _ = write!(stdout, "=VAL");
-            if !(*event).data.scalar.anchor.is_null() {
+            if !event.data.scalar.anchor.is_null() {
                 let _ = write!(
                     stdout,
                     " &{}",
-                    CStr::from_ptr((*event).data.scalar.anchor as *const i8),
+                    CStr::from_ptr(event.data.scalar.anchor as *const i8),
                 );
             }
-            if !(*event).data.scalar.tag.is_null() {
+            if !event.data.scalar.tag.is_null() {
                 let _ = write!(
                     stdout,
                     " <{}>",
-                    CStr::from_ptr((*event).data.scalar.tag as *const i8),
+                    CStr::from_ptr(event.data.scalar.tag as *const i8),
                 );
             }
-            let _ = stdout.write_all(match (*event).data.scalar.style {
+            let _ = stdout.write_all(match event.data.scalar.style {
                 YAML_PLAIN_SCALAR_STYLE => b" :",
                 YAML_SINGLE_QUOTED_SCALAR_STYLE => b" '",
                 YAML_DOUBLE_QUOTED_SCALAR_STYLE => b" \"",
@@ -161,28 +160,24 @@ pub(crate) unsafe fn unsafe_main(
                 YAML_FOLDED_SCALAR_STYLE => b" >",
                 _ => process::abort(),
             });
-            print_escaped(
-                stdout,
-                (*event).data.scalar.value,
-                (*event).data.scalar.length,
-            );
+            print_escaped(stdout, event.data.scalar.value, event.data.scalar.length);
             let _ = writeln!(stdout);
         } else if type_ == YAML_ALIAS_EVENT {
             let _ = writeln!(
                 stdout,
                 "=ALI *{}",
-                CStr::from_ptr((*event).data.alias.anchor as *const i8),
+                CStr::from_ptr(event.data.alias.anchor as *const i8),
             );
         } else {
             process::abort();
         }
 
-        yaml_event_delete(event);
+        yaml_event_delete(&mut event);
         if type_ == YAML_STREAM_END_EVENT {
             break;
         }
     }
-    yaml_parser_delete(parser);
+    yaml_parser_delete(&mut parser);
     Ok(())
 }
 

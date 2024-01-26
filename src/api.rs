@@ -167,36 +167,36 @@ pub(crate) unsafe fn yaml_queue_extend(
 pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), ()> {
     __assert!(!parser.is_null());
     *parser = core::mem::MaybeUninit::zeroed().assume_init();
-    BUFFER_INIT!((*parser).raw_buffer, INPUT_RAW_BUFFER_SIZE);
-    BUFFER_INIT!((*parser).buffer, INPUT_BUFFER_SIZE);
-    QUEUE_INIT!((*parser).tokens, yaml_token_t);
-    STACK_INIT!((*parser).indents, libc::c_int);
-    STACK_INIT!((*parser).simple_keys, yaml_simple_key_t);
-    STACK_INIT!((*parser).states, yaml_parser_state_t);
-    STACK_INIT!((*parser).marks, yaml_mark_t);
-    STACK_INIT!((*parser).tag_directives, yaml_tag_directive_t);
+    let parser = &mut *parser;
+    BUFFER_INIT!(parser.raw_buffer, INPUT_RAW_BUFFER_SIZE);
+    BUFFER_INIT!(parser.buffer, INPUT_BUFFER_SIZE);
+    QUEUE_INIT!(parser.tokens, yaml_token_t);
+    STACK_INIT!(parser.indents, libc::c_int);
+    STACK_INIT!(parser.simple_keys, yaml_simple_key_t);
+    STACK_INIT!(parser.states, yaml_parser_state_t);
+    STACK_INIT!(parser.marks, yaml_mark_t);
+    STACK_INIT!(parser.tag_directives, yaml_tag_directive_t);
     OK
 }
 
 /// Destroy a parser.
-pub unsafe fn yaml_parser_delete(parser: *mut yaml_parser_t) {
-    __assert!(!parser.is_null());
-    BUFFER_DEL!((*parser).raw_buffer);
-    BUFFER_DEL!((*parser).buffer);
-    while !QUEUE_EMPTY!((*parser).tokens) {
-        yaml_token_delete(addr_of_mut!(DEQUEUE!((*parser).tokens)));
+pub unsafe fn yaml_parser_delete(parser: &mut yaml_parser_t) {
+    BUFFER_DEL!(parser.raw_buffer);
+    BUFFER_DEL!(parser.buffer);
+    while !QUEUE_EMPTY!(parser.tokens) {
+        yaml_token_delete(addr_of_mut!(DEQUEUE!(parser.tokens)));
     }
-    QUEUE_DEL!((*parser).tokens);
-    STACK_DEL!((*parser).indents);
-    STACK_DEL!((*parser).simple_keys);
-    STACK_DEL!((*parser).states);
-    STACK_DEL!((*parser).marks);
-    while !STACK_EMPTY!((*parser).tag_directives) {
-        let tag_directive = POP!((*parser).tag_directives);
+    QUEUE_DEL!(parser.tokens);
+    STACK_DEL!(parser.indents);
+    STACK_DEL!(parser.simple_keys);
+    STACK_DEL!(parser.states);
+    STACK_DEL!(parser.marks);
+    while !STACK_EMPTY!(parser.tag_directives) {
+        let tag_directive = POP!(parser.tag_directives);
         yaml_free(tag_directive.handle as *mut libc::c_void);
         yaml_free(tag_directive.prefix as *mut libc::c_void);
     }
-    STACK_DEL!((*parser).tag_directives);
+    STACK_DEL!(parser.tag_directives);
     *parser = core::mem::MaybeUninit::zeroed().assume_init();
 }
 
@@ -206,8 +206,8 @@ unsafe fn yaml_string_read_handler(
     mut size: size_t,
     size_read: *mut size_t,
 ) -> libc::c_int {
-    let parser: *mut yaml_parser_t = data as *mut yaml_parser_t;
-    if (*parser).input.string.current == (*parser).input.string.end {
+    let parser: &mut yaml_parser_t = &mut *(data as *mut yaml_parser_t);
+    if parser.input.string.current == parser.input.string.end {
         *size_read = 0_u64;
         return 1;
     }
@@ -216,20 +216,20 @@ unsafe fn yaml_string_read_handler(
             .input
             .string
             .end
-            .c_offset_from((*parser).input.string.current) as size_t
+            .c_offset_from(parser.input.string.current) as size_t
     {
         size = (*parser)
             .input
             .string
             .end
-            .c_offset_from((*parser).input.string.current) as size_t;
+            .c_offset_from(parser.input.string.current) as size_t;
     }
     memcpy(
         buffer as *mut libc::c_void,
-        (*parser).input.string.current as *const libc::c_void,
+        parser.input.string.current as *const libc::c_void,
         size,
     );
-    let fresh80 = addr_of_mut!((*parser).input.string.current);
+    let fresh80 = addr_of_mut!(parser.input.string.current);
     *fresh80 = (*fresh80).wrapping_offset(size as isize);
     *size_read = size;
     1
@@ -241,47 +241,44 @@ unsafe fn yaml_string_read_handler(
 /// exists. The application is responsible for destroying `input` after
 /// destroying the `parser`.
 pub unsafe fn yaml_parser_set_input_string(
-    parser: *mut yaml_parser_t,
+    parser: &mut yaml_parser_t,
     input: *const libc::c_uchar,
     size: size_t,
 ) {
-    __assert!(!parser.is_null());
-    __assert!(((*parser).read_handler).is_none());
+    __assert!((parser.read_handler).is_none());
     __assert!(!input.is_null());
-    let fresh81 = addr_of_mut!((*parser).read_handler);
+    let fresh81 = addr_of_mut!(parser.read_handler);
     *fresh81 = Some(
         yaml_string_read_handler
             as unsafe fn(*mut libc::c_void, *mut libc::c_uchar, size_t, *mut size_t) -> libc::c_int,
     );
-    let fresh82 = addr_of_mut!((*parser).read_handler_data);
-    *fresh82 = parser as *mut libc::c_void;
-    let fresh83 = addr_of_mut!((*parser).input.string.start);
+    let fresh82 = addr_of_mut!(parser.read_handler_data);
+    *fresh82 = parser as *mut _ as *mut libc::c_void;
+    let fresh83 = addr_of_mut!(parser.input.string.start);
     *fresh83 = input;
-    let fresh84 = addr_of_mut!((*parser).input.string.current);
+    let fresh84 = addr_of_mut!(parser.input.string.current);
     *fresh84 = input;
-    let fresh85 = addr_of_mut!((*parser).input.string.end);
+    let fresh85 = addr_of_mut!(parser.input.string.end);
     *fresh85 = input.wrapping_offset(size as isize);
 }
 
 /// Set a generic input handler.
 pub unsafe fn yaml_parser_set_input(
-    parser: *mut yaml_parser_t,
+    parser: &mut yaml_parser_t,
     handler: yaml_read_handler_t,
     data: *mut libc::c_void,
 ) {
-    __assert!(!parser.is_null());
-    __assert!(((*parser).read_handler).is_none());
-    let fresh89 = addr_of_mut!((*parser).read_handler);
+    __assert!((parser.read_handler).is_none());
+    let fresh89 = addr_of_mut!(parser.read_handler);
     *fresh89 = Some(handler);
-    let fresh90 = addr_of_mut!((*parser).read_handler_data);
+    let fresh90 = addr_of_mut!(parser.read_handler_data);
     *fresh90 = data;
 }
 
 /// Set the source encoding.
-pub unsafe fn yaml_parser_set_encoding(parser: *mut yaml_parser_t, encoding: yaml_encoding_t) {
-    __assert!(!parser.is_null());
-    __assert!((*parser).encoding == YAML_ANY_ENCODING);
-    (*parser).encoding = encoding;
+pub unsafe fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yaml_encoding_t) {
+    __assert!(parser.encoding == YAML_ANY_ENCODING);
+    parser.encoding = encoding;
 }
 
 /// Initialize an emitter.
