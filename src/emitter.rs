@@ -70,7 +70,7 @@ unsafe fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     Ok(())
 }
 
-unsafe fn WRITE(emitter: &mut yaml_emitter_t, string: *mut yaml_string_t) -> Result<(), ()> {
+unsafe fn WRITE(emitter: &mut yaml_emitter_t, string: &mut yaml_string_t) -> Result<(), ()> {
     FLUSH(emitter)?;
     COPY!(emitter.buffer, *string);
     let fresh107 = addr_of_mut!(emitter.column);
@@ -78,7 +78,7 @@ unsafe fn WRITE(emitter: &mut yaml_emitter_t, string: *mut yaml_string_t) -> Res
     Ok(())
 }
 
-unsafe fn WRITE_BREAK(emitter: &mut yaml_emitter_t, string: *mut yaml_string_t) -> Result<(), ()> {
+unsafe fn WRITE_BREAK(emitter: &mut yaml_emitter_t, string: &mut yaml_string_t) -> Result<(), ()> {
     FLUSH(emitter)?;
     if CHECK!(*string, b'\n') {
         let _ = PUT_BREAK(emitter);
@@ -90,18 +90,6 @@ unsafe fn WRITE_BREAK(emitter: &mut yaml_emitter_t, string: *mut yaml_string_t) 
         *fresh300 += 1;
     }
     Ok(())
-}
-
-macro_rules! WRITE {
-    ($emitter:expr, $string:expr) => {
-        WRITE($emitter, addr_of_mut!($string))
-    };
-}
-
-macro_rules! WRITE_BREAK {
-    ($emitter:expr, $string:expr) => {
-        WRITE_BREAK($emitter, addr_of_mut!($string))
-    };
 }
 
 unsafe fn yaml_emitter_set_emitter_error(
@@ -1493,7 +1481,7 @@ unsafe fn yaml_emitter_write_indicator(
         PUT(emitter, b' ')?;
     }
     while string.pointer != string.end {
-        WRITE!(emitter, string)?;
+        WRITE(emitter, &mut string)?;
     }
     emitter.whitespace = is_whitespace;
     emitter.indention = emitter.indention && is_indention;
@@ -1507,7 +1495,7 @@ unsafe fn yaml_emitter_write_anchor(
 ) -> Result<(), ()> {
     let mut string = STRING_ASSIGN!(value, length);
     while string.pointer != string.end {
-        WRITE!(emitter, string)?;
+        WRITE(emitter, &mut string)?;
     }
     emitter.whitespace = false;
     emitter.indention = false;
@@ -1524,7 +1512,7 @@ unsafe fn yaml_emitter_write_tag_handle(
         PUT(emitter, b' ')?;
     }
     while string.pointer != string.end {
-        WRITE!(emitter, string)?;
+        WRITE(emitter, &mut string)?;
     }
     emitter.whitespace = false;
     emitter.indention = false;
@@ -1563,7 +1551,7 @@ unsafe fn yaml_emitter_write_tag_content(
             || CHECK!(string, b'[')
             || CHECK!(string, b']')
         {
-            WRITE!(emitter, string)?;
+            WRITE(emitter, &mut string)?;
         } else {
             let mut width = WIDTH!(string);
             loop {
@@ -1614,21 +1602,21 @@ unsafe fn yaml_emitter_write_plain_scalar(
                 yaml_emitter_write_indent(emitter)?;
                 MOVE!(string);
             } else {
-                WRITE!(emitter, string)?;
+                WRITE(emitter, &mut string)?;
             }
             spaces = true;
         } else if IS_BREAK!(string) {
             if !breaks && CHECK!(string, b'\n') {
                 PUT_BREAK(emitter)?;
             }
-            WRITE_BREAK!(emitter, string)?;
+            WRITE_BREAK(emitter, &mut string)?;
             emitter.indention = true;
             breaks = true;
         } else {
             if breaks {
                 yaml_emitter_write_indent(emitter)?;
             }
-            WRITE!(emitter, string)?;
+            WRITE(emitter, &mut string)?;
             emitter.indention = false;
             spaces = false;
             breaks = false;
@@ -1667,14 +1655,14 @@ unsafe fn yaml_emitter_write_single_quoted_scalar(
                 yaml_emitter_write_indent(emitter)?;
                 MOVE!(string);
             } else {
-                WRITE!(emitter, string)?;
+                WRITE(emitter, &mut string)?;
             }
             spaces = true;
         } else if IS_BREAK!(string) {
             if !breaks && CHECK!(string, b'\n') {
                 PUT_BREAK(emitter)?;
             }
-            WRITE_BREAK!(emitter, string)?;
+            WRITE_BREAK(emitter, &mut string)?;
             emitter.indention = true;
             breaks = true;
         } else {
@@ -1684,7 +1672,7 @@ unsafe fn yaml_emitter_write_single_quoted_scalar(
             if CHECK!(string, b'\'') {
                 PUT(emitter, b'\'')?;
             }
-            WRITE!(emitter, string)?;
+            WRITE(emitter, &mut string)?;
             emitter.indention = false;
             spaces = false;
             breaks = false;
@@ -1845,11 +1833,11 @@ unsafe fn yaml_emitter_write_double_quoted_scalar(
                 }
                 MOVE!(string);
             } else {
-                WRITE!(emitter, string)?;
+                WRITE(emitter, &mut string)?;
             }
             spaces = true;
         } else {
-            WRITE!(emitter, string)?;
+            WRITE(emitter, &mut string)?;
             spaces = false;
         }
     }
@@ -1931,14 +1919,14 @@ unsafe fn yaml_emitter_write_literal_scalar(
     emitter.whitespace = true;
     while string.pointer != string.end {
         if IS_BREAK!(string) {
-            WRITE_BREAK!(emitter, string)?;
+            WRITE_BREAK(emitter, &mut string)?;
             emitter.indention = true;
             breaks = true;
         } else {
             if breaks {
                 yaml_emitter_write_indent(emitter)?;
             }
-            WRITE!(emitter, string)?;
+            WRITE(emitter, &mut string)?;
             emitter.indention = false;
             breaks = false;
         }
@@ -1976,7 +1964,7 @@ unsafe fn yaml_emitter_write_folded_scalar(
                     PUT_BREAK(emitter)?;
                 }
             }
-            WRITE_BREAK!(emitter, string)?;
+            WRITE_BREAK(emitter, &mut string)?;
             emitter.indention = true;
             breaks = true;
         } else {
@@ -1992,7 +1980,7 @@ unsafe fn yaml_emitter_write_folded_scalar(
                 yaml_emitter_write_indent(emitter)?;
                 MOVE!(string);
             } else {
-                WRITE!(emitter, string)?;
+                WRITE(emitter, &mut string)?;
             }
             emitter.indention = false;
             breaks = false;
