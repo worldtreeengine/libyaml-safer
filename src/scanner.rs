@@ -5,7 +5,7 @@ use crate::api::{
 use crate::externs::{memcpy, memmove, memset, strcmp, strlen};
 use crate::ops::{ForceAdd as _, ForceMul as _};
 use crate::reader::yaml_parser_update_buffer;
-use crate::success::{Success, FAIL, OK};
+use crate::success::{FAIL, OK};
 use crate::yaml::{ptrdiff_t, size_t, yaml_char_t, yaml_string_t, NULL_STRING};
 use crate::{
     libc, yaml_mark_t, yaml_parser_t, yaml_simple_key_t, yaml_token_t, yaml_token_type_t,
@@ -22,7 +22,7 @@ use crate::{
 use core::mem::{size_of, MaybeUninit};
 use core::ptr::{self, addr_of_mut};
 
-unsafe fn CACHE(parser: *mut yaml_parser_t, length: size_t) -> Success {
+unsafe fn CACHE(parser: *mut yaml_parser_t, length: size_t) -> Result<(), ()> {
     if (*parser).unread >= length {
         OK
     } else {
@@ -134,7 +134,10 @@ macro_rules! READ_LINE {
 /// An application must not alternate the calls of yaml_parser_scan() with the
 /// calls of yaml_parser_parse() or yaml_parser_load(). Doing this will break
 /// the parser.
-pub unsafe fn yaml_parser_scan(parser: *mut yaml_parser_t, token: *mut yaml_token_t) -> Success {
+pub unsafe fn yaml_parser_scan(
+    parser: *mut yaml_parser_t,
+    token: *mut yaml_token_t,
+) -> Result<(), ()> {
     __assert!(!parser.is_null());
     __assert!(!token.is_null());
     memset(
@@ -146,7 +149,7 @@ pub unsafe fn yaml_parser_scan(parser: *mut yaml_parser_t, token: *mut yaml_toke
         return OK;
     }
     if !(*parser).token_available {
-        if yaml_parser_fetch_more_tokens(parser).fail {
+        if yaml_parser_fetch_more_tokens(parser).is_err() {
             return FAIL;
         }
     }
@@ -175,7 +178,7 @@ unsafe fn yaml_parser_set_scanner_error(
     (*parser).problem_mark = (*parser).mark;
 }
 
-pub(crate) unsafe fn yaml_parser_fetch_more_tokens(parser: *mut yaml_parser_t) -> Success {
+pub(crate) unsafe fn yaml_parser_fetch_more_tokens(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut need_more_tokens;
     loop {
         need_more_tokens = false;
@@ -183,7 +186,7 @@ pub(crate) unsafe fn yaml_parser_fetch_more_tokens(parser: *mut yaml_parser_t) -
             need_more_tokens = true;
         } else {
             let mut simple_key: *mut yaml_simple_key_t;
-            if yaml_parser_stale_simple_keys(parser).fail {
+            if yaml_parser_stale_simple_keys(parser).is_err() {
                 return FAIL;
             }
             simple_key = (*parser).simple_keys.start;
@@ -199,7 +202,7 @@ pub(crate) unsafe fn yaml_parser_fetch_more_tokens(parser: *mut yaml_parser_t) -
         if !need_more_tokens {
             break;
         }
-        if yaml_parser_fetch_next_token(parser).fail {
+        if yaml_parser_fetch_next_token(parser).is_err() {
             return FAIL;
         }
     }
@@ -207,22 +210,22 @@ pub(crate) unsafe fn yaml_parser_fetch_more_tokens(parser: *mut yaml_parser_t) -
     OK
 }
 
-unsafe fn yaml_parser_fetch_next_token(parser: *mut yaml_parser_t) -> Success {
-    if CACHE(parser, 1_u64).fail {
+unsafe fn yaml_parser_fetch_next_token(parser: *mut yaml_parser_t) -> Result<(), ()> {
+    if CACHE(parser, 1_u64).is_err() {
         return FAIL;
     }
     if !(*parser).stream_start_produced {
         yaml_parser_fetch_stream_start(parser);
         return OK;
     }
-    if yaml_parser_scan_to_next_token(parser).fail {
+    if yaml_parser_scan_to_next_token(parser).is_err() {
         return FAIL;
     }
-    if yaml_parser_stale_simple_keys(parser).fail {
+    if yaml_parser_stale_simple_keys(parser).is_err() {
         return FAIL;
     }
     yaml_parser_unroll_indent(parser, (*parser).mark.column as ptrdiff_t);
-    if CACHE(parser, 4_u64).fail {
+    if CACHE(parser, 4_u64).is_err() {
         return FAIL;
     }
     if IS_Z!((*parser).buffer) {
@@ -332,7 +335,7 @@ unsafe fn yaml_parser_fetch_next_token(parser: *mut yaml_parser_t) -> Success {
     FAIL
 }
 
-unsafe fn yaml_parser_stale_simple_keys(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_stale_simple_keys(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut simple_key: *mut yaml_simple_key_t;
     simple_key = (*parser).simple_keys.start;
     while simple_key != (*parser).simple_keys.top {
@@ -356,7 +359,7 @@ unsafe fn yaml_parser_stale_simple_keys(parser: *mut yaml_parser_t) -> Success {
     OK
 }
 
-unsafe fn yaml_parser_save_simple_key(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_save_simple_key(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let required = (*parser).flow_level == 0
         && (*parser).indent as libc::c_long == (*parser).mark.column as ptrdiff_t;
     if (*parser).simple_key_allowed {
@@ -368,7 +371,7 @@ unsafe fn yaml_parser_save_simple_key(parser: *mut yaml_parser_t) -> Success {
             ),
             mark: (*parser).mark,
         };
-        if yaml_parser_remove_simple_key(parser).fail {
+        if yaml_parser_remove_simple_key(parser).is_err() {
             return FAIL;
         }
         *(*parser).simple_keys.top.wrapping_offset(-1_isize) = simple_key;
@@ -376,7 +379,7 @@ unsafe fn yaml_parser_save_simple_key(parser: *mut yaml_parser_t) -> Success {
     OK
 }
 
-unsafe fn yaml_parser_remove_simple_key(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_remove_simple_key(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let simple_key: *mut yaml_simple_key_t = (*parser).simple_keys.top.wrapping_offset(-1_isize);
     if (*simple_key).possible {
         if (*simple_key).required {
@@ -393,7 +396,7 @@ unsafe fn yaml_parser_remove_simple_key(parser: *mut yaml_parser_t) -> Success {
     OK
 }
 
-unsafe fn yaml_parser_increase_flow_level(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_increase_flow_level(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let empty_simple_key = yaml_simple_key_t {
         possible: false,
         required: false,
@@ -428,7 +431,7 @@ unsafe fn yaml_parser_roll_indent(
     number: ptrdiff_t,
     type_: yaml_token_type_t,
     mark: yaml_mark_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
     if (*parser).flow_level != 0 {
@@ -511,7 +514,7 @@ unsafe fn yaml_parser_fetch_stream_start(parser: *mut yaml_parser_t) {
     ENQUEUE!((*parser).tokens, *token);
 }
 
-unsafe fn yaml_parser_fetch_stream_end(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_fetch_stream_end(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
     if (*parser).mark.column != 0_u64 {
@@ -520,7 +523,7 @@ unsafe fn yaml_parser_fetch_stream_end(parser: *mut yaml_parser_t) -> Success {
         *fresh22 = (*fresh22).force_add(1);
     }
     yaml_parser_unroll_indent(parser, -1_i64);
-    if yaml_parser_remove_simple_key(parser).fail {
+    if yaml_parser_remove_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = false;
@@ -536,15 +539,15 @@ unsafe fn yaml_parser_fetch_stream_end(parser: *mut yaml_parser_t) -> Success {
     OK
 }
 
-unsafe fn yaml_parser_fetch_directive(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_fetch_directive(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
     yaml_parser_unroll_indent(parser, -1_i64);
-    if yaml_parser_remove_simple_key(parser).fail {
+    if yaml_parser_remove_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = false;
-    if yaml_parser_scan_directive(parser, token).fail {
+    if yaml_parser_scan_directive(parser, token).is_err() {
         return FAIL;
     }
     ENQUEUE!((*parser).tokens, *token);
@@ -554,11 +557,11 @@ unsafe fn yaml_parser_fetch_directive(parser: *mut yaml_parser_t) -> Success {
 unsafe fn yaml_parser_fetch_document_indicator(
     parser: *mut yaml_parser_t,
     type_: yaml_token_type_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
     yaml_parser_unroll_indent(parser, -1_i64);
-    if yaml_parser_remove_simple_key(parser).fail {
+    if yaml_parser_remove_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = false;
@@ -582,13 +585,13 @@ unsafe fn yaml_parser_fetch_document_indicator(
 unsafe fn yaml_parser_fetch_flow_collection_start(
     parser: *mut yaml_parser_t,
     type_: yaml_token_type_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
-    if yaml_parser_save_simple_key(parser).fail {
+    if yaml_parser_save_simple_key(parser).is_err() {
         return FAIL;
     }
-    if yaml_parser_increase_flow_level(parser).fail {
+    if yaml_parser_increase_flow_level(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = true;
@@ -610,10 +613,10 @@ unsafe fn yaml_parser_fetch_flow_collection_start(
 unsafe fn yaml_parser_fetch_flow_collection_end(
     parser: *mut yaml_parser_t,
     type_: yaml_token_type_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
-    if yaml_parser_remove_simple_key(parser).fail {
+    if yaml_parser_remove_simple_key(parser).is_err() {
         return FAIL;
     }
     yaml_parser_decrease_flow_level(parser);
@@ -633,10 +636,10 @@ unsafe fn yaml_parser_fetch_flow_collection_end(
     OK
 }
 
-unsafe fn yaml_parser_fetch_flow_entry(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_fetch_flow_entry(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
-    if yaml_parser_remove_simple_key(parser).fail {
+    if yaml_parser_remove_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = true;
@@ -655,7 +658,7 @@ unsafe fn yaml_parser_fetch_flow_entry(parser: *mut yaml_parser_t) -> Success {
     OK
 }
 
-unsafe fn yaml_parser_fetch_block_entry(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_fetch_block_entry(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
     if (*parser).flow_level == 0 {
@@ -676,12 +679,12 @@ unsafe fn yaml_parser_fetch_block_entry(parser: *mut yaml_parser_t) -> Success {
             YAML_BLOCK_SEQUENCE_START_TOKEN,
             (*parser).mark,
         )
-        .fail
+        .is_err()
         {
             return FAIL;
         }
     }
-    if yaml_parser_remove_simple_key(parser).fail {
+    if yaml_parser_remove_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = true;
@@ -700,7 +703,7 @@ unsafe fn yaml_parser_fetch_block_entry(parser: *mut yaml_parser_t) -> Success {
     OK
 }
 
-unsafe fn yaml_parser_fetch_key(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_fetch_key(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
     if (*parser).flow_level == 0 {
@@ -721,12 +724,12 @@ unsafe fn yaml_parser_fetch_key(parser: *mut yaml_parser_t) -> Success {
             YAML_BLOCK_MAPPING_START_TOKEN,
             (*parser).mark,
         )
-        .fail
+        .is_err()
         {
             return FAIL;
         }
     }
-    if yaml_parser_remove_simple_key(parser).fail {
+    if yaml_parser_remove_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = (*parser).flow_level == 0;
@@ -745,7 +748,7 @@ unsafe fn yaml_parser_fetch_key(parser: *mut yaml_parser_t) -> Success {
     OK
 }
 
-unsafe fn yaml_parser_fetch_value(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_fetch_value(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
     let simple_key: *mut yaml_simple_key_t = (*parser).simple_keys.top.wrapping_offset(-1_isize);
@@ -770,7 +773,7 @@ unsafe fn yaml_parser_fetch_value(parser: *mut yaml_parser_t) -> Success {
             YAML_BLOCK_MAPPING_START_TOKEN,
             (*simple_key).mark,
         )
-        .fail
+        .is_err()
         {
             return FAIL;
         }
@@ -795,7 +798,7 @@ unsafe fn yaml_parser_fetch_value(parser: *mut yaml_parser_t) -> Success {
                 YAML_BLOCK_MAPPING_START_TOKEN,
                 (*parser).mark,
             )
-            .fail
+            .is_err()
             {
                 return FAIL;
             }
@@ -820,85 +823,91 @@ unsafe fn yaml_parser_fetch_value(parser: *mut yaml_parser_t) -> Success {
 unsafe fn yaml_parser_fetch_anchor(
     parser: *mut yaml_parser_t,
     type_: yaml_token_type_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
-    if yaml_parser_save_simple_key(parser).fail {
+    if yaml_parser_save_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = false;
-    if yaml_parser_scan_anchor(parser, token, type_).fail {
+    if yaml_parser_scan_anchor(parser, token, type_).is_err() {
         return FAIL;
     }
     ENQUEUE!((*parser).tokens, *token);
     OK
 }
 
-unsafe fn yaml_parser_fetch_tag(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_fetch_tag(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
-    if yaml_parser_save_simple_key(parser).fail {
+    if yaml_parser_save_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = false;
-    if yaml_parser_scan_tag(parser, token).fail {
+    if yaml_parser_scan_tag(parser, token).is_err() {
         return FAIL;
     }
     ENQUEUE!((*parser).tokens, *token);
     OK
 }
 
-unsafe fn yaml_parser_fetch_block_scalar(parser: *mut yaml_parser_t, literal: bool) -> Success {
+unsafe fn yaml_parser_fetch_block_scalar(
+    parser: *mut yaml_parser_t,
+    literal: bool,
+) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
-    if yaml_parser_remove_simple_key(parser).fail {
+    if yaml_parser_remove_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = true;
-    if yaml_parser_scan_block_scalar(parser, token, literal).fail {
+    if yaml_parser_scan_block_scalar(parser, token, literal).is_err() {
         return FAIL;
     }
     ENQUEUE!((*parser).tokens, *token);
     OK
 }
 
-unsafe fn yaml_parser_fetch_flow_scalar(parser: *mut yaml_parser_t, single: bool) -> Success {
+unsafe fn yaml_parser_fetch_flow_scalar(
+    parser: *mut yaml_parser_t,
+    single: bool,
+) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
-    if yaml_parser_save_simple_key(parser).fail {
+    if yaml_parser_save_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = false;
-    if yaml_parser_scan_flow_scalar(parser, token, single).fail {
+    if yaml_parser_scan_flow_scalar(parser, token, single).is_err() {
         return FAIL;
     }
     ENQUEUE!((*parser).tokens, *token);
     OK
 }
 
-unsafe fn yaml_parser_fetch_plain_scalar(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_fetch_plain_scalar(parser: *mut yaml_parser_t) -> Result<(), ()> {
     let mut token = MaybeUninit::<yaml_token_t>::uninit();
     let token = token.as_mut_ptr();
-    if yaml_parser_save_simple_key(parser).fail {
+    if yaml_parser_save_simple_key(parser).is_err() {
         return FAIL;
     }
     (*parser).simple_key_allowed = false;
-    if yaml_parser_scan_plain_scalar(parser, token).fail {
+    if yaml_parser_scan_plain_scalar(parser, token).is_err() {
         return FAIL;
     }
     ENQUEUE!((*parser).tokens, *token);
     OK
 }
 
-unsafe fn yaml_parser_scan_to_next_token(parser: *mut yaml_parser_t) -> Success {
+unsafe fn yaml_parser_scan_to_next_token(parser: *mut yaml_parser_t) -> Result<(), ()> {
     loop {
-        if CACHE(parser, 1_u64).fail {
+        if CACHE(parser, 1_u64).is_err() {
             return FAIL;
         }
         if (*parser).mark.column == 0_u64 && IS_BOM!((*parser).buffer) {
             SKIP(parser);
         }
-        if CACHE(parser, 1_u64).fail {
+        if CACHE(parser, 1_u64).is_err() {
             return FAIL;
         }
         while CHECK!((*parser).buffer, b' ')
@@ -906,14 +915,14 @@ unsafe fn yaml_parser_scan_to_next_token(parser: *mut yaml_parser_t) -> Success 
                 && CHECK!((*parser).buffer, b'\t')
         {
             SKIP(parser);
-            if CACHE(parser, 1_u64).fail {
+            if CACHE(parser, 1_u64).is_err() {
                 return FAIL;
             }
         }
         if CHECK!((*parser).buffer, b'#') {
             while !IS_BREAKZ!((*parser).buffer) {
                 SKIP(parser);
-                if CACHE(parser, 1_u64).fail {
+                if CACHE(parser, 1_u64).is_err() {
                     return FAIL;
                 }
             }
@@ -921,7 +930,7 @@ unsafe fn yaml_parser_scan_to_next_token(parser: *mut yaml_parser_t) -> Success 
         if !IS_BREAK!((*parser).buffer) {
             break;
         }
-        if CACHE(parser, 2_u64).fail {
+        if CACHE(parser, 2_u64).is_err() {
             return FAIL;
         }
         SKIP_LINE(parser);
@@ -935,7 +944,7 @@ unsafe fn yaml_parser_scan_to_next_token(parser: *mut yaml_parser_t) -> Success 
 unsafe fn yaml_parser_scan_directive(
     parser: *mut yaml_parser_t,
     token: *mut yaml_token_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut current_block: u64;
     let end_mark: yaml_mark_t;
     let mut name: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
@@ -945,7 +954,7 @@ unsafe fn yaml_parser_scan_directive(
     let mut prefix: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let start_mark: yaml_mark_t = (*parser).mark;
     SKIP(parser);
-    if yaml_parser_scan_directive_name(parser, start_mark, addr_of_mut!(name)).ok {
+    if yaml_parser_scan_directive_name(parser, start_mark, addr_of_mut!(name)).is_ok() {
         if strcmp(
             name as *mut libc::c_char,
             b"YAML\0" as *const u8 as *const libc::c_char,
@@ -957,7 +966,7 @@ unsafe fn yaml_parser_scan_directive(
                 addr_of_mut!(major),
                 addr_of_mut!(minor),
             )
-            .fail
+            .is_err()
             {
                 current_block = 11397968426844348457;
             } else {
@@ -985,7 +994,7 @@ unsafe fn yaml_parser_scan_directive(
                 addr_of_mut!(handle),
                 addr_of_mut!(prefix),
             )
-            .fail
+            .is_err()
             {
                 current_block = 11397968426844348457;
             } else {
@@ -1014,14 +1023,14 @@ unsafe fn yaml_parser_scan_directive(
             current_block = 11397968426844348457;
         }
         if current_block != 11397968426844348457 {
-            if CACHE(parser, 1_u64).ok {
+            if CACHE(parser, 1_u64).is_ok() {
                 loop {
                     if !IS_BLANK!((*parser).buffer) {
                         current_block = 11584701595673473500;
                         break;
                     }
                     SKIP(parser);
-                    if CACHE(parser, 1_u64).fail {
+                    if CACHE(parser, 1_u64).is_err() {
                         current_block = 11397968426844348457;
                         break;
                     }
@@ -1034,7 +1043,7 @@ unsafe fn yaml_parser_scan_directive(
                                 break;
                             }
                             SKIP(parser);
-                            if CACHE(parser, 1_u64).fail {
+                            if CACHE(parser, 1_u64).is_err() {
                                 current_block = 11397968426844348457;
                                 break;
                             }
@@ -1053,7 +1062,7 @@ unsafe fn yaml_parser_scan_directive(
                             );
                         } else {
                             if IS_BREAK!((*parser).buffer) {
-                                if CACHE(parser, 2_u64).fail {
+                                if CACHE(parser, 2_u64).is_err() {
                                     current_block = 11397968426844348457;
                                 } else {
                                     SKIP_LINE(parser);
@@ -1082,18 +1091,18 @@ unsafe fn yaml_parser_scan_directive_name(
     parser: *mut yaml_parser_t,
     start_mark: yaml_mark_t,
     name: *mut *mut yaml_char_t,
-) -> Success {
+) -> Result<(), ()> {
     let current_block: u64;
     let mut string = NULL_STRING;
     STRING_INIT!(string);
-    if CACHE(parser, 1_u64).ok {
+    if CACHE(parser, 1_u64).is_ok() {
         loop {
             if !IS_ALPHA!((*parser).buffer) {
                 current_block = 10879442775620481940;
                 break;
             }
             READ!(parser, string);
-            if CACHE(parser, 1_u64).fail {
+            if CACHE(parser, 1_u64).is_err() {
                 current_block = 8318012024179131575;
                 break;
             }
@@ -1129,17 +1138,17 @@ unsafe fn yaml_parser_scan_version_directive_value(
     start_mark: yaml_mark_t,
     major: *mut libc::c_int,
     minor: *mut libc::c_int,
-) -> Success {
-    if CACHE(parser, 1_u64).fail {
+) -> Result<(), ()> {
+    if CACHE(parser, 1_u64).is_err() {
         return FAIL;
     }
     while IS_BLANK!((*parser).buffer) {
         SKIP(parser);
-        if CACHE(parser, 1_u64).fail {
+        if CACHE(parser, 1_u64).is_err() {
             return FAIL;
         }
     }
-    if yaml_parser_scan_version_directive_number(parser, start_mark, major).fail {
+    if yaml_parser_scan_version_directive_number(parser, start_mark, major).is_err() {
         return FAIL;
     }
     if !CHECK!((*parser).buffer, b'.') {
@@ -1161,10 +1170,10 @@ unsafe fn yaml_parser_scan_version_directive_number(
     parser: *mut yaml_parser_t,
     start_mark: yaml_mark_t,
     number: *mut libc::c_int,
-) -> Success {
+) -> Result<(), ()> {
     let mut value: libc::c_int = 0;
     let mut length: size_t = 0_u64;
-    if CACHE(parser, 1_u64).fail {
+    if CACHE(parser, 1_u64).is_err() {
         return FAIL;
     }
     while IS_DIGIT!((*parser).buffer) {
@@ -1180,7 +1189,7 @@ unsafe fn yaml_parser_scan_version_directive_number(
         }
         value = value.force_mul(10).force_add(AS_DIGIT!((*parser).buffer));
         SKIP(parser);
-        if CACHE(parser, 1_u64).fail {
+        if CACHE(parser, 1_u64).is_err() {
             return FAIL;
         }
     }
@@ -1202,11 +1211,11 @@ unsafe fn yaml_parser_scan_tag_directive_value(
     start_mark: yaml_mark_t,
     handle: *mut *mut yaml_char_t,
     prefix: *mut *mut yaml_char_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut current_block: u64;
     let mut handle_value: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let mut prefix_value: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
-    if CACHE(parser, 1_u64).fail {
+    if CACHE(parser, 1_u64).is_err() {
         current_block = 5231181710497607163;
     } else {
         current_block = 14916268686031723178;
@@ -1221,7 +1230,7 @@ unsafe fn yaml_parser_scan_tag_directive_value(
             _ => {
                 if IS_BLANK!((*parser).buffer) {
                     SKIP(parser);
-                    if CACHE(parser, 1_u64).fail {
+                    if CACHE(parser, 1_u64).is_err() {
                         current_block = 5231181710497607163;
                     } else {
                         current_block = 14916268686031723178;
@@ -1233,12 +1242,12 @@ unsafe fn yaml_parser_scan_tag_directive_value(
                         start_mark,
                         addr_of_mut!(handle_value),
                     )
-                    .fail
+                    .is_err()
                     {
                         current_block = 5231181710497607163;
                         continue;
                     }
-                    if CACHE(parser, 1_u64).fail {
+                    if CACHE(parser, 1_u64).is_err() {
                         current_block = 5231181710497607163;
                         continue;
                     }
@@ -1255,7 +1264,7 @@ unsafe fn yaml_parser_scan_tag_directive_value(
                     } else {
                         while IS_BLANK!((*parser).buffer) {
                             SKIP(parser);
-                            if CACHE(parser, 1_u64).fail {
+                            if CACHE(parser, 1_u64).is_err() {
                                 current_block = 5231181710497607163;
                                 continue 'c_34337;
                             }
@@ -1268,12 +1277,12 @@ unsafe fn yaml_parser_scan_tag_directive_value(
                             start_mark,
                             addr_of_mut!(prefix_value),
                         )
-                        .fail
+                        .is_err()
                         {
                             current_block = 5231181710497607163;
                             continue;
                         }
-                        if CACHE(parser, 1_u64).fail {
+                        if CACHE(parser, 1_u64).is_err() {
                             current_block = 5231181710497607163;
                             continue;
                         }
@@ -1303,7 +1312,7 @@ unsafe fn yaml_parser_scan_anchor(
     parser: *mut yaml_parser_t,
     token: *mut yaml_token_t,
     type_: yaml_token_type_t,
-) -> Success {
+) -> Result<(), ()> {
     let current_block: u64;
     let mut length: libc::c_int = 0;
     let end_mark: yaml_mark_t;
@@ -1311,14 +1320,14 @@ unsafe fn yaml_parser_scan_anchor(
     STRING_INIT!(string);
     let start_mark: yaml_mark_t = (*parser).mark;
     SKIP(parser);
-    if CACHE(parser, 1_u64).ok {
+    if CACHE(parser, 1_u64).is_ok() {
         loop {
             if !IS_ALPHA!((*parser).buffer) {
                 current_block = 2868539653012386629;
                 break;
             }
             READ!(parser, string);
-            if CACHE(parser, 1_u64).fail {
+            if CACHE(parser, 1_u64).is_err() {
                 current_block = 5883759901342942623;
                 break;
             }
@@ -1380,13 +1389,16 @@ unsafe fn yaml_parser_scan_anchor(
     FAIL
 }
 
-unsafe fn yaml_parser_scan_tag(parser: *mut yaml_parser_t, token: *mut yaml_token_t) -> Success {
+unsafe fn yaml_parser_scan_tag(
+    parser: *mut yaml_parser_t,
+    token: *mut yaml_token_t,
+) -> Result<(), ()> {
     let mut current_block: u64;
     let mut handle: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let mut suffix: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let end_mark: yaml_mark_t;
     let start_mark: yaml_mark_t = (*parser).mark;
-    if CACHE(parser, 2_u64).ok {
+    if CACHE(parser, 2_u64).is_ok() {
         if CHECK_AT!((*parser).buffer, b'<', 1) {
             handle = yaml_malloc(1_u64) as *mut yaml_char_t;
             *handle = b'\0';
@@ -1400,7 +1412,7 @@ unsafe fn yaml_parser_scan_tag(parser: *mut yaml_parser_t, token: *mut yaml_toke
                 start_mark,
                 addr_of_mut!(suffix),
             )
-            .fail
+            .is_err()
             {
                 current_block = 17708497480799081542;
             } else if !CHECK!((*parser).buffer, b'>') {
@@ -1415,7 +1427,8 @@ unsafe fn yaml_parser_scan_tag(parser: *mut yaml_parser_t, token: *mut yaml_toke
                 SKIP(parser);
                 current_block = 4488286894823169796;
             }
-        } else if yaml_parser_scan_tag_handle(parser, false, start_mark, addr_of_mut!(handle)).fail
+        } else if yaml_parser_scan_tag_handle(parser, false, start_mark, addr_of_mut!(handle))
+            .is_err()
         {
             current_block = 17708497480799081542;
         } else if *handle == b'!'
@@ -1432,7 +1445,7 @@ unsafe fn yaml_parser_scan_tag(parser: *mut yaml_parser_t, token: *mut yaml_toke
                 start_mark,
                 addr_of_mut!(suffix),
             )
-            .fail
+            .is_err()
             {
                 current_block = 17708497480799081542;
             } else {
@@ -1446,7 +1459,7 @@ unsafe fn yaml_parser_scan_tag(parser: *mut yaml_parser_t, token: *mut yaml_toke
             start_mark,
             addr_of_mut!(suffix),
         )
-        .fail
+        .is_err()
         {
             current_block = 17708497480799081542;
         } else {
@@ -1462,7 +1475,7 @@ unsafe fn yaml_parser_scan_tag(parser: *mut yaml_parser_t, token: *mut yaml_toke
             current_block = 4488286894823169796;
         }
         if current_block != 17708497480799081542 {
-            if CACHE(parser, 1_u64).ok {
+            if CACHE(parser, 1_u64).is_ok() {
                 if !IS_BLANKZ!((*parser).buffer) {
                     if (*parser).flow_level == 0 || !CHECK!((*parser).buffer, b',') {
                         yaml_parser_set_scanner_error(
@@ -1508,11 +1521,11 @@ unsafe fn yaml_parser_scan_tag_handle(
     directive: bool,
     start_mark: yaml_mark_t,
     handle: *mut *mut yaml_char_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut current_block: u64;
     let mut string = NULL_STRING;
     STRING_INIT!(string);
-    if CACHE(parser, 1_u64).ok {
+    if CACHE(parser, 1_u64).is_ok() {
         if !CHECK!((*parser).buffer, b'!') {
             yaml_parser_set_scanner_error(
                 parser,
@@ -1526,14 +1539,14 @@ unsafe fn yaml_parser_scan_tag_handle(
             );
         } else {
             READ!(parser, string);
-            if CACHE(parser, 1_u64).ok {
+            if CACHE(parser, 1_u64).is_ok() {
                 loop {
                     if !IS_ALPHA!((*parser).buffer) {
                         current_block = 7651349459974463963;
                         break;
                     }
                     READ!(parser, string);
-                    if CACHE(parser, 1_u64).fail {
+                    if CACHE(parser, 1_u64).is_err() {
                         current_block = 1771849829115608806;
                         break;
                     }
@@ -1575,7 +1588,7 @@ unsafe fn yaml_parser_scan_tag_uri(
     head: *mut yaml_char_t,
     start_mark: yaml_mark_t,
     uri: *mut *mut yaml_char_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut current_block: u64;
     let mut length: size_t = if !head.is_null() {
         strlen(head as *mut libc::c_char)
@@ -1611,7 +1624,7 @@ unsafe fn yaml_parser_scan_tag_uri(
                             .pointer
                             .wrapping_offset(length.wrapping_sub(1_u64) as isize);
                     }
-                    if CACHE(parser, 1_u64).fail {
+                    if CACHE(parser, 1_u64).is_err() {
                         current_block = 15265153392498847348;
                         continue;
                     }
@@ -1646,7 +1659,7 @@ unsafe fn yaml_parser_scan_tag_uri(
                                 start_mark,
                                 addr_of_mut!(string),
                             )
-                            .fail
+                            .is_err()
                             {
                                 current_block = 15265153392498847348;
                                 continue 'c_21953;
@@ -1655,7 +1668,7 @@ unsafe fn yaml_parser_scan_tag_uri(
                             READ!(parser, string);
                         }
                         length = length.force_add(1);
-                        if CACHE(parser, 1_u64).fail {
+                        if CACHE(parser, 1_u64).is_err() {
                             current_block = 15265153392498847348;
                             continue 'c_21953;
                         }
@@ -1689,10 +1702,10 @@ unsafe fn yaml_parser_scan_uri_escapes(
     directive: bool,
     start_mark: yaml_mark_t,
     string: *mut yaml_string_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut width: libc::c_int = 0;
     loop {
-        if CACHE(parser, 3_u64).fail {
+        if CACHE(parser, 3_u64).is_err() {
             return FAIL;
         }
         if !(CHECK!((*parser).buffer, b'%')
@@ -1770,7 +1783,7 @@ unsafe fn yaml_parser_scan_block_scalar(
     parser: *mut yaml_parser_t,
     token: *mut yaml_token_t,
     literal: bool,
-) -> Success {
+) -> Result<(), ()> {
     let mut current_block: u64;
     let mut end_mark: yaml_mark_t;
     let mut string = NULL_STRING;
@@ -1786,7 +1799,7 @@ unsafe fn yaml_parser_scan_block_scalar(
     STRING_INIT!(trailing_breaks);
     let start_mark: yaml_mark_t = (*parser).mark;
     SKIP(parser);
-    if CACHE(parser, 1_u64).ok {
+    if CACHE(parser, 1_u64).is_ok() {
         if CHECK!((*parser).buffer, b'+') || CHECK!((*parser).buffer, b'-') {
             chomping = if CHECK!((*parser).buffer, b'+') {
                 1
@@ -1794,7 +1807,7 @@ unsafe fn yaml_parser_scan_block_scalar(
                 -1
             };
             SKIP(parser);
-            if CACHE(parser, 1_u64).fail {
+            if CACHE(parser, 1_u64).is_err() {
                 current_block = 14984465786483313892;
             } else if IS_DIGIT!((*parser).buffer) {
                 if CHECK!((*parser).buffer, b'0') {
@@ -1827,7 +1840,7 @@ unsafe fn yaml_parser_scan_block_scalar(
             } else {
                 increment = AS_DIGIT!((*parser).buffer);
                 SKIP(parser);
-                if CACHE(parser, 1_u64).fail {
+                if CACHE(parser, 1_u64).is_err() {
                     current_block = 14984465786483313892;
                 } else {
                     if CHECK!((*parser).buffer, b'+') || CHECK!((*parser).buffer, b'-') {
@@ -1845,14 +1858,14 @@ unsafe fn yaml_parser_scan_block_scalar(
             current_block = 11913429853522160501;
         }
         if current_block != 14984465786483313892 {
-            if CACHE(parser, 1_u64).ok {
+            if CACHE(parser, 1_u64).is_ok() {
                 loop {
                     if !IS_BLANK!((*parser).buffer) {
                         current_block = 4090602189656566074;
                         break;
                     }
                     SKIP(parser);
-                    if CACHE(parser, 1_u64).fail {
+                    if CACHE(parser, 1_u64).is_err() {
                         current_block = 14984465786483313892;
                         break;
                     }
@@ -1865,7 +1878,7 @@ unsafe fn yaml_parser_scan_block_scalar(
                                 break;
                             }
                             SKIP(parser);
-                            if CACHE(parser, 1_u64).fail {
+                            if CACHE(parser, 1_u64).is_err() {
                                 current_block = 14984465786483313892;
                                 break;
                             }
@@ -1885,7 +1898,7 @@ unsafe fn yaml_parser_scan_block_scalar(
                             );
                         } else {
                             if IS_BREAK!((*parser).buffer) {
-                                if CACHE(parser, 2_u64).fail {
+                                if CACHE(parser, 2_u64).is_err() {
                                     current_block = 14984465786483313892;
                                 } else {
                                     SKIP_LINE(parser);
@@ -1910,9 +1923,9 @@ unsafe fn yaml_parser_scan_block_scalar(
                                     start_mark,
                                     addr_of_mut!(end_mark),
                                 )
-                                .ok
+                                .is_ok()
                                 {
-                                    if CACHE(parser, 1_u64).ok {
+                                    if CACHE(parser, 1_u64).is_ok() {
                                         's_281: loop {
                                             if !((*parser).mark.column as libc::c_int == indent
                                                 && !IS_Z!((*parser).buffer))
@@ -1945,12 +1958,12 @@ unsafe fn yaml_parser_scan_block_scalar(
                                                 IS_BLANK!((*parser).buffer) as libc::c_int;
                                             while !IS_BREAKZ!((*parser).buffer) {
                                                 READ!(parser, string);
-                                                if CACHE(parser, 1_u64).fail {
+                                                if CACHE(parser, 1_u64).is_err() {
                                                     current_block = 14984465786483313892;
                                                     break 's_281;
                                                 }
                                             }
-                                            if CACHE(parser, 2_u64).fail {
+                                            if CACHE(parser, 2_u64).is_err() {
                                                 current_block = 14984465786483313892;
                                                 break;
                                             }
@@ -1962,7 +1975,7 @@ unsafe fn yaml_parser_scan_block_scalar(
                                                 start_mark,
                                                 addr_of_mut!(end_mark),
                                             )
-                                            .fail
+                                            .is_err()
                                             {
                                                 current_block = 14984465786483313892;
                                                 break;
@@ -2024,18 +2037,18 @@ unsafe fn yaml_parser_scan_block_scalar_breaks(
     breaks: *mut yaml_string_t,
     start_mark: yaml_mark_t,
     end_mark: *mut yaml_mark_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut max_indent: libc::c_int = 0;
     *end_mark = (*parser).mark;
     loop {
-        if CACHE(parser, 1_u64).fail {
+        if CACHE(parser, 1_u64).is_err() {
             return FAIL;
         }
         while (*indent == 0 || ((*parser).mark.column as libc::c_int) < *indent)
             && IS_SPACE!((*parser).buffer)
         {
             SKIP(parser);
-            if CACHE(parser, 1_u64).fail {
+            if CACHE(parser, 1_u64).is_err() {
                 return FAIL;
             }
         }
@@ -2057,7 +2070,7 @@ unsafe fn yaml_parser_scan_block_scalar_breaks(
         if !IS_BREAK!((*parser).buffer) {
             break;
         }
-        if CACHE(parser, 2_u64).fail {
+        if CACHE(parser, 2_u64).is_err() {
             return FAIL;
         }
         READ_LINE!(parser, *breaks);
@@ -2079,7 +2092,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
     parser: *mut yaml_parser_t,
     token: *mut yaml_token_t,
     single: bool,
-) -> Success {
+) -> Result<(), ()> {
     let current_block: u64;
     let end_mark: yaml_mark_t;
     let mut string = NULL_STRING;
@@ -2094,7 +2107,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
     let start_mark: yaml_mark_t = (*parser).mark;
     SKIP(parser);
     's_58: loop {
-        if CACHE(parser, 4_u64).fail {
+        if CACHE(parser, 4_u64).is_err() {
             current_block = 8114179180390253173;
             break;
         }
@@ -2125,7 +2138,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
             current_block = 8114179180390253173;
             break;
         } else {
-            if CACHE(parser, 2_u64).fail {
+            if CACHE(parser, 2_u64).is_err() {
                 current_block = 8114179180390253173;
                 break;
             }
@@ -2149,7 +2162,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
                         && CHECK!((*parser).buffer, b'\\')
                         && IS_BREAK_AT!((*parser).buffer, 1)
                     {
-                        if CACHE(parser, 3_u64).fail {
+                        if CACHE(parser, 3_u64).is_err() {
                             current_block = 8114179180390253173;
                             break 's_58;
                         }
@@ -2295,7 +2308,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
                         if code_length != 0 {
                             let mut value: libc::c_uint = 0;
                             let mut k: size_t;
-                            if CACHE(parser, code_length).fail {
+                            if CACHE(parser, code_length).is_err() {
                                 current_block = 8114179180390253173;
                                 break 's_58;
                             }
@@ -2382,12 +2395,12 @@ unsafe fn yaml_parser_scan_flow_scalar(
                         READ!(parser, string);
                     }
                 }
-                if CACHE(parser, 2_u64).fail {
+                if CACHE(parser, 2_u64).is_err() {
                     current_block = 8114179180390253173;
                     break 's_58;
                 }
             }
-            if CACHE(parser, 1_u64).fail {
+            if CACHE(parser, 1_u64).is_err() {
                 current_block = 8114179180390253173;
                 break;
             }
@@ -2395,7 +2408,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
                 current_block = 7468767852762055642;
                 break;
             }
-            if CACHE(parser, 1_u64).fail {
+            if CACHE(parser, 1_u64).is_err() {
                 current_block = 8114179180390253173;
                 break;
             }
@@ -2407,7 +2420,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
                         SKIP(parser);
                     }
                 } else {
-                    if CACHE(parser, 2_u64).fail {
+                    if CACHE(parser, 2_u64).is_err() {
                         current_block = 8114179180390253173;
                         break 's_58;
                     }
@@ -2419,7 +2432,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
                         READ_LINE!(parser, trailing_breaks);
                     }
                 }
-                if CACHE(parser, 1_u64).fail {
+                if CACHE(parser, 1_u64).is_err() {
                     current_block = 8114179180390253173;
                     break 's_58;
                 }
@@ -2482,7 +2495,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
 unsafe fn yaml_parser_scan_plain_scalar(
     parser: *mut yaml_parser_t,
     token: *mut yaml_token_t,
-) -> Success {
+) -> Result<(), ()> {
     let current_block: u64;
     let mut end_mark: yaml_mark_t;
     let mut string = NULL_STRING;
@@ -2498,7 +2511,7 @@ unsafe fn yaml_parser_scan_plain_scalar(
     end_mark = (*parser).mark;
     let start_mark: yaml_mark_t = end_mark;
     's_57: loop {
-        if CACHE(parser, 4_u64).fail {
+        if CACHE(parser, 4_u64).is_err() {
             current_block = 16642808987012640029;
             break;
         }
@@ -2574,7 +2587,7 @@ unsafe fn yaml_parser_scan_plain_scalar(
                 }
                 READ!(parser, string);
                 end_mark = (*parser).mark;
-                if CACHE(parser, 2_u64).fail {
+                if CACHE(parser, 2_u64).is_err() {
                     current_block = 16642808987012640029;
                     break 's_57;
                 }
@@ -2584,7 +2597,7 @@ unsafe fn yaml_parser_scan_plain_scalar(
             current_block = 6281126495347172768;
             break;
         }
-        if CACHE(parser, 1_u64).fail {
+        if CACHE(parser, 1_u64).is_err() {
             current_block = 16642808987012640029;
             break;
         }
@@ -2609,7 +2622,7 @@ unsafe fn yaml_parser_scan_plain_scalar(
                     SKIP(parser);
                 }
             } else {
-                if CACHE(parser, 2_u64).fail {
+                if CACHE(parser, 2_u64).is_err() {
                     current_block = 16642808987012640029;
                     break 's_57;
                 }
@@ -2621,7 +2634,7 @@ unsafe fn yaml_parser_scan_plain_scalar(
                     READ_LINE!(parser, trailing_breaks);
                 }
             }
-            if CACHE(parser, 1_u64).fail {
+            if CACHE(parser, 1_u64).is_err() {
                 current_block = 16642808987012640029;
                 break 's_57;
             }

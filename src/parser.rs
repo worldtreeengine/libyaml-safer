@@ -2,7 +2,7 @@ use crate::api::{yaml_free, yaml_malloc, yaml_stack_extend, yaml_strdup};
 use crate::externs::{memcpy, memset, strcmp, strlen};
 use crate::ops::ForceAdd as _;
 use crate::scanner::yaml_parser_fetch_more_tokens;
-use crate::success::{Success, FAIL, OK};
+use crate::success::{FAIL, OK};
 use crate::yaml::{size_t, yaml_char_t};
 use crate::{
     libc, yaml_event_t, yaml_mark_t, yaml_parser_t, yaml_tag_directive_t, yaml_token_t,
@@ -35,7 +35,7 @@ use core::mem::size_of;
 use core::ptr::{self, addr_of_mut};
 
 unsafe fn PEEK_TOKEN(parser: *mut yaml_parser_t) -> *mut yaml_token_t {
-    if (*parser).token_available || yaml_parser_fetch_more_tokens(parser).ok {
+    if (*parser).token_available || yaml_parser_fetch_more_tokens(parser).is_ok() {
         (*parser).tokens.head
     } else {
         ptr::null_mut::<yaml_token_t>()
@@ -63,7 +63,10 @@ unsafe fn SKIP_TOKEN(parser: *mut yaml_parser_t) {
 /// An application must not alternate the calls of yaml_parser_parse() with the
 /// calls of yaml_parser_scan() or yaml_parser_load(). Doing this will break the
 /// parser.
-pub unsafe fn yaml_parser_parse(parser: *mut yaml_parser_t, event: *mut yaml_event_t) -> Success {
+pub unsafe fn yaml_parser_parse(
+    parser: *mut yaml_parser_t,
+    event: *mut yaml_event_t,
+) -> Result<(), ()> {
     __assert!(!parser.is_null());
     __assert!(!event.is_null());
     memset(
@@ -110,7 +113,7 @@ unsafe fn yaml_parser_set_parser_error_context(
 unsafe fn yaml_parser_state_machine(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     match (*parser).state {
         YAML_PARSE_STREAM_START_STATE => yaml_parser_parse_stream_start(parser, event),
         YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE => {
@@ -176,7 +179,7 @@ unsafe fn yaml_parser_state_machine(
 unsafe fn yaml_parser_parse_stream_start(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     let token: *mut yaml_token_t = PEEK_TOKEN(parser);
     if token.is_null() {
         return FAIL;
@@ -207,7 +210,7 @@ unsafe fn yaml_parser_parse_document_start(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
     implicit: bool,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     let mut version_directive: *mut yaml_version_directive_t =
         ptr::null_mut::<yaml_version_directive_t>();
@@ -244,7 +247,7 @@ unsafe fn yaml_parser_parse_document_start(
             ptr::null_mut::<*mut yaml_tag_directive_t>(),
             ptr::null_mut::<*mut yaml_tag_directive_t>(),
         )
-        .fail
+        .is_err()
         {
             return FAIL;
         }
@@ -275,7 +278,7 @@ unsafe fn yaml_parser_parse_document_start(
             addr_of_mut!(tag_directives.start),
             addr_of_mut!(tag_directives.end),
         )
-        .fail
+        .is_err()
         {
             return FAIL;
         }
@@ -338,7 +341,7 @@ unsafe fn yaml_parser_parse_document_start(
 unsafe fn yaml_parser_parse_document_content(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     let token: *mut yaml_token_t = PEEK_TOKEN(parser);
     if token.is_null() {
         return FAIL;
@@ -359,7 +362,7 @@ unsafe fn yaml_parser_parse_document_content(
 unsafe fn yaml_parser_parse_document_end(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut end_mark: yaml_mark_t;
     let mut implicit = true;
     let token: *mut yaml_token_t = PEEK_TOKEN(parser);
@@ -396,7 +399,7 @@ unsafe fn yaml_parser_parse_node(
     event: *mut yaml_event_t,
     block: bool,
     indentless_sequence: bool,
-) -> Success {
+) -> Result<(), ()> {
     let mut current_block: u64;
     let mut token: *mut yaml_token_t;
     let mut anchor: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
@@ -724,7 +727,7 @@ unsafe fn yaml_parser_parse_block_sequence_entry(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
     first: bool,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     if first {
         token = PEEK_TOKEN(parser);
@@ -777,7 +780,7 @@ unsafe fn yaml_parser_parse_block_sequence_entry(
 unsafe fn yaml_parser_parse_indentless_sequence_entry(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     token = PEEK_TOKEN(parser);
     if token.is_null() {
@@ -819,7 +822,7 @@ unsafe fn yaml_parser_parse_block_mapping_key(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
     first: bool,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     if first {
         token = PEEK_TOKEN(parser);
@@ -875,7 +878,7 @@ unsafe fn yaml_parser_parse_block_mapping_key(
 unsafe fn yaml_parser_parse_block_mapping_value(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     token = PEEK_TOKEN(parser);
     if token.is_null() {
@@ -908,7 +911,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
     first: bool,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     if first {
         token = PEEK_TOKEN(parser);
@@ -978,7 +981,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
 unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_key(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     let token: *mut yaml_token_t = PEEK_TOKEN(parser);
     if token.is_null() {
         return FAIL;
@@ -1003,7 +1006,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_key(
 unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_value(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     token = PEEK_TOKEN(parser);
     if token.is_null() {
@@ -1031,7 +1034,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_value(
 unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_end(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
-) -> Success {
+) -> Result<(), ()> {
     let token: *mut yaml_token_t = PEEK_TOKEN(parser);
     if token.is_null() {
         return FAIL;
@@ -1052,7 +1055,7 @@ unsafe fn yaml_parser_parse_flow_mapping_key(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
     first: bool,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     if first {
         token = PEEK_TOKEN(parser);
@@ -1121,7 +1124,7 @@ unsafe fn yaml_parser_parse_flow_mapping_value(
     parser: *mut yaml_parser_t,
     event: *mut yaml_event_t,
     empty: bool,
-) -> Success {
+) -> Result<(), ()> {
     let mut token: *mut yaml_token_t;
     token = PEEK_TOKEN(parser);
     if token.is_null() {
@@ -1147,7 +1150,10 @@ unsafe fn yaml_parser_parse_flow_mapping_value(
     yaml_parser_process_empty_scalar(event, (*token).start_mark)
 }
 
-unsafe fn yaml_parser_process_empty_scalar(event: *mut yaml_event_t, mark: yaml_mark_t) -> Success {
+unsafe fn yaml_parser_process_empty_scalar(
+    event: *mut yaml_event_t,
+    mark: yaml_mark_t,
+) -> Result<(), ()> {
     let value: *mut yaml_char_t = yaml_malloc(1_u64) as *mut yaml_char_t;
     *value = b'\0';
     memset(
@@ -1176,7 +1182,7 @@ unsafe fn yaml_parser_process_directives(
     version_directive_ref: *mut *mut yaml_version_directive_t,
     tag_directives_start_ref: *mut *mut yaml_tag_directive_t,
     tag_directives_end_ref: *mut *mut yaml_tag_directive_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut current_block: u64;
     let mut default_tag_directives: [yaml_tag_directive_t; 3] = [
         yaml_tag_directive_t {
@@ -1248,7 +1254,8 @@ unsafe fn yaml_parser_process_directives(
                     handle: (*token).data.tag_directive.handle,
                     prefix: (*token).data.tag_directive.prefix,
                 };
-                if yaml_parser_append_tag_directive(parser, value, false, (*token).start_mark).fail
+                if yaml_parser_append_tag_directive(parser, value, false, (*token).start_mark)
+                    .is_err()
                 {
                     current_block = 17143798186130252483;
                     break;
@@ -1275,7 +1282,7 @@ unsafe fn yaml_parser_process_directives(
                     true,
                     (*token).start_mark,
                 )
-                .fail
+                .is_err()
                 {
                     current_block = 17143798186130252483;
                     break;
@@ -1320,7 +1327,7 @@ unsafe fn yaml_parser_append_tag_directive(
     value: yaml_tag_directive_t,
     allow_duplicates: bool,
     mark: yaml_mark_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut tag_directive: *mut yaml_tag_directive_t;
     let mut copy = yaml_tag_directive_t {
         handle: ptr::null_mut::<yaml_char_t>(),

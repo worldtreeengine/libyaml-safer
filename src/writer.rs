@@ -1,5 +1,5 @@
 use crate::ops::ForceAdd as _;
-use crate::success::{Success, FAIL, OK};
+use crate::success::{FAIL, OK};
 use crate::yaml::size_t;
 use crate::{
     libc, yaml_emitter_t, PointerExt, YAML_ANY_ENCODING, YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING,
@@ -10,7 +10,7 @@ use core::ptr::addr_of_mut;
 unsafe fn yaml_emitter_set_writer_error(
     emitter: *mut yaml_emitter_t,
     problem: *const libc::c_char,
-) -> Success {
+) -> Result<(), ()> {
     (*emitter).error = YAML_WRITER_ERROR;
     let fresh0 = addr_of_mut!((*emitter).problem);
     *fresh0 = problem;
@@ -18,7 +18,7 @@ unsafe fn yaml_emitter_set_writer_error(
 }
 
 /// Flush the accumulated characters to the output.
-pub unsafe fn yaml_emitter_flush(emitter: *mut yaml_emitter_t) -> Success {
+pub unsafe fn yaml_emitter_flush(emitter: *mut yaml_emitter_t) -> Result<(), ()> {
     __assert!(!emitter.is_null());
     __assert!(((*emitter).write_handler).is_some());
     __assert!((*emitter).encoding != YAML_ANY_ENCODING);

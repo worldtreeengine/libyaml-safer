@@ -2,7 +2,7 @@ use crate::api::{yaml_free, yaml_malloc};
 use crate::externs::{memset, strcmp};
 use crate::fmt::WriteToPtr;
 use crate::ops::ForceMul as _;
-use crate::success::{Success, FAIL, OK};
+use crate::success::{FAIL, OK};
 use crate::yaml::{
     yaml_anchors_t, yaml_char_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_mark_t,
     yaml_node_item_t, yaml_node_pair_t, yaml_node_t, YAML_ALIAS_EVENT, YAML_ANY_ENCODING,
@@ -17,7 +17,7 @@ use core::ptr::{self, addr_of_mut};
 /// Start a YAML stream.
 ///
 /// This function should be used before yaml_emitter_dump() is called.
-pub unsafe fn yaml_emitter_open(emitter: *mut yaml_emitter_t) -> Success {
+pub unsafe fn yaml_emitter_open(emitter: *mut yaml_emitter_t) -> Result<(), ()> {
     let mut event = MaybeUninit::<yaml_event_t>::uninit();
     let event = event.as_mut_ptr();
     let mark = yaml_mark_t {
@@ -36,7 +36,7 @@ pub unsafe fn yaml_emitter_open(emitter: *mut yaml_emitter_t) -> Success {
     (*event).start_mark = mark;
     (*event).end_mark = mark;
     (*event).data.stream_start.encoding = YAML_ANY_ENCODING;
-    if yaml_emitter_emit(emitter, event).fail {
+    if yaml_emitter_emit(emitter, event).is_err() {
         return FAIL;
     }
     (*emitter).opened = true;
@@ -46,7 +46,7 @@ pub unsafe fn yaml_emitter_open(emitter: *mut yaml_emitter_t) -> Success {
 /// Finish a YAML stream.
 ///
 /// This function should be used after yaml_emitter_dump() is called.
-pub unsafe fn yaml_emitter_close(emitter: *mut yaml_emitter_t) -> Success {
+pub unsafe fn yaml_emitter_close(emitter: *mut yaml_emitter_t) -> Result<(), ()> {
     let mut event = MaybeUninit::<yaml_event_t>::uninit();
     let event = event.as_mut_ptr();
     let mark = yaml_mark_t {
@@ -67,7 +67,7 @@ pub unsafe fn yaml_emitter_close(emitter: *mut yaml_emitter_t) -> Success {
     (*event).type_ = YAML_STREAM_END_EVENT;
     (*event).start_mark = mark;
     (*event).end_mark = mark;
-    if yaml_emitter_emit(emitter, event).fail {
+    if yaml_emitter_emit(emitter, event).is_err() {
         return FAIL;
     }
     (*emitter).closed = true;
@@ -83,7 +83,7 @@ pub unsafe fn yaml_emitter_close(emitter: *mut yaml_emitter_t) -> Success {
 pub unsafe fn yaml_emitter_dump(
     emitter: *mut yaml_emitter_t,
     document: *mut yaml_document_t,
-) -> Success {
+) -> Result<(), ()> {
     let current_block: u64;
     let mut event = MaybeUninit::<yaml_event_t>::uninit();
     let event = event.as_mut_ptr();
@@ -97,7 +97,7 @@ pub unsafe fn yaml_emitter_dump(
     let fresh0 = addr_of_mut!((*emitter).document);
     *fresh0 = document;
     if !(*emitter).opened {
-        if yaml_emitter_open(emitter).fail {
+        if yaml_emitter_open(emitter).is_err() {
             current_block = 5018439318894558507;
         } else {
             current_block = 15619007995458559411;
@@ -108,7 +108,7 @@ pub unsafe fn yaml_emitter_dump(
     match current_block {
         15619007995458559411 => {
             if STACK_EMPTY!((*document).nodes) {
-                if yaml_emitter_close(emitter).ok {
+                if yaml_emitter_close(emitter).is_ok() {
                     yaml_emitter_delete_document_and_anchors(emitter);
                     return OK;
                 }
@@ -140,9 +140,9 @@ pub unsafe fn yaml_emitter_dump(
                     (*document).tag_directives.start;
                 (*event).data.document_start.tag_directives.end = (*document).tag_directives.end;
                 (*event).data.document_start.implicit = (*document).start_implicit;
-                if yaml_emitter_emit(emitter, event).ok {
+                if yaml_emitter_emit(emitter, event).is_ok() {
                     yaml_emitter_anchor_node(emitter, 1);
-                    if yaml_emitter_dump_node(emitter, 1).ok {
+                    if yaml_emitter_dump_node(emitter, 1).is_ok() {
                         memset(
                             event as *mut libc::c_void,
                             0,
@@ -152,7 +152,7 @@ pub unsafe fn yaml_emitter_dump(
                         (*event).start_mark = mark;
                         (*event).end_mark = mark;
                         (*event).data.document_end.implicit = (*document).end_implicit;
-                        if yaml_emitter_emit(emitter, event).ok {
+                        if yaml_emitter_emit(emitter, event).is_ok() {
                             yaml_emitter_delete_document_and_anchors(emitter);
                             return OK;
                         }
@@ -262,7 +262,10 @@ unsafe fn yaml_emitter_generate_anchor(
     anchor
 }
 
-unsafe fn yaml_emitter_dump_node(emitter: *mut yaml_emitter_t, index: libc::c_int) -> Success {
+unsafe fn yaml_emitter_dump_node(
+    emitter: *mut yaml_emitter_t,
+    index: libc::c_int,
+) -> Result<(), ()> {
     let node: *mut yaml_node_t = (*(*emitter).document)
         .nodes
         .start
@@ -288,7 +291,7 @@ unsafe fn yaml_emitter_dump_node(emitter: *mut yaml_emitter_t, index: libc::c_in
 unsafe fn yaml_emitter_dump_alias(
     emitter: *mut yaml_emitter_t,
     anchor: *mut yaml_char_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut event = MaybeUninit::<yaml_event_t>::uninit();
     let event = event.as_mut_ptr();
     let mark = yaml_mark_t {
@@ -312,7 +315,7 @@ unsafe fn yaml_emitter_dump_scalar(
     emitter: *mut yaml_emitter_t,
     node: *mut yaml_node_t,
     anchor: *mut yaml_char_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut event = MaybeUninit::<yaml_event_t>::uninit();
     let event = event.as_mut_ptr();
     let mark = yaml_mark_t {
@@ -350,7 +353,7 @@ unsafe fn yaml_emitter_dump_sequence(
     emitter: *mut yaml_emitter_t,
     node: *mut yaml_node_t,
     anchor: *mut yaml_char_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut event = MaybeUninit::<yaml_event_t>::uninit();
     let event = event.as_mut_ptr();
     let mark = yaml_mark_t {
@@ -375,12 +378,12 @@ unsafe fn yaml_emitter_dump_sequence(
     (*event).data.sequence_start.tag = (*node).tag;
     (*event).data.sequence_start.implicit = implicit;
     (*event).data.sequence_start.style = (*node).data.sequence.style;
-    if yaml_emitter_emit(emitter, event).fail {
+    if yaml_emitter_emit(emitter, event).is_err() {
         return FAIL;
     }
     item = (*node).data.sequence.items.start;
     while item < (*node).data.sequence.items.top {
-        if yaml_emitter_dump_node(emitter, *item).fail {
+        if yaml_emitter_dump_node(emitter, *item).is_err() {
             return FAIL;
         }
         item = item.wrapping_offset(1);
@@ -400,7 +403,7 @@ unsafe fn yaml_emitter_dump_mapping(
     emitter: *mut yaml_emitter_t,
     node: *mut yaml_node_t,
     anchor: *mut yaml_char_t,
-) -> Success {
+) -> Result<(), ()> {
     let mut event = MaybeUninit::<yaml_event_t>::uninit();
     let event = event.as_mut_ptr();
     let mark = yaml_mark_t {
@@ -425,15 +428,15 @@ unsafe fn yaml_emitter_dump_mapping(
     (*event).data.mapping_start.tag = (*node).tag;
     (*event).data.mapping_start.implicit = implicit;
     (*event).data.mapping_start.style = (*node).data.mapping.style;
-    if yaml_emitter_emit(emitter, event).fail {
+    if yaml_emitter_emit(emitter, event).is_err() {
         return FAIL;
     }
     pair = (*node).data.mapping.pairs.start;
     while pair < (*node).data.mapping.pairs.top {
-        if yaml_emitter_dump_node(emitter, (*pair).key).fail {
+        if yaml_emitter_dump_node(emitter, (*pair).key).is_err() {
             return FAIL;
         }
-        if yaml_emitter_dump_node(emitter, (*pair).value).fail {
+        if yaml_emitter_dump_node(emitter, (*pair).value).is_err() {
             return FAIL;
         }
         pair = pair.wrapping_offset(1);
