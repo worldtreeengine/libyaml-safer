@@ -245,15 +245,12 @@ pub unsafe fn yaml_parser_set_input_string(
 ) {
     __assert!((parser.read_handler).is_none());
     __assert!(!input.is_null());
-    parser.read_handler = Some(
-        yaml_string_read_handler
-            as unsafe fn(*mut libc::c_void, *mut libc::c_uchar, size_t, *mut size_t) -> libc::c_int,
-    );
+    parser.read_handler = Some(yaml_string_read_handler);
     let parser_ptr = parser as *mut _ as *mut libc::c_void;
     parser.read_handler_data = parser_ptr;
-    *(&mut parser.input.string.start) = input;
-    *(&mut parser.input.string.current) = input;
-    *(&mut parser.input.string.end) = input.wrapping_offset(size as isize);
+    parser.input.string.start = input;
+    parser.input.string.current = input;
+    parser.input.string.end = input.wrapping_offset(size as isize);
 }
 
 /// Set a generic input handler.
