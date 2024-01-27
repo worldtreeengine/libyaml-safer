@@ -1,13 +1,12 @@
 use crate::externs::{free, malloc, memcpy, memmove, memset, realloc, strdup, strlen};
 use crate::ops::{ForceAdd as _, ForceMul as _};
-use crate::yaml::{size_t, yaml_char_t, YamlEventData, YamlTokenData};
+use crate::yaml::{size_t, yaml_char_t, YamlEventData, YamlNodeData, YamlTokenData};
 use crate::{
     libc, yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t, yaml_encoding_t,
     yaml_event_t, yaml_mapping_style_t, yaml_mark_t, yaml_node_item_t, yaml_node_pair_t,
     yaml_node_t, yaml_parser_state_t, yaml_parser_t, yaml_read_handler_t, yaml_scalar_style_t,
-    yaml_sequence_style_t, yaml_simple_key_t, yaml_tag_directive_t, yaml_token_t,
+    yaml_sequence_style_t, yaml_simple_key_t, yaml_stack_t, yaml_tag_directive_t, yaml_token_t,
     yaml_version_directive_t, yaml_write_handler_t, PointerExt, YAML_ANY_ENCODING,
-    YAML_MAPPING_NODE, YAML_SCALAR_NODE, YAML_SEQUENCE_NODE,
 };
 use core::mem::{size_of, MaybeUninit};
 use core::ptr::{self, addr_of_mut};
@@ -1090,18 +1089,18 @@ pub unsafe fn yaml_document_delete(document: &mut yaml_document_t) {
     while !STACK_EMPTY!(document.nodes) {
         let mut node = POP!(document.nodes);
         yaml_free(node.tag as *mut libc::c_void);
-        match node.type_ {
-            YAML_SCALAR_NODE => {
-                yaml_free(node.data.scalar.value as *mut libc::c_void);
+        match node.data {
+            YamlNodeData::NoNode => {
+                assert!(false);
             }
-            YAML_SEQUENCE_NODE => {
-                STACK_DEL!(node.data.sequence.items);
+            YamlNodeData::Scalar { ref value, .. } => {
+                yaml_free(*value as *mut libc::c_void);
             }
-            YAML_MAPPING_NODE => {
-                STACK_DEL!(node.data.mapping.pairs);
+            YamlNodeData::Sequence { ref mut items, .. } => {
+                STACK_DEL!(items);
             }
-            _ => {
-                __assert!(false);
+            YamlNodeData::Mapping { ref mut pairs, .. } => {
+                STACK_DEL!(pairs);
             }
         }
     }
@@ -1174,8 +1173,6 @@ pub unsafe fn yaml_document_add_scalar(
     };
     let mut tag_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
     let mut value_copy: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
-    let mut node = MaybeUninit::<yaml_node_t>::uninit();
-    let node = node.as_mut_ptr();
     __assert!(!value.is_null());
     if tag.is_null() {
         tag = b"tag:yaml.org,2002:str\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
@@ -1194,19 +1191,17 @@ pub unsafe fn yaml_document_add_scalar(
                     length as libc::c_ulong,
                 );
                 *value_copy.wrapping_offset(length as isize) = b'\0';
-                memset(
-                    node as *mut libc::c_void,
-                    0,
-                    size_of::<yaml_node_t>() as libc::c_ulong,
-                );
-                (*node).type_ = YAML_SCALAR_NODE;
-                (*node).tag = tag_copy;
-                (*node).start_mark = mark;
-                (*node).end_mark = mark;
-                (*node).data.scalar.value = value_copy;
-                (*node).data.scalar.length = length as size_t;
-                (*node).data.scalar.style = style;
-                PUSH!(document.nodes, *node);
+                let node = yaml_node_t {
+                    data: YamlNodeData::Scalar {
+                        value: value_copy,
+                        length: length as size_t,
+                        style: style,
+                    },
+                    tag: tag_copy,
+                    start_mark: mark,
+                    end_mark: mark,
+                };
+                PUSH!(document.nodes, node);
                 return document.nodes.top.c_offset_from(document.nodes.start) as libc::c_int;
             }
         }
@@ -1243,8 +1238,6 @@ pub unsafe fn yaml_document_add_sequence(
         end: ptr::null_mut::<yaml_node_item_t>(),
         top: ptr::null_mut::<yaml_node_item_t>(),
     };
-    let mut node = MaybeUninit::<yaml_node_t>::uninit();
-    let node = node.as_mut_ptr();
     if tag.is_null() {
         tag = b"tag:yaml.org,2002:seq\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
     }
@@ -1252,20 +1245,20 @@ pub unsafe fn yaml_document_add_sequence(
         tag_copy = yaml_strdup(tag);
         if !tag_copy.is_null() {
             STACK_INIT!(items, yaml_node_item_t);
-            memset(
-                node as *mut libc::c_void,
-                0,
-                size_of::<yaml_node_t>() as libc::c_ulong,
-            );
-            (*node).type_ = YAML_SEQUENCE_NODE;
-            (*node).tag = tag_copy;
-            (*node).start_mark = mark;
-            (*node).end_mark = mark;
-            (*node).data.sequence.items.start = items.start;
-            (*node).data.sequence.items.end = items.end;
-            (*node).data.sequence.items.top = items.start;
-            (*node).data.sequence.style = style;
-            PUSH!(document.nodes, *node);
+            let node = yaml_node_t {
+                data: YamlNodeData::Sequence {
+                    items: yaml_stack_t {
+                        start: items.start,
+                        end: items.end,
+                        top: items.start,
+                    },
+                    style,
+                },
+                tag: tag_copy,
+                start_mark: mark,
+                end_mark: mark,
+            };
+            PUSH!(document.nodes, node);
             return document.nodes.top.c_offset_from(document.nodes.start) as libc::c_int;
         }
     }
@@ -1301,8 +1294,6 @@ pub unsafe fn yaml_document_add_mapping(
         end: ptr::null_mut::<yaml_node_pair_t>(),
         top: ptr::null_mut::<yaml_node_pair_t>(),
     };
-    let mut node = MaybeUninit::<yaml_node_t>::uninit();
-    let node = node.as_mut_ptr();
     if tag.is_null() {
         tag = b"tag:yaml.org,2002:map\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
     }
@@ -1310,20 +1301,22 @@ pub unsafe fn yaml_document_add_mapping(
         tag_copy = yaml_strdup(tag);
         if !tag_copy.is_null() {
             STACK_INIT!(pairs, yaml_node_pair_t);
-            memset(
-                node as *mut libc::c_void,
-                0,
-                size_of::<yaml_node_t>() as libc::c_ulong,
-            );
-            (*node).type_ = YAML_MAPPING_NODE;
-            (*node).tag = tag_copy;
-            (*node).start_mark = mark;
-            (*node).end_mark = mark;
-            (*node).data.mapping.pairs.start = pairs.start;
-            (*node).data.mapping.pairs.end = pairs.end;
-            (*node).data.mapping.pairs.top = pairs.start;
-            (*node).data.mapping.style = style;
-            PUSH!(document.nodes, *node);
+
+            let node = yaml_node_t {
+                data: YamlNodeData::Mapping {
+                    pairs: yaml_stack_t {
+                        start: pairs.start,
+                        end: pairs.end,
+                        top: pairs.start,
+                    },
+                    style,
+                },
+                tag: tag_copy,
+                start_mark: mark,
+                end_mark: mark,
+            };
+
+            PUSH!(document.nodes, node);
             return document.nodes.top.c_offset_from(document.nodes.start) as libc::c_int;
         }
     }
@@ -1342,20 +1335,18 @@ pub unsafe fn yaml_document_append_sequence_item(
         sequence > 0
             && (document.nodes.start).wrapping_offset(sequence as isize) <= document.nodes.top
     );
-    __assert!(
-        (*(document.nodes.start).wrapping_offset((sequence - 1) as isize)).type_
-            == YAML_SEQUENCE_NODE
-    );
+    __assert!(matches!(
+        (*(document.nodes.start).wrapping_offset((sequence - 1) as isize)).data,
+        YamlNodeData::Sequence { .. }
+    ));
     __assert!(
         item > 0 && (document.nodes.start).wrapping_offset(item as isize) <= document.nodes.top
     );
-    PUSH!(
-        (*(document.nodes.start).wrapping_offset((sequence - 1) as isize))
-            .data
-            .sequence
-            .items,
-        item
-    );
+    if let YamlNodeData::Sequence { ref mut items, .. } =
+        (*(document.nodes.start).wrapping_offset((sequence - 1) as isize)).data
+    {
+        PUSH!(*items, item);
+    }
     Ok(())
 }
 
@@ -1370,10 +1361,10 @@ pub unsafe fn yaml_document_append_mapping_pair(
         mapping > 0
             && (document.nodes.start).wrapping_offset(mapping as isize) <= document.nodes.top
     );
-    __assert!(
-        (*(document.nodes.start).wrapping_offset((mapping - 1) as isize)).type_
-            == YAML_MAPPING_NODE
-    );
+    __assert!(matches!(
+        (*(document.nodes.start).wrapping_offset((mapping - 1) as isize)).data,
+        YamlNodeData::Mapping { .. }
+    ));
     __assert!(
         key > 0 && (document.nodes.start).wrapping_offset(key as isize) <= document.nodes.top
     );
@@ -1381,12 +1372,10 @@ pub unsafe fn yaml_document_append_mapping_pair(
         value > 0 && (document.nodes.start).wrapping_offset(value as isize) <= document.nodes.top
     );
     let pair = yaml_node_pair_t { key, value };
-    PUSH!(
-        (*(document.nodes.start).wrapping_offset((mapping - 1) as isize))
-            .data
-            .mapping
-            .pairs,
-        pair
-    );
+    if let YamlNodeData::Mapping { ref mut pairs, .. } =
+        (*(document.nodes.start).wrapping_offset((mapping - 1) as isize)).data
+    {
+        PUSH!(*pairs, pair);
+    }
     Ok(())
 }

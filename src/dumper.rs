@@ -4,8 +4,7 @@ use crate::fmt::WriteToPtr;
 use crate::ops::ForceMul as _;
 use crate::yaml::{
     yaml_anchors_t, yaml_char_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_item_t,
-    yaml_node_pair_t, yaml_node_t, YamlEventData, YAML_ANY_ENCODING, YAML_MAPPING_NODE,
-    YAML_SCALAR_NODE, YAML_SEQUENCE_NODE,
+    yaml_node_pair_t, yaml_node_t, YamlEventData, YamlNodeData, YAML_ANY_ENCODING,
 };
 use crate::{libc, yaml_document_delete, yaml_emitter_emit, PointerExt};
 use core::mem::size_of;
@@ -133,21 +132,21 @@ unsafe fn yaml_emitter_delete_document_and_anchors(emitter: &mut yaml_emitter_t)
         .wrapping_offset(index as isize)
         < (*emitter.document).nodes.top
     {
-        let mut node: yaml_node_t = *(*emitter.document)
+        let node: *mut yaml_node_t = (*emitter.document)
             .nodes
             .start
             .wrapping_offset(index as isize);
         if !(*emitter.anchors.wrapping_offset(index as isize)).serialized {
-            yaml_free(node.tag as *mut libc::c_void);
-            if node.type_ == YAML_SCALAR_NODE {
-                yaml_free(node.data.scalar.value as *mut libc::c_void);
+            yaml_free((*node).tag as *mut libc::c_void);
+            if let YamlNodeData::Scalar { value, .. } = &(*node).data {
+                yaml_free(*value as *mut libc::c_void);
             }
         }
-        if node.type_ == YAML_SEQUENCE_NODE {
-            STACK_DEL!(node.data.sequence.items);
+        if let YamlNodeData::Sequence { ref mut items, .. } = (*node).data {
+            STACK_DEL!(*items);
         }
-        if node.type_ == YAML_MAPPING_NODE {
-            STACK_DEL!(node.data.mapping.pairs);
+        if let YamlNodeData::Mapping { ref mut pairs, .. } = (*node).data {
+            STACK_DEL!(*pairs);
         }
         index += 1;
     }
@@ -178,17 +177,17 @@ unsafe fn yaml_emitter_anchor_node(emitter: &mut yaml_emitter_t, index: libc::c_
         addr_of_mut!((*(emitter.anchors).wrapping_offset((index - 1) as isize)).references);
     *fresh8 += 1;
     if (*emitter.anchors.wrapping_offset((index - 1) as isize)).references == 1 {
-        match (*node).type_ {
-            YAML_SEQUENCE_NODE => {
-                item = (*node).data.sequence.items.start;
-                while item < (*node).data.sequence.items.top {
+        match &(*node).data {
+            YamlNodeData::Sequence { items, .. } => {
+                item = items.start;
+                while item < items.top {
                     yaml_emitter_anchor_node_sub(emitter, *item);
                     item = item.wrapping_offset(1);
                 }
             }
-            YAML_MAPPING_NODE => {
-                pair = (*node).data.mapping.pairs.start;
-                while pair < (*node).data.mapping.pairs.top {
+            YamlNodeData::Mapping { pairs, .. } => {
+                pair = pairs.start;
+                while pair < pairs.top {
                     yaml_emitter_anchor_node_sub(emitter, (*pair).key);
                     yaml_emitter_anchor_node_sub(emitter, (*pair).value);
                     pair = pair.wrapping_offset(1);
@@ -197,9 +196,8 @@ unsafe fn yaml_emitter_anchor_node(emitter: &mut yaml_emitter_t, index: libc::c_
             _ => {}
         }
     } else if (*emitter.anchors.wrapping_offset((index - 1) as isize)).references == 2 {
-        let fresh9 = &mut emitter.last_anchor_id;
-        *fresh9 += 1;
-        (*emitter.anchors.wrapping_offset((index - 1) as isize)).anchor = *fresh9;
+        emitter.last_anchor_id += 1;
+        (*emitter.anchors.wrapping_offset((index - 1) as isize)).anchor = emitter.last_anchor_id;
     }
 }
 
@@ -230,10 +228,10 @@ unsafe fn yaml_emitter_dump_node(
         return yaml_emitter_dump_alias(emitter, anchor);
     }
     (*emitter.anchors.wrapping_offset((index - 1) as isize)).serialized = true;
-    match (*node).type_ {
-        YAML_SCALAR_NODE => yaml_emitter_dump_scalar(emitter, node, anchor),
-        YAML_SEQUENCE_NODE => yaml_emitter_dump_sequence(emitter, node, anchor),
-        YAML_MAPPING_NODE => yaml_emitter_dump_mapping(emitter, node, anchor),
+    match (*node).data {
+        YamlNodeData::Scalar { .. } => yaml_emitter_dump_scalar(emitter, node, anchor),
+        YamlNodeData::Sequence { .. } => yaml_emitter_dump_sequence(emitter, node, anchor),
+        YamlNodeData::Mapping { .. } => yaml_emitter_dump_mapping(emitter, node, anchor),
         _ => __assert!(false),
     }
 }
@@ -251,7 +249,7 @@ unsafe fn yaml_emitter_dump_alias(
 
 unsafe fn yaml_emitter_dump_scalar(
     emitter: &mut yaml_emitter_t,
-    node: *mut yaml_node_t,
+    node: *mut yaml_node_t, // TODO: take by value
     anchor: *mut yaml_char_t,
 ) -> Result<(), ()> {
     let plain_implicit = strcmp(
@@ -263,20 +261,28 @@ unsafe fn yaml_emitter_dump_scalar(
         b"tag:yaml.org,2002:str\0" as *const u8 as *const libc::c_char,
     ) == 0;
 
-    let event = yaml_event_t {
-        data: YamlEventData::Scalar {
-            anchor,
-            tag: (*node).tag,
-            value: (*node).data.scalar.value,
-            length: (*node).data.scalar.length,
-            plain_implicit,
-            quoted_implicit,
-            style: (*node).data.scalar.style,
-        },
-        ..Default::default()
-    };
-
-    yaml_emitter_emit(emitter, &event)
+    if let YamlNodeData::Scalar {
+        value,
+        length,
+        style,
+    } = &(*node).data
+    {
+        let event = yaml_event_t {
+            data: YamlEventData::Scalar {
+                anchor,
+                tag: (*node).tag,
+                value: *value,
+                length: *length,
+                plain_implicit,
+                quoted_implicit,
+                style: *style,
+            },
+            ..Default::default()
+        };
+        yaml_emitter_emit(emitter, &event)
+    } else {
+        unreachable!()
+    }
 }
 
 unsafe fn yaml_emitter_dump_sequence(
@@ -290,27 +296,31 @@ unsafe fn yaml_emitter_dump_sequence(
     ) == 0;
     let mut item: *mut yaml_node_item_t;
 
-    let event = yaml_event_t {
-        data: YamlEventData::SequenceStart {
-            anchor,
-            tag: (*node).tag,
-            implicit,
-            style: (*node).data.sequence.style,
-        },
-        ..Default::default()
-    };
+    if let YamlNodeData::Sequence { items, style } = &(*node).data {
+        let event = yaml_event_t {
+            data: YamlEventData::SequenceStart {
+                anchor,
+                tag: (*node).tag,
+                implicit,
+                style: *style,
+            },
+            ..Default::default()
+        };
 
-    yaml_emitter_emit(emitter, &event)?;
-    item = (*node).data.sequence.items.start;
-    while item < (*node).data.sequence.items.top {
-        yaml_emitter_dump_node(emitter, *item)?;
-        item = item.wrapping_offset(1);
+        yaml_emitter_emit(emitter, &event)?;
+        item = items.start;
+        while item < items.top {
+            yaml_emitter_dump_node(emitter, *item)?;
+            item = item.wrapping_offset(1);
+        }
+        let event = yaml_event_t {
+            data: YamlEventData::SequenceEnd,
+            ..Default::default()
+        };
+        yaml_emitter_emit(emitter, &event)
+    } else {
+        unreachable!()
     }
-    let event = yaml_event_t {
-        data: YamlEventData::SequenceEnd,
-        ..Default::default()
-    };
-    yaml_emitter_emit(emitter, &event)
 }
 
 unsafe fn yaml_emitter_dump_mapping(
@@ -324,26 +334,30 @@ unsafe fn yaml_emitter_dump_mapping(
     ) == 0;
     let mut pair: *mut yaml_node_pair_t;
 
-    let event = yaml_event_t {
-        data: YamlEventData::MappingStart {
-            anchor,
-            tag: (*node).tag,
-            implicit,
-            style: (*node).data.mapping.style,
-        },
-        ..Default::default()
-    };
+    if let YamlNodeData::Mapping { pairs, style } = &(*node).data {
+        let event = yaml_event_t {
+            data: YamlEventData::MappingStart {
+                anchor,
+                tag: (*node).tag,
+                implicit,
+                style: *style,
+            },
+            ..Default::default()
+        };
 
-    yaml_emitter_emit(emitter, &event)?;
-    pair = (*node).data.mapping.pairs.start;
-    while pair < (*node).data.mapping.pairs.top {
-        yaml_emitter_dump_node(emitter, (*pair).key)?;
-        yaml_emitter_dump_node(emitter, (*pair).value)?;
-        pair = pair.wrapping_offset(1);
+        yaml_emitter_emit(emitter, &event)?;
+        pair = pairs.start;
+        while pair < pairs.top {
+            yaml_emitter_dump_node(emitter, (*pair).key)?;
+            yaml_emitter_dump_node(emitter, (*pair).value)?;
+            pair = pair.wrapping_offset(1);
+        }
+        let event = yaml_event_t {
+            data: YamlEventData::MappingEnd,
+            ..Default::default()
+        };
+        yaml_emitter_emit(emitter, &event)
+    } else {
+        unreachable!()
     }
-    let event = yaml_event_t {
-        data: YamlEventData::MappingEnd,
-        ..Default::default()
-    };
-    yaml_emitter_emit(emitter, &event)
 }

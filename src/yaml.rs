@@ -2,7 +2,7 @@ use crate::libc;
 use core::ops::Deref;
 use core::ptr::{self, addr_of};
 
-pub use self::{yaml_encoding_t::*, yaml_node_type_t::*};
+pub use self::yaml_encoding_t::*;
 pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t, u8 as yaml_char_t};
 
 /// The version directive data.
@@ -474,114 +474,53 @@ pub enum YamlEventData {
     MappingEnd,
 }
 
-/// Node types.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
-#[non_exhaustive]
-pub enum yaml_node_type_t {
-    /// An empty node.
-    YAML_NO_NODE = 0,
-    /// A scalar node.
-    YAML_SCALAR_NODE = 1,
-    /// A sequence node.
-    YAML_SEQUENCE_NODE = 2,
-    /// A mapping node.
-    YAML_MAPPING_NODE = 3,
-}
-
 /// The node structure.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_node_t {
     /// The node type.
-    pub type_: yaml_node_type_t,
+    pub data: YamlNodeData,
     /// The node tag.
     pub tag: *mut yaml_char_t,
-    /// The node data.
-    ///
-    /// ```
-    /// # const _: &str = stringify! {
-    /// union {
-    ///     /// The scalar parameters (for YAML_SCALAR_NODE).
-    ///     scalar: struct {
-    ///         /// The scalar value.
-    ///         value: *mut u8,
-    ///         /// The length of the scalar value.
-    ///         length: u64,
-    ///         /// The scalar style.
-    ///         style: yaml_scalar_style_t,
-    ///     },
-    ///     /// The sequence parameters (for YAML_SEQUENCE_NODE).
-    ///     sequence: struct {
-    ///         /// The stack of sequence items.
-    ///         items: yaml_stack_t<yaml_node_item_t>,
-    ///         /// The sequence style.
-    ///         style: yaml_sequence_style_t,
-    ///     },
-    ///     /// The mapping parameters (for YAML_MAPPING_NODE).
-    ///     mapping: struct {
-    ///         /// The stack of mapping pairs (key, value).
-    ///         pairs: yaml_stack_t<yaml_node_pair_t>,
-    ///         /// The mapping style.
-    ///         style: yaml_mapping_style_t,
-    ///     },
-    /// }
-    /// # };
-    /// ```
-    pub data: unnamed_yaml_node_t_data,
     /// The beginning of the node.
     pub start_mark: yaml_mark_t,
     /// The end of the node.
     pub end_mark: yaml_mark_t,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union unnamed_yaml_node_t_data {
-    /// The scalar parameters (for YAML_SCALAR_NODE).
-    pub scalar: unnamed_yaml_node_t_data_scalar,
-    /// The sequence parameters (for YAML_SEQUENCE_NODE).
-    pub sequence: unnamed_yaml_node_t_data_sequence,
-    /// The mapping parameters (for YAML_MAPPING_NODE).
-    pub mapping: unnamed_yaml_node_t_data_mapping,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_node_t_data_scalar {
-    /// The scalar value.
-    pub value: *mut yaml_char_t,
-    /// The length of the scalar value.
-    pub length: size_t,
-    /// The scalar style.
-    pub style: yaml_scalar_style_t,
+/// Node types.
+#[derive(Default)]
+pub enum YamlNodeData {
+    /// An empty node.
+    #[default]
+    NoNode,
+    /// A scalar node.
+    Scalar {
+        /// The scalar value.
+        value: *mut yaml_char_t,
+        /// The length of the scalar value.
+        length: size_t,
+        /// The scalar style.
+        style: yaml_scalar_style_t,
+    },
+    /// A sequence node.
+    Sequence {
+        /// The stack of sequence items.
+        items: yaml_stack_t<yaml_node_item_t>,
+        /// The sequence style.
+        style: yaml_sequence_style_t,
+    },
+    /// A mapping node.
+    Mapping {
+        /// The stack of mapping pairs (key, value).
+        pairs: yaml_stack_t<yaml_node_pair_t>,
+        /// The mapping style.
+        style: yaml_mapping_style_t,
+    },
 }
 
 /// An element of a sequence node.
 pub type yaml_node_item_t = libc::c_int;
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_node_t_data_sequence {
-    /// The stack of sequence items.
-    pub items: yaml_stack_t<yaml_node_item_t>,
-    /// The sequence style.
-    pub style: yaml_sequence_style_t,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_node_t_data_mapping {
-    /// The stack of mapping pairs (key, value).
-    pub pairs: yaml_stack_t<yaml_node_pair_t>,
-    /// The mapping style.
-    pub style: yaml_mapping_style_t,
-}
-
 /// An element of a mapping node.
 #[derive(Copy, Clone)]
 #[repr(C)]

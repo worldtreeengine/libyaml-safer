@@ -1,11 +1,10 @@
 use crate::api::{yaml_free, yaml_malloc, yaml_stack_extend, yaml_strdup};
-use crate::externs::{memset, strcmp};
-use crate::yaml::{yaml_char_t, YamlEventData};
+use crate::externs::strcmp;
+use crate::yaml::{yaml_char_t, YamlEventData, YamlNodeData};
 use crate::{
     libc, yaml_alias_data_t, yaml_document_delete, yaml_document_t, yaml_event_t, yaml_mark_t,
     yaml_node_item_t, yaml_node_pair_t, yaml_node_t, yaml_parser_parse, yaml_parser_t, PointerExt,
-    YAML_COMPOSER_ERROR, YAML_MAPPING_NODE, YAML_MEMORY_ERROR, YAML_SCALAR_NODE,
-    YAML_SEQUENCE_NODE,
+    YAML_COMPOSER_ERROR, YAML_MEMORY_ERROR,
 };
 use core::mem::{size_of, MaybeUninit};
 use core::ptr::{self, addr_of_mut};
@@ -239,17 +238,16 @@ unsafe fn yaml_parser_load_node_add(
         *((*parser.document).nodes.start).wrapping_offset((parent_index - 1) as isize)
     );
     let current_block_17: u64;
-    match (*parent).type_ {
-        YAML_SEQUENCE_NODE => {
-            STACK_LIMIT!(parser, (*parent).data.sequence.items)?;
-            PUSH!((*parent).data.sequence.items, index);
+    match (*parent).data {
+        YamlNodeData::Sequence { ref mut items, .. } => {
+            STACK_LIMIT!(parser, items)?;
+            PUSH!(items, index);
         }
-        YAML_MAPPING_NODE => {
+        YamlNodeData::Mapping { ref mut pairs, .. } => {
             let mut pair = MaybeUninit::<yaml_node_pair_t>::uninit();
             let pair = pair.as_mut_ptr();
-            if !STACK_EMPTY!((*parent).data.mapping.pairs) {
-                let p: *mut yaml_node_pair_t =
-                    (*parent).data.mapping.pairs.top.wrapping_offset(-1_isize);
+            if !STACK_EMPTY!(pairs) {
+                let p: *mut yaml_node_pair_t = pairs.top.wrapping_offset(-1_isize);
                 if (*p).key != 0 && (*p).value == 0 {
                     (*p).value = index;
                     current_block_17 = 11307063007268554308;
@@ -264,8 +262,8 @@ unsafe fn yaml_parser_load_node_add(
                 _ => {
                     (*pair).key = index;
                     (*pair).value = 0;
-                    STACK_LIMIT!(parser, (*parent).data.mapping.pairs)?;
-                    PUSH!((*parent).data.mapping.pairs, *pair);
+                    STACK_LIMIT!(parser, pairs)?;
+                    PUSH!(pairs, *pair);
                 }
             }
         }
@@ -324,8 +322,6 @@ unsafe fn yaml_parser_load_scalar(
     };
 
     let current_block: u64;
-    let mut node = MaybeUninit::<yaml_node_t>::uninit();
-    let node = node.as_mut_ptr();
     let index: libc::c_int;
     if let Ok(()) = STACK_LIMIT!(parser, (*parser.document).nodes) {
         if tag.is_null()
@@ -347,19 +343,17 @@ unsafe fn yaml_parser_load_scalar(
             current_block = 11006700562992250127;
         }
         if current_block != 10579931339944277179 {
-            memset(
-                node as *mut libc::c_void,
-                0,
-                size_of::<yaml_node_t>() as libc::c_ulong,
-            );
-            (*node).type_ = YAML_SCALAR_NODE;
-            (*node).tag = tag;
-            (*node).start_mark = (*event).start_mark;
-            (*node).end_mark = (*event).end_mark;
-            (*node).data.scalar.value = value;
-            (*node).data.scalar.length = length;
-            (*node).data.scalar.style = style;
-            PUSH!((*parser.document).nodes, *node);
+            let node = yaml_node_t {
+                data: YamlNodeData::Scalar {
+                    value,
+                    length,
+                    style,
+                },
+                tag,
+                start_mark: (*event).start_mark,
+                end_mark: (*event).end_mark,
+            };
+            PUSH!((*parser.document).nodes, node);
             index = (*parser.document)
                 .nodes
                 .top
@@ -389,8 +383,6 @@ unsafe fn yaml_parser_load_sequence(
     };
 
     let current_block: u64;
-    let mut node = MaybeUninit::<yaml_node_t>::uninit();
-    let node = node.as_mut_ptr();
     struct Items {
         start: *mut yaml_node_item_t,
         end: *mut yaml_node_item_t,
@@ -424,20 +416,22 @@ unsafe fn yaml_parser_load_sequence(
         }
         if current_block != 13474536459355229096 {
             STACK_INIT!(items, yaml_node_item_t);
-            memset(
-                node as *mut libc::c_void,
-                0,
-                size_of::<yaml_node_t>() as libc::c_ulong,
-            );
-            (*node).type_ = YAML_SEQUENCE_NODE;
-            (*node).tag = tag;
-            (*node).start_mark = (*event).start_mark;
-            (*node).end_mark = (*event).end_mark;
-            (*node).data.sequence.items.start = items.start;
-            (*node).data.sequence.items.end = items.end;
-            (*node).data.sequence.items.top = items.start;
-            (*node).data.sequence.style = style;
-            PUSH!((*parser.document).nodes, *node);
+
+            let node = yaml_node_t {
+                data: YamlNodeData::Sequence {
+                    items: crate::yaml_stack_t {
+                        start: items.start,
+                        end: items.end,
+                        top: items.start,
+                    },
+                    style,
+                },
+                tag,
+                start_mark: (*event).start_mark,
+                end_mark: (*event).end_mark,
+            };
+
+            PUSH!((*parser.document).nodes, node);
             index = (*parser.document)
                 .nodes
                 .top
@@ -461,10 +455,10 @@ unsafe fn yaml_parser_load_sequence_end(
 ) -> Result<(), ()> {
     __assert!(((*ctx).top).c_offset_from((*ctx).start) as libc::c_long > 0_i64);
     let index: libc::c_int = *(*ctx).top.wrapping_offset(-1_isize);
-    __assert!(
-        (*((*parser.document).nodes.start).wrapping_offset((index - 1) as isize)).type_
-            == YAML_SEQUENCE_NODE
-    );
+    __assert!(matches!(
+        (*((*parser.document).nodes.start).wrapping_offset((index - 1) as isize)).data,
+        YamlNodeData::Sequence { .. }
+    ));
     (*(*parser.document)
         .nodes
         .start
@@ -489,8 +483,6 @@ unsafe fn yaml_parser_load_mapping(
     };
 
     let current_block: u64;
-    let mut node = MaybeUninit::<yaml_node_t>::uninit();
-    let node = node.as_mut_ptr();
     struct Pairs {
         start: *mut yaml_node_pair_t,
         end: *mut yaml_node_pair_t,
@@ -524,20 +516,20 @@ unsafe fn yaml_parser_load_mapping(
         }
         if current_block != 13635467803606088781 {
             STACK_INIT!(pairs, yaml_node_pair_t);
-            memset(
-                node as *mut libc::c_void,
-                0,
-                size_of::<yaml_node_t>() as libc::c_ulong,
-            );
-            (*node).type_ = YAML_MAPPING_NODE;
-            (*node).tag = tag;
-            (*node).start_mark = (*event).start_mark;
-            (*node).end_mark = (*event).end_mark;
-            (*node).data.mapping.pairs.start = pairs.start;
-            (*node).data.mapping.pairs.end = pairs.end;
-            (*node).data.mapping.pairs.top = pairs.start;
-            (*node).data.mapping.style = style;
-            PUSH!((*parser.document).nodes, *node);
+            let node = yaml_node_t {
+                data: YamlNodeData::Mapping {
+                    pairs: crate::yaml_stack_t {
+                        start: pairs.start,
+                        end: pairs.end,
+                        top: pairs.start,
+                    },
+                    style,
+                },
+                tag,
+                start_mark: (*event).start_mark,
+                end_mark: (*event).end_mark,
+            };
+            PUSH!((*parser.document).nodes, node);
             index = (*parser.document)
                 .nodes
                 .top
@@ -561,10 +553,10 @@ unsafe fn yaml_parser_load_mapping_end(
 ) -> Result<(), ()> {
     __assert!(((*ctx).top).c_offset_from((*ctx).start) as libc::c_long > 0_i64);
     let index: libc::c_int = *(*ctx).top.wrapping_offset(-1_isize);
-    __assert!(
-        (*((*parser.document).nodes.start).wrapping_offset((index - 1) as isize)).type_
-            == YAML_MAPPING_NODE
-    );
+    __assert!(matches!(
+        (*((*parser.document).nodes.start).wrapping_offset((index - 1) as isize)).data,
+        YamlNodeData::Mapping { .. }
+    ));
     (*(*parser.document)
         .nodes
         .start

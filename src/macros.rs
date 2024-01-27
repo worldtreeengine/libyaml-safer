@@ -442,12 +442,10 @@ macro_rules! PUSH {
 }
 
 macro_rules! POP {
-    ($stack:expr) => {
-        *{
-            $stack.top = $stack.top.offset(-1);
-            $stack.top
-        }
-    };
+    ($stack:expr) => {{
+        $stack.top = $stack.top.offset(-1);
+        core::ptr::read($stack.top)
+    }};
 }
 
 macro_rules! QUEUE_INIT {
