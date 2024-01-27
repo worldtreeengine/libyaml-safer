@@ -1429,50 +1429,6 @@ unsafe fn yaml_emitter_analyze_event(
         }
         _ => Ok(()),
     }
-
-    // match (*event).type_ {
-    //     YAML_ALIAS_EVENT => yaml_emitter_analyze_anchor(emitter, (*event).data.alias.anchor, true),
-    //     YAML_SCALAR_EVENT => {
-    //         if !(*event).data.scalar.anchor.is_null() {
-    //             yaml_emitter_analyze_anchor(emitter, (*event).data.scalar.anchor, false)?;
-    //         }
-    //         if !(*event).data.scalar.tag.is_null()
-    //             && (emitter.canonical
-    //                 || !(*event).data.scalar.plain_implicit
-    //                     && !(*event).data.scalar.quoted_implicit)
-    //         {
-    //             yaml_emitter_analyze_tag(emitter, (*event).data.scalar.tag)?;
-    //         }
-    //         yaml_emitter_analyze_scalar(
-    //             emitter,
-    //             (*event).data.scalar.value,
-    //             (*event).data.scalar.length,
-    //         )
-    //     }
-    //     YAML_SEQUENCE_START_EVENT => {
-    //         if !(*event).data.sequence_start.anchor.is_null() {
-    //             yaml_emitter_analyze_anchor(emitter, (*event).data.sequence_start.anchor, false)?;
-    //         }
-    //         if !(*event).data.sequence_start.tag.is_null()
-    //             && (emitter.canonical || !(*event).data.sequence_start.implicit)
-    //         {
-    //             yaml_emitter_analyze_tag(emitter, (*event).data.sequence_start.tag)?;
-    //         }
-    //         Ok(())
-    //     }
-    //     YAML_MAPPING_START_EVENT => {
-    //         if !(*event).data.mapping_start.anchor.is_null() {
-    //             yaml_emitter_analyze_anchor(emitter, (*event).data.mapping_start.anchor, false)?;
-    //         }
-    //         if !(*event).data.mapping_start.tag.is_null()
-    //             && (emitter.canonical || !(*event).data.mapping_start.implicit)
-    //         {
-    //             yaml_emitter_analyze_tag(emitter, (*event).data.mapping_start.tag)?;
-    //         }
-    //         Ok(())
-    //     }
-    //     _ => Ok(()),
-    // }
 }
 
 unsafe fn yaml_emitter_write_bom(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
