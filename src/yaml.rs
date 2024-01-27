@@ -1,3 +1,5 @@
+use alloc::collections::VecDeque;
+
 use crate::libc;
 use core::ops::Deref;
 use core::ptr::{self, addr_of};
@@ -26,11 +28,12 @@ pub struct yaml_tag_directive_t {
 }
 
 /// The stream encoding.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_encoding_t {
     /// Let the parser choose the encoding.
+    #[default]
     YAML_ANY_ENCODING = 0,
     /// The default UTF-8 encoding.
     YAML_UTF8_ENCODING = 1,
@@ -41,11 +44,12 @@ pub enum yaml_encoding_t {
 }
 
 /// Line break type.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_break_t {
     /// Let the parser choose the break type.
+    #[default]
     YAML_ANY_BREAK = 0,
     /// Use CR for line breaks (Mac style).
     YAML_CR_BREAK = 1,
@@ -56,11 +60,12 @@ pub enum yaml_break_t {
 }
 
 /// Many bad things could happen with the parser and emitter.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_error_type_t {
     /// No error is produced.
+    #[default]
     YAML_NO_ERROR = 0,
     /// Cannot allocate or reallocate a block of memory.
     YAML_MEMORY_ERROR = 1,
@@ -92,11 +97,12 @@ pub struct yaml_mark_t {
 }
 
 /// Scalar styles.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_scalar_style_t {
     /// Let the emitter choose the style.
+    #[default]
     YAML_ANY_SCALAR_STYLE = 0,
     /// The plain scalar style.
     YAML_PLAIN_SCALAR_STYLE = 1,
@@ -602,11 +608,12 @@ pub struct yaml_simple_key_t {
 }
 
 /// The states of the parser.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_parser_state_t {
     /// Expect STREAM-START.
+    #[default]
     YAML_PARSE_STREAM_START_STATE = 0,
     /// Expect the beginning of an implicit document.
     YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE = 1,
@@ -737,7 +744,7 @@ pub struct yaml_parser_t {
     /// The number of unclosed '[' and '{' indicators.
     pub(crate) flow_level: libc::c_int,
     /// The tokens queue.
-    pub(crate) tokens: yaml_queue_t<yaml_token_t>,
+    pub(crate) tokens: VecDeque<yaml_token_t>,
     /// The number of tokens fetched from the queue.
     pub(crate) tokens_parsed: size_t,
     /// Does the tokens queue contain a token ready for dequeueing.
@@ -762,6 +769,46 @@ pub struct yaml_parser_t {
     pub(crate) aliases: yaml_stack_t<yaml_alias_data_t>,
     /// The currently parsed document.
     pub(crate) document: *mut yaml_document_t,
+}
+
+impl Default for yaml_parser_t {
+    fn default() -> Self {
+        Self {
+            error: Default::default(),
+            problem: Default::default(),
+            problem_offset: Default::default(),
+            problem_value: Default::default(),
+            problem_mark: Default::default(),
+            context: Default::default(),
+            context_mark: Default::default(),
+            read_handler: Default::default(),
+            read_handler_data: ptr::null_mut(),
+            input: Default::default(),
+            eof: Default::default(),
+            buffer: Default::default(),
+            unread: Default::default(),
+            raw_buffer: Default::default(),
+            encoding: Default::default(),
+            offset: Default::default(),
+            mark: Default::default(),
+            stream_start_produced: Default::default(),
+            stream_end_produced: Default::default(),
+            flow_level: Default::default(),
+            tokens: Default::default(),
+            tokens_parsed: Default::default(),
+            token_available: Default::default(),
+            indents: Default::default(),
+            indent: Default::default(),
+            simple_key_allowed: Default::default(),
+            simple_keys: Default::default(),
+            states: Default::default(),
+            state: Default::default(),
+            marks: Default::default(),
+            tag_directives: Default::default(),
+            aliases: Default::default(),
+            document: ptr::null_mut(),
+        }
+    }
 }
 
 #[repr(C)]
@@ -801,6 +848,16 @@ pub(crate) struct unnamed_yaml_parser_t_input_string {
     pub current: *const libc::c_uchar,
 }
 
+impl Default for unnamed_yaml_parser_t_input_string {
+    fn default() -> Self {
+        Self {
+            start: ptr::null(),
+            end: ptr::null(),
+            current: ptr::null(),
+        }
+    }
+}
+
 /// The prototype of a write handler.
 ///
 /// The write handler is called when the emitter needs to flush the accumulated
@@ -813,11 +870,12 @@ pub type yaml_write_handler_t =
     unsafe fn(data: *mut libc::c_void, buffer: *mut libc::c_uchar, size: size_t) -> libc::c_int;
 
 /// The emitter states.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_emitter_state_t {
     /// Expect STREAM-START.
+    #[default]
     YAML_EMIT_STREAM_START_STATE = 0,
     /// Expect the first DOCUMENT-START or STREAM-END.
     YAML_EMIT_FIRST_DOCUMENT_START_STATE = 1,
@@ -907,7 +965,7 @@ pub struct yaml_emitter_t {
     /// The current emitter state.
     pub(crate) state: yaml_emitter_state_t,
     /// The event queue.
-    pub(crate) events: yaml_queue_t<yaml_event_t>,
+    pub(crate) events: VecDeque<yaml_event_t>,
     /// The stack of indentation levels.
     pub(crate) indents: yaml_stack_t<libc::c_int>,
     /// The list of tag directives.
@@ -953,6 +1011,50 @@ pub struct yaml_emitter_t {
     pub(crate) document: *mut yaml_document_t,
 }
 
+impl Default for yaml_emitter_t {
+    fn default() -> Self {
+        Self {
+            error: Default::default(),
+            problem: Default::default(),
+            write_handler: Default::default(),
+            write_handler_data: ptr::null_mut(),
+            output: Default::default(),
+            buffer: Default::default(),
+            raw_buffer: Default::default(),
+            encoding: Default::default(),
+            canonical: Default::default(),
+            best_indent: Default::default(),
+            best_width: Default::default(),
+            unicode: Default::default(),
+            line_break: Default::default(),
+            states: Default::default(),
+            state: Default::default(),
+            events: Default::default(),
+            indents: Default::default(),
+            tag_directives: Default::default(),
+            indent: Default::default(),
+            flow_level: Default::default(),
+            root_context: Default::default(),
+            sequence_context: Default::default(),
+            mapping_context: Default::default(),
+            simple_key_context: Default::default(),
+            line: Default::default(),
+            column: Default::default(),
+            whitespace: Default::default(),
+            indention: Default::default(),
+            open_ended: Default::default(),
+            anchor_data: Default::default(),
+            tag_data: Default::default(),
+            scalar_data: Default::default(),
+            opened: Default::default(),
+            closed: Default::default(),
+            anchors: ptr::null_mut(),
+            last_anchor_id: Default::default(),
+            document: ptr::null_mut(),
+        }
+    }
+}
+
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_emitter_t_prefix {
@@ -980,6 +1082,16 @@ pub(crate) struct unnamed_yaml_emitter_t_output_string {
     pub size_written: *mut size_t,
 }
 
+impl Default for unnamed_yaml_emitter_t_output_string {
+    fn default() -> Self {
+        Self {
+            buffer: ptr::null_mut(),
+            size: 0,
+            size_written: ptr::null_mut(),
+        }
+    }
+}
+
 #[repr(C)]
 pub(crate) struct unnamed_yaml_emitter_t_anchor_data {
     /// The anchor value.
@@ -988,6 +1100,16 @@ pub(crate) struct unnamed_yaml_emitter_t_anchor_data {
     pub anchor_length: size_t,
     /// Is it an alias?
     pub alias: bool,
+}
+
+impl Default for unnamed_yaml_emitter_t_anchor_data {
+    fn default() -> Self {
+        Self {
+            anchor: ptr::null_mut(),
+            anchor_length: 0,
+            alias: false,
+        }
+    }
 }
 
 #[repr(C)]
@@ -1000,6 +1122,17 @@ pub(crate) struct unnamed_yaml_emitter_t_tag_data {
     pub suffix: *mut yaml_char_t,
     /// The tag suffix length.
     pub suffix_length: size_t,
+}
+
+impl Default for unnamed_yaml_emitter_t_tag_data {
+    fn default() -> Self {
+        Self {
+            handle: ptr::null_mut(),
+            handle_length: 0,
+            suffix: ptr::null_mut(),
+            suffix_length: 0,
+        }
+    }
 }
 
 #[repr(C)]
@@ -1020,6 +1153,21 @@ pub(crate) struct unnamed_yaml_emitter_t_scalar_data {
     pub block_allowed: bool,
     /// The output style.
     pub style: yaml_scalar_style_t,
+}
+
+impl Default for unnamed_yaml_emitter_t_scalar_data {
+    fn default() -> Self {
+        Self {
+            value: ptr::null_mut(),
+            length: 0,
+            multiline: false,
+            flow_plain_allowed: false,
+            block_plain_allowed: false,
+            single_quoted_allowed: false,
+            block_allowed: false,
+            style: Default::default(),
+        }
+    }
 }
 
 #[repr(C)]
@@ -1057,14 +1205,23 @@ pub struct yaml_stack_t<T> {
     pub top: *mut T,
 }
 
-#[repr(C)]
-pub(crate) struct yaml_queue_t<T> {
-    /// The beginning of the queue.
-    pub start: *mut T,
-    /// The end of the queue.
-    pub end: *mut T,
-    /// The head of the queue.
-    pub head: *mut T,
-    /// The tail of the queue.
-    pub tail: *mut T,
+impl<T> Default for yaml_buffer_t<T> {
+    fn default() -> Self {
+        Self {
+            start: ptr::null_mut(),
+            end: ptr::null_mut(),
+            pointer: ptr::null_mut(),
+            last: ptr::null_mut(),
+        }
+    }
+}
+
+impl<T> Default for yaml_stack_t<T> {
+    fn default() -> Self {
+        Self {
+            start: ptr::null_mut(),
+            end: ptr::null_mut(),
+            top: ptr::null_mut(),
+        }
+    }
 }

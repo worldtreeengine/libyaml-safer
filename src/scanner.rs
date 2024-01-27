@@ -1,8 +1,5 @@
-use crate::api::{
-    yaml_free, yaml_malloc, yaml_queue_extend, yaml_stack_extend, yaml_string_extend,
-    yaml_string_join,
-};
-use crate::externs::{memcpy, memmove, memset, strcmp, strlen};
+use crate::api::{yaml_free, yaml_malloc, yaml_stack_extend, yaml_string_extend, yaml_string_join};
+use crate::externs::{memcpy, memset, strcmp, strlen};
 use crate::ops::{ForceAdd as _, ForceMul as _};
 use crate::reader::yaml_parser_update_buffer;
 use crate::yaml::{ptrdiff_t, size_t, yaml_char_t, yaml_string_t, YamlTokenData, NULL_STRING};
@@ -12,7 +9,6 @@ use crate::{
     YAML_MEMORY_ERROR, YAML_NO_ERROR, YAML_PLAIN_SCALAR_STYLE, YAML_SCANNER_ERROR,
     YAML_SINGLE_QUOTED_SCALAR_STYLE,
 };
-use core::mem::size_of;
 use core::ptr::{self, addr_of_mut};
 
 unsafe fn CACHE(parser: &mut yaml_parser_t, length: size_t) -> Result<(), ()> {
@@ -128,13 +124,18 @@ pub unsafe fn yaml_parser_scan(
             return Err(());
         }
     }
-    *token = DEQUEUE!(parser.tokens);
-    parser.token_available = false;
-    parser.tokens_parsed = parser.tokens_parsed.force_add(1);
-    if let YamlTokenData::StreamEnd = &(*token).data {
-        parser.stream_end_produced = true;
+    if let Some(popped) = parser.tokens.pop_front() {
+        *token = popped;
+        parser.token_available = false;
+        parser.tokens_parsed = parser.tokens_parsed.force_add(1);
+        if let YamlTokenData::StreamEnd = &(*token).data {
+            parser.stream_end_produced = true;
+        }
+        Ok(())
+    } else {
+        // token_available should have been false
+        unreachable!()
     }
-    Ok(())
 }
 
 fn yaml_parser_set_scanner_error(
@@ -154,7 +155,7 @@ pub(crate) unsafe fn yaml_parser_fetch_more_tokens(parser: &mut yaml_parser_t) -
     let mut need_more_tokens;
     loop {
         need_more_tokens = false;
-        if parser.tokens.head == parser.tokens.tail {
+        if parser.tokens.is_empty() {
             need_more_tokens = true;
         } else {
             let mut simple_key: *mut yaml_simple_key_t;
@@ -336,7 +337,7 @@ unsafe fn yaml_parser_save_simple_key(parser: &mut yaml_parser_t) -> Result<(), 
             required,
             token_number: parser
                 .tokens_parsed
-                .force_add(parser.tokens.tail.c_offset_from(parser.tokens.head) as libc::c_ulong),
+                .force_add(parser.tokens.len() as libc::c_ulong),
             mark: parser.mark,
         };
         if yaml_parser_remove_simple_key(parser).is_err() {
@@ -414,12 +415,11 @@ unsafe fn yaml_parser_roll_indent(
             end_mark: mark,
         };
         if number == -1_i64 {
-            ENQUEUE!(parser.tokens, token);
+            parser.tokens.push_back(token);
         } else {
-            QUEUE_INSERT!(
-                parser.tokens,
-                (number as libc::c_ulong).wrapping_sub(parser.tokens_parsed),
-                token
+            parser.tokens.insert(
+                (number as libc::c_ulong).wrapping_sub(parser.tokens_parsed) as usize,
+                token,
             );
         }
     }
@@ -436,7 +436,7 @@ unsafe fn yaml_parser_unroll_indent(parser: &mut yaml_parser_t, column: ptrdiff_
             start_mark: parser.mark,
             end_mark: parser.mark,
         };
-        ENQUEUE!(parser.tokens, token);
+        parser.tokens.push_back(token);
         parser.indent = POP!(parser.indents);
     }
 }
@@ -463,7 +463,7 @@ unsafe fn yaml_parser_fetch_stream_start(parser: &mut yaml_parser_t) {
         start_mark: parser.mark,
         end_mark: parser.mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
 }
 
 unsafe fn yaml_parser_fetch_stream_end(parser: &mut yaml_parser_t) -> Result<(), ()> {
@@ -481,7 +481,7 @@ unsafe fn yaml_parser_fetch_stream_end(parser: &mut yaml_parser_t) -> Result<(),
         start_mark: parser.mark,
         end_mark: parser.mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -495,7 +495,7 @@ unsafe fn yaml_parser_fetch_directive(parser: &mut yaml_parser_t) -> Result<(), 
     if yaml_parser_scan_directive(parser, &mut token).is_err() {
         return Err(());
     }
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -519,7 +519,7 @@ unsafe fn yaml_parser_fetch_document_indicator(
         start_mark,
         end_mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -542,7 +542,7 @@ unsafe fn yaml_parser_fetch_flow_collection_start(
         start_mark,
         end_mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -563,7 +563,7 @@ unsafe fn yaml_parser_fetch_flow_collection_end(
         start_mark,
         end_mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -580,7 +580,7 @@ unsafe fn yaml_parser_fetch_flow_entry(parser: &mut yaml_parser_t) -> Result<(),
         start_mark,
         end_mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -619,7 +619,7 @@ unsafe fn yaml_parser_fetch_block_entry(parser: &mut yaml_parser_t) -> Result<()
         start_mark,
         end_mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -658,7 +658,7 @@ unsafe fn yaml_parser_fetch_key(parser: &mut yaml_parser_t) -> Result<(), ()> {
         start_mark,
         end_mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -670,10 +670,9 @@ unsafe fn yaml_parser_fetch_value(parser: &mut yaml_parser_t) -> Result<(), ()> 
             start_mark: (*simple_key).mark,
             end_mark: (*simple_key).mark,
         };
-        QUEUE_INSERT!(
-            parser.tokens,
-            ((*simple_key).token_number).wrapping_sub(parser.tokens_parsed),
-            token
+        parser.tokens.insert(
+            ((*simple_key).token_number).wrapping_sub(parser.tokens_parsed) as usize,
+            token,
         );
         yaml_parser_roll_indent(
             parser,
@@ -713,7 +712,7 @@ unsafe fn yaml_parser_fetch_value(parser: &mut yaml_parser_t) -> Result<(), ()> 
         start_mark,
         end_mark,
     };
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -727,7 +726,7 @@ unsafe fn yaml_parser_fetch_anchor(
     }
     parser.simple_key_allowed = false;
     yaml_parser_scan_anchor(parser, &mut token, fetch_alias_instead_of_anchor)?;
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -738,7 +737,7 @@ unsafe fn yaml_parser_fetch_tag(parser: &mut yaml_parser_t) -> Result<(), ()> {
     }
     parser.simple_key_allowed = false;
     yaml_parser_scan_tag(parser, &mut token)?;
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -750,7 +749,7 @@ unsafe fn yaml_parser_fetch_block_scalar(
     yaml_parser_remove_simple_key(parser)?;
     parser.simple_key_allowed = true;
     yaml_parser_scan_block_scalar(parser, &mut token, literal)?;
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -762,7 +761,7 @@ unsafe fn yaml_parser_fetch_flow_scalar(
     yaml_parser_save_simple_key(parser)?;
     parser.simple_key_allowed = false;
     yaml_parser_scan_flow_scalar(parser, &mut token, single)?;
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 
@@ -771,7 +770,7 @@ unsafe fn yaml_parser_fetch_plain_scalar(parser: &mut yaml_parser_t) -> Result<(
     yaml_parser_save_simple_key(parser)?;
     parser.simple_key_allowed = false;
     yaml_parser_scan_plain_scalar(parser, &mut token)?;
-    ENQUEUE!(parser.tokens, token);
+    parser.tokens.push_back(token);
     Ok(())
 }
 

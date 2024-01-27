@@ -1,4 +1,4 @@
-use crate::externs::{free, malloc, memcpy, memmove, memset, realloc, strdup, strlen};
+use crate::externs::{free, malloc, memcpy, memset, realloc, strdup, strlen};
 use crate::ops::{ForceAdd as _, ForceMul as _};
 use crate::yaml::{size_t, yaml_char_t, YamlEventData, YamlNodeData, YamlTokenData};
 use crate::{
@@ -109,58 +109,13 @@ pub(crate) unsafe fn yaml_stack_extend(
     *start = new_start;
 }
 
-pub(crate) unsafe fn yaml_queue_extend(
-    start: *mut *mut libc::c_void,
-    head: *mut *mut libc::c_void,
-    tail: *mut *mut libc::c_void,
-    end: *mut *mut libc::c_void,
-) {
-    if *start == *head && *tail == *end {
-        let new_start: *mut libc::c_void = yaml_realloc(
-            *start,
-            (((*end as *mut libc::c_char).c_offset_from(*start as *mut libc::c_char)
-                as libc::c_long)
-                .force_mul(2_i64)) as size_t,
-        );
-        *head = (new_start as *mut libc::c_char).wrapping_offset(
-            (*head as *mut libc::c_char).c_offset_from(*start as *mut libc::c_char) as libc::c_long
-                as isize,
-        ) as *mut libc::c_void;
-        *tail = (new_start as *mut libc::c_char).wrapping_offset(
-            (*tail as *mut libc::c_char).c_offset_from(*start as *mut libc::c_char) as libc::c_long
-                as isize,
-        ) as *mut libc::c_void;
-        *end = (new_start as *mut libc::c_char).wrapping_offset(
-            (((*end as *mut libc::c_char).c_offset_from(*start as *mut libc::c_char)
-                as libc::c_long)
-                .force_mul(2_i64)) as isize,
-        ) as *mut libc::c_void;
-        *start = new_start;
-    }
-    if *tail == *end {
-        if *head != *tail {
-            memmove(
-                *start,
-                *head,
-                (*tail as *mut libc::c_char).c_offset_from(*head as *mut libc::c_char)
-                    as libc::c_ulong,
-            );
-        }
-        *tail = (*start as *mut libc::c_char).wrapping_offset(
-            (*tail as *mut libc::c_char).c_offset_from(*head as *mut libc::c_char) as libc::c_long
-                as isize,
-        ) as *mut libc::c_void;
-        *head = *start;
-    }
-}
-
 /// Initialize a parser.
 ///
 /// This function creates a new parser object. An application is responsible
 /// for destroying the object using the yaml_parser_delete() function.
 pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), ()> {
     __assert!(!parser.is_null());
-    *parser = core::mem::MaybeUninit::zeroed().assume_init();
+    core::ptr::write(parser, yaml_parser_t::default());
     let parser = &mut *parser;
     BUFFER_INIT!(parser.raw_buffer, INPUT_RAW_BUFFER_SIZE);
     BUFFER_INIT!(parser.buffer, INPUT_BUFFER_SIZE);
@@ -177,10 +132,9 @@ pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), (
 pub unsafe fn yaml_parser_delete(parser: &mut yaml_parser_t) {
     BUFFER_DEL!(parser.raw_buffer);
     BUFFER_DEL!(parser.buffer);
-    while !QUEUE_EMPTY!(parser.tokens) {
-        yaml_token_delete(&mut DEQUEUE!(parser.tokens));
+    for mut token in parser.tokens.drain(..) {
+        yaml_token_delete(&mut token);
     }
-    QUEUE_DEL!(parser.tokens);
     STACK_DEL!(parser.indents);
     STACK_DEL!(parser.simple_keys);
     STACK_DEL!(parser.states);
@@ -191,7 +145,6 @@ pub unsafe fn yaml_parser_delete(parser: &mut yaml_parser_t) {
         yaml_free(tag_directive.prefix as *mut libc::c_void);
     }
     STACK_DEL!(parser.tag_directives);
-    *parser = core::mem::MaybeUninit::zeroed().assume_init();
 }
 
 unsafe fn yaml_string_read_handler(
@@ -261,7 +214,7 @@ pub fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yaml_encod
 /// for destroying the object using the yaml_emitter_delete() function.
 pub unsafe fn yaml_emitter_initialize(emitter: *mut yaml_emitter_t) -> Result<(), ()> {
     __assert!(!emitter.is_null());
-    *emitter = core::mem::MaybeUninit::zeroed().assume_init();
+    core::ptr::write(emitter, yaml_emitter_t::default());
     let emitter = &mut *emitter;
     BUFFER_INIT!(emitter.buffer, OUTPUT_BUFFER_SIZE);
     BUFFER_INIT!(emitter.raw_buffer, OUTPUT_RAW_BUFFER_SIZE);
@@ -277,11 +230,9 @@ pub unsafe fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
     BUFFER_DEL!(emitter.buffer);
     BUFFER_DEL!(emitter.raw_buffer);
     STACK_DEL!(emitter.states);
-    while !QUEUE_EMPTY!(emitter.events) {
-        let mut event = DEQUEUE!(emitter.events);
+    while let Some(mut event) = emitter.events.pop_front() {
         yaml_event_delete(&mut event);
     }
-    QUEUE_DEL!(emitter.events);
     STACK_DEL!(emitter.indents);
     while !STACK_EMPTY!(emitter.tag_directives) {
         let tag_directive = POP!(emitter.tag_directives);
@@ -290,7 +241,7 @@ pub unsafe fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
     }
     STACK_DEL!(emitter.tag_directives);
     yaml_free(emitter.anchors as *mut libc::c_void);
-    *emitter = core::mem::MaybeUninit::zeroed().assume_init();
+    *emitter = yaml_emitter_t::default();
 }
 
 unsafe fn yaml_string_write_handler(

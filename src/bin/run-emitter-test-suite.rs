@@ -65,9 +65,10 @@ pub(crate) unsafe fn unsafe_main(
     yaml_emitter_set_unicode(&mut emitter, false);
 
     let mut buf = ReadBuf::new();
-    let mut event = yaml_event_t::default();
 
     let result = loop {
+        let mut event = yaml_event_t::default();
+
         let line = match buf.get_line(stdin) {
             Some(line) => line,
             None => break Ok(()),
@@ -136,7 +137,7 @@ pub(crate) unsafe fn unsafe_main(
         if result.is_err() {
             break Err("Memory error: Not enough memory for creating an event".into());
         }
-        if yaml_emitter_emit(&mut emitter, &event).is_err() {
+        if yaml_emitter_emit(&mut emitter, event).is_err() {
             break Err(match (*emitter).error {
                 YAML_MEMORY_ERROR => "Memory error: Not enough memory for emitting".into(),
                 YAML_WRITER_ERROR => {

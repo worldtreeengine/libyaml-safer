@@ -21,7 +21,7 @@ pub unsafe fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), ()> 
         },
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, &event)?;
+    yaml_emitter_emit(emitter, event)?;
     emitter.opened = true;
     Ok(())
 }
@@ -38,7 +38,7 @@ pub unsafe fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), ()>
         data: YamlEventData::StreamEnd,
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, &event)?;
+    yaml_emitter_emit(emitter, event)?;
     emitter.closed = true;
     Ok(())
 }
@@ -95,7 +95,7 @@ pub unsafe fn yaml_emitter_dump(
                     },
                     ..Default::default()
                 };
-                if let Ok(()) = yaml_emitter_emit(emitter, &event) {
+                if let Ok(()) = yaml_emitter_emit(emitter, event) {
                     yaml_emitter_anchor_node(emitter, 1);
                     if let Ok(()) = yaml_emitter_dump_node(emitter, 1) {
                         let event = yaml_event_t {
@@ -104,7 +104,7 @@ pub unsafe fn yaml_emitter_dump(
                             },
                             ..Default::default()
                         };
-                        if let Ok(()) = yaml_emitter_emit(emitter, &event) {
+                        if let Ok(()) = yaml_emitter_emit(emitter, event) {
                             yaml_emitter_delete_document_and_anchors(emitter);
                             return Ok(());
                         }
@@ -244,7 +244,7 @@ unsafe fn yaml_emitter_dump_alias(
         data: YamlEventData::Alias { anchor },
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, &event)
+    yaml_emitter_emit(emitter, event)
 }
 
 unsafe fn yaml_emitter_dump_scalar(
@@ -279,7 +279,7 @@ unsafe fn yaml_emitter_dump_scalar(
             },
             ..Default::default()
         };
-        yaml_emitter_emit(emitter, &event)
+        yaml_emitter_emit(emitter, event)
     } else {
         unreachable!()
     }
@@ -307,7 +307,7 @@ unsafe fn yaml_emitter_dump_sequence(
             ..Default::default()
         };
 
-        yaml_emitter_emit(emitter, &event)?;
+        yaml_emitter_emit(emitter, event)?;
         item = items.start;
         while item < items.top {
             yaml_emitter_dump_node(emitter, *item)?;
@@ -317,7 +317,7 @@ unsafe fn yaml_emitter_dump_sequence(
             data: YamlEventData::SequenceEnd,
             ..Default::default()
         };
-        yaml_emitter_emit(emitter, &event)
+        yaml_emitter_emit(emitter, event)
     } else {
         unreachable!()
     }
@@ -345,7 +345,7 @@ unsafe fn yaml_emitter_dump_mapping(
             ..Default::default()
         };
 
-        yaml_emitter_emit(emitter, &event)?;
+        yaml_emitter_emit(emitter, event)?;
         pair = pairs.start;
         while pair < pairs.top {
             yaml_emitter_dump_node(emitter, (*pair).key)?;
@@ -356,7 +356,7 @@ unsafe fn yaml_emitter_dump_mapping(
             data: YamlEventData::MappingEnd,
             ..Default::default()
         };
-        yaml_emitter_emit(emitter, &event)
+        yaml_emitter_emit(emitter, event)
     } else {
         unreachable!()
     }

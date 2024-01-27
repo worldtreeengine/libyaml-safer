@@ -26,7 +26,7 @@ use core::ptr::{self, addr_of_mut};
 
 unsafe fn PEEK_TOKEN(parser: &mut yaml_parser_t) -> *mut yaml_token_t {
     if parser.token_available || yaml_parser_fetch_more_tokens(parser).is_ok() {
-        parser.tokens.head
+        parser.tokens.front_mut().unwrap() as *mut _
     } else {
         ptr::null_mut::<yaml_token_t>()
     }
@@ -35,12 +35,14 @@ unsafe fn PEEK_TOKEN(parser: &mut yaml_parser_t) -> *mut yaml_token_t {
 unsafe fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
     parser.token_available = false;
     parser.tokens_parsed = parser.tokens_parsed.wrapping_add(1);
-    parser.stream_end_produced = if let YamlTokenData::StreamEnd = &(*parser.tokens.head).data {
-        true
-    } else {
-        false
-    };
-    parser.tokens.head = parser.tokens.head.wrapping_offset(1);
+    let skipped = parser.tokens.pop_front();
+    parser.stream_end_produced = matches!(
+        skipped,
+        Some(yaml_token_t {
+            data: YamlTokenData::StreamEnd,
+            ..
+        })
+    );
 }
 
 /// Parse the input stream and produce the next parsing event.
