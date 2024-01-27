@@ -250,7 +250,7 @@ pub unsafe fn yaml_parser_set_input(
 }
 
 /// Set the source encoding.
-pub unsafe fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yaml_encoding_t) {
+pub fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yaml_encoding_t) {
     __assert!(parser.encoding == YAML_ANY_ENCODING);
     parser.encoding = encoding;
 }
@@ -370,34 +370,34 @@ pub unsafe fn yaml_emitter_set_output(
 }
 
 /// Set the output encoding.
-pub unsafe fn yaml_emitter_set_encoding(emitter: &mut yaml_emitter_t, encoding: yaml_encoding_t) {
+pub fn yaml_emitter_set_encoding(emitter: &mut yaml_emitter_t, encoding: yaml_encoding_t) {
     __assert!(emitter.encoding == YAML_ANY_ENCODING);
     emitter.encoding = encoding;
 }
 
 /// Set if the output should be in the "canonical" format as in the YAML
 /// specification.
-pub unsafe fn yaml_emitter_set_canonical(emitter: &mut yaml_emitter_t, canonical: bool) {
+pub fn yaml_emitter_set_canonical(emitter: &mut yaml_emitter_t, canonical: bool) {
     emitter.canonical = canonical;
 }
 
 /// Set the indentation increment.
-pub unsafe fn yaml_emitter_set_indent(emitter: &mut yaml_emitter_t, indent: libc::c_int) {
+pub fn yaml_emitter_set_indent(emitter: &mut yaml_emitter_t, indent: libc::c_int) {
     emitter.best_indent = if 1 < indent && indent < 10 { indent } else { 2 };
 }
 
 /// Set the preferred line width. -1 means unlimited.
-pub unsafe fn yaml_emitter_set_width(emitter: &mut yaml_emitter_t, width: libc::c_int) {
+pub fn yaml_emitter_set_width(emitter: &mut yaml_emitter_t, width: libc::c_int) {
     emitter.best_width = if width >= 0 { width } else { -1 };
 }
 
 /// Set if unescaped non-ASCII characters are allowed.
-pub unsafe fn yaml_emitter_set_unicode(emitter: &mut yaml_emitter_t, unicode: bool) {
+pub fn yaml_emitter_set_unicode(emitter: &mut yaml_emitter_t, unicode: bool) {
     emitter.unicode = unicode;
 }
 
 /// Set the preferred line break.
-pub unsafe fn yaml_emitter_set_break(emitter: &mut yaml_emitter_t, line_break: yaml_break_t) {
+pub fn yaml_emitter_set_break(emitter: &mut yaml_emitter_t, line_break: yaml_break_t) {
     emitter.line_break = line_break;
 }
 
@@ -484,7 +484,7 @@ unsafe fn yaml_check_utf8(start: *const yaml_char_t, length: size_t) -> Result<(
 }
 
 /// Create the STREAM-START event.
-pub unsafe fn yaml_stream_start_event_initialize(
+pub fn yaml_stream_start_event_initialize(
     event: &mut yaml_event_t,
     encoding: yaml_encoding_t,
 ) -> Result<(), ()> {
@@ -496,7 +496,7 @@ pub unsafe fn yaml_stream_start_event_initialize(
 }
 
 /// Create the STREAM-END event.
-pub unsafe fn yaml_stream_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
+pub fn yaml_stream_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
     *event = yaml_event_t {
         data: YamlEventData::StreamEnd,
         ..Default::default()
@@ -620,7 +620,7 @@ pub unsafe fn yaml_document_start_event_initialize(
 ///
 /// The `implicit` argument is considered as a stylistic parameter and may be
 /// ignored by the emitter.
-pub unsafe fn yaml_document_end_event_initialize(
+pub fn yaml_document_end_event_initialize(
     event: &mut yaml_event_t,
     implicit: bool,
 ) -> Result<(), ()> {
@@ -814,7 +814,7 @@ pub unsafe fn yaml_sequence_start_event_initialize(
 }
 
 /// Create a SEQUENCE-END event.
-pub unsafe fn yaml_sequence_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
+pub fn yaml_sequence_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
     *event = yaml_event_t {
         data: YamlEventData::SequenceEnd,
         ..Default::default()
@@ -891,7 +891,7 @@ pub unsafe fn yaml_mapping_start_event_initialize(
 }
 
 /// Create a MAPPING-END event.
-pub unsafe fn yaml_mapping_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
+pub fn yaml_mapping_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
     *event = yaml_event_t {
         data: YamlEventData::MappingEnd,
         ..Default::default()

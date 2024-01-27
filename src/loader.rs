@@ -74,7 +74,7 @@ pub unsafe fn yaml_parser_load(
     Err(())
 }
 
-unsafe fn yaml_parser_set_composer_error(
+fn yaml_parser_set_composer_error(
     parser: &mut yaml_parser_t,
     problem: &'static str,
     problem_mark: yaml_mark_t,
@@ -85,7 +85,7 @@ unsafe fn yaml_parser_set_composer_error(
     Err(())
 }
 
-unsafe fn yaml_parser_set_composer_error_context(
+fn yaml_parser_set_composer_error_context(
     parser: &mut yaml_parser_t,
     context: &'static str,
     context_mark: yaml_mark_t,

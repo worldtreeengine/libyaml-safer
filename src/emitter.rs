@@ -85,7 +85,7 @@ unsafe fn WRITE_BREAK(emitter: &mut yaml_emitter_t, string: &mut yaml_string_t) 
     Ok(())
 }
 
-unsafe fn yaml_emitter_set_emitter_error(
+fn yaml_emitter_set_emitter_error(
     emitter: &mut yaml_emitter_t,
     problem: &'static str,
 ) -> Result<(), ()> {

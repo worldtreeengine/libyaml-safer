@@ -137,7 +137,7 @@ pub unsafe fn yaml_parser_scan(
     Ok(())
 }
 
-unsafe fn yaml_parser_set_scanner_error(
+fn yaml_parser_set_scanner_error(
     parser: &mut yaml_parser_t,
     context: &'static str,
     context_mark: yaml_mark_t,

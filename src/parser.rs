@@ -69,7 +69,7 @@ pub unsafe fn yaml_parser_parse(
     yaml_parser_state_machine(parser, event)
 }
 
-unsafe fn yaml_parser_set_parser_error(
+fn yaml_parser_set_parser_error(
     parser: &mut yaml_parser_t,
     problem: &'static str,
     problem_mark: yaml_mark_t,
@@ -79,7 +79,7 @@ unsafe fn yaml_parser_set_parser_error(
     parser.problem_mark = problem_mark;
 }
 
-unsafe fn yaml_parser_set_parser_error_context(
+fn yaml_parser_set_parser_error_context(
     parser: &mut yaml_parser_t,
     context: &'static str,
     context_mark: yaml_mark_t,

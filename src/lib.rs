@@ -210,11 +210,7 @@ mod externs {
         };
     }
 
-    pub(crate) unsafe fn __assert_fail(
-        __assertion: &'static str,
-        __file: &'static str,
-        __line: u32,
-    ) -> ! {
+    pub(crate) fn __assert_fail(__assertion: &'static str, __file: &'static str, __line: u32) -> ! {
         struct Abort;
         impl Drop for Abort {
             fn drop(&mut self) {
