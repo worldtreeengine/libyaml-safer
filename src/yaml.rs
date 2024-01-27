@@ -2,7 +2,7 @@ use crate::libc;
 use core::ops::Deref;
 use core::ptr::{self, addr_of};
 
-pub use self::{yaml_encoding_t::*, yaml_event_type_t::*, yaml_node_type_t::*};
+pub use self::{yaml_encoding_t::*, yaml_node_type_t::*};
 pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t, u8 as yaml_char_t};
 
 /// The version directive data.
@@ -346,242 +346,90 @@ pub struct unnamed_yaml_token_t_data_tag_directive {
     pub prefix: *mut yaml_char_t,
 }
 
-/// Event types.
-#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
-#[non_exhaustive]
-pub enum yaml_event_type_t {
-    /// An empty event.
-    #[default]
-    YAML_NO_EVENT = 0,
-    /// A STREAM-START event.
-    YAML_STREAM_START_EVENT = 1,
-    /// A STREAM-END event.
-    YAML_STREAM_END_EVENT = 2,
-    /// A DOCUMENT-START event.
-    YAML_DOCUMENT_START_EVENT = 3,
-    /// A DOCUMENT-END event.
-    YAML_DOCUMENT_END_EVENT = 4,
-    /// An ALIAS event.
-    YAML_ALIAS_EVENT = 5,
-    /// A SCALAR event.
-    YAML_SCALAR_EVENT = 6,
-    /// A SEQUENCE-START event.
-    YAML_SEQUENCE_START_EVENT = 7,
-    /// A SEQUENCE-END event.
-    YAML_SEQUENCE_END_EVENT = 8,
-    /// A MAPPING-START event.
-    YAML_MAPPING_START_EVENT = 9,
-    /// A MAPPING-END event.
-    YAML_MAPPING_END_EVENT = 10,
-}
-
 /// The event structure.
+#[derive(Default)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_event_t {
-    /// The event type.
-    pub type_: yaml_event_type_t,
     /// The event data.
-    ///
-    /// ```
-    /// # const _: &str = stringify! {
-    /// union {
-    ///     /// The stream parameters (for YAML_STREAM_START_EVENT).
-    ///     stream_start: struct {
-    ///         /// The document encoding.
-    ///         encoding: yaml_encoding_t,
-    ///     },
-    ///     /// The document parameters (for YAML_DOCUMENT_START_EVENT).
-    ///     document_start: struct {
-    ///         /// The version directive.
-    ///         version_directive: *mut yaml_version_directive_t,
-    ///         /// The list of tag directives.
-    ///         tag_directives: struct {
-    ///             /// The beginning of the tag directives list.
-    ///             start: *mut yaml_tag_directive_t,
-    ///             /// The end of the tag directives list.
-    ///             end: *mut yaml_tag_directive_t,
-    ///         },
-    ///         /// Is the document indicator implicit?
-    ///         implicit: i32,
-    ///     },
-    ///     /// The document end parameters (for YAML_DOCUMENT_END_EVENT).
-    ///     document_end: struct {
-    ///         /// Is the document end indicator implicit?
-    ///         implicit: i32,
-    ///     },
-    ///     /// The alias parameters (for YAML_ALIAS_EVENT).
-    ///     alias: struct {
-    ///         /// The anchor.
-    ///         anchor: *mut u8,
-    ///     },
-    ///     /// The scalar parameters (for YAML_SCALAR_EVENT).
-    ///     scalar: struct {
-    ///         /// The anchor.
-    ///         anchor: *mut u8,
-    ///         /// The tag.
-    ///         tag: *mut u8,
-    ///         /// The scalar value.
-    ///         value: *mut u8,
-    ///         /// The length of the scalar value.
-    ///         length: u64,
-    ///         /// Is the tag optional for the plain style?
-    ///         plain_implicit: i32,
-    ///         /// Is the tag optional for any non-plain style?
-    ///         quoted_implicit: i32,
-    ///         /// The scalar style.
-    ///         style: yaml_scalar_style_t,
-    ///     },
-    ///     /// The sequence parameters (for YAML_SEQUENCE_START_EVENT).
-    ///     sequence_start: struct {
-    ///         /// The anchor.
-    ///         anchor: *mut u8,
-    ///         /// The tag.
-    ///         tag: *mut u8,
-    ///         /// Is the tag optional?
-    ///         implicit: i32,
-    ///         /// The sequence style.
-    ///         style: yaml_sequence_style_t,
-    ///     },
-    ///     /// The mapping parameters (for YAML_MAPPING_START_EVENT).
-    ///     mapping_start: struct {
-    ///         /// The anchor.
-    ///         anchor: *mut u8,
-    ///         /// The tag.
-    ///         tag: *mut u8,
-    ///         /// Is the tag optional?
-    ///         implicit: i32,
-    ///         /// The mapping style.
-    ///         style: yaml_mapping_style_t,
-    ///     },
-    /// }
-    /// # };
-    /// ```
-    pub data: unnamed_yaml_event_t_data,
+    pub data: YamlEventData,
     /// The beginning of the event.
     pub start_mark: yaml_mark_t,
     /// The end of the event.
     pub end_mark: yaml_mark_t,
 }
 
-impl Default for yaml_event_t {
-    fn default() -> Self {
-        unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
-    }
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union unnamed_yaml_event_t_data {
+#[derive(Default)]
+pub enum YamlEventData {
+    #[default]
+    NoEvent,
     /// The stream parameters (for YAML_STREAM_START_EVENT).
-    pub stream_start: unnamed_yaml_event_t_data_stream_start,
+    StreamStart {
+        /// The document encoding.
+        encoding: yaml_encoding_t,
+    },
+    StreamEnd,
     /// The document parameters (for YAML_DOCUMENT_START_EVENT).
-    pub document_start: unnamed_yaml_event_t_data_document_start,
+    DocumentStart {
+        /// The version directive.
+        version_directive: *mut yaml_version_directive_t,
+        /// The beginning of the tag directives list.
+        tag_directives_start: *mut yaml_tag_directive_t,
+        /// The end of the tag directives list.
+        tag_directives_end: *mut yaml_tag_directive_t,
+        /// Is the document indicator implicit?
+        implicit: bool,
+    },
     /// The document end parameters (for YAML_DOCUMENT_END_EVENT).
-    pub document_end: unnamed_yaml_event_t_data_document_end,
+    DocumentEnd {
+        implicit: bool,
+    },
     /// The alias parameters (for YAML_ALIAS_EVENT).
-    pub alias: unnamed_yaml_event_t_data_alias,
+    Alias {
+        /// The anchor.
+        anchor: *mut yaml_char_t,
+    },
     /// The scalar parameters (for YAML_SCALAR_EVENT).
-    pub scalar: unnamed_yaml_event_t_data_scalar,
+    Scalar {
+        /// The anchor.
+        anchor: *mut yaml_char_t,
+        /// The tag.
+        tag: *mut yaml_char_t,
+        /// The scalar value.
+        value: *mut yaml_char_t,
+        /// The length of the scalar value.
+        length: size_t,
+        /// Is the tag optional for the plain style?
+        plain_implicit: bool,
+        /// Is the tag optional for any non-plain style?
+        quoted_implicit: bool,
+        /// The scalar style.
+        style: yaml_scalar_style_t,
+    },
     /// The sequence parameters (for YAML_SEQUENCE_START_EVENT).
-    pub sequence_start: unnamed_yaml_event_t_data_sequence_start,
+    SequenceStart {
+        /// The anchor.
+        anchor: *mut yaml_char_t,
+        /// The tag.
+        tag: *mut yaml_char_t,
+        /// Is the tag optional?
+        implicit: bool,
+        /// The sequence style.
+        style: yaml_sequence_style_t,
+    },
+    SequenceEnd,
     /// The mapping parameters (for YAML_MAPPING_START_EVENT).
-    pub mapping_start: unnamed_yaml_event_t_data_mapping_start,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_event_t_data_stream_start {
-    /// The document encoding.
-    pub encoding: yaml_encoding_t,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_event_t_data_document_start {
-    /// The version directive.
-    pub version_directive: *mut yaml_version_directive_t,
-    /// The list of tag directives.
-    pub tag_directives: unnamed_yaml_event_t_data_document_start_tag_directives,
-    /// Is the document indicator implicit?
-    pub implicit: bool,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_event_t_data_document_start_tag_directives {
-    /// The beginning of the tag directives list.
-    pub start: *mut yaml_tag_directive_t,
-    /// The end of the tag directives list.
-    pub end: *mut yaml_tag_directive_t,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_event_t_data_document_end {
-    /// Is the document end indicator implicit?
-    pub implicit: bool,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_event_t_data_alias {
-    /// The anchor.
-    pub anchor: *mut yaml_char_t,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_event_t_data_scalar {
-    /// The anchor.
-    pub anchor: *mut yaml_char_t,
-    /// The tag.
-    pub tag: *mut yaml_char_t,
-    /// The scalar value.
-    pub value: *mut yaml_char_t,
-    /// The length of the scalar value.
-    pub length: size_t,
-    /// Is the tag optional for the plain style?
-    pub plain_implicit: bool,
-    /// Is the tag optional for any non-plain style?
-    pub quoted_implicit: bool,
-    /// The scalar style.
-    pub style: yaml_scalar_style_t,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_event_t_data_sequence_start {
-    /// The anchor.
-    pub anchor: *mut yaml_char_t,
-    /// The tag.
-    pub tag: *mut yaml_char_t,
-    /// Is the tag optional?
-    pub implicit: bool,
-    /// The sequence style.
-    pub style: yaml_sequence_style_t,
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_event_t_data_mapping_start {
-    /// The anchor.
-    pub anchor: *mut yaml_char_t,
-    /// The tag.
-    pub tag: *mut yaml_char_t,
-    /// Is the tag optional?
-    pub implicit: bool,
-    /// The mapping style.
-    pub style: yaml_mapping_style_t,
+    MappingStart {
+        /// The anchor.
+        anchor: *mut yaml_char_t,
+        /// The tag.
+        tag: *mut yaml_char_t,
+        /// Is the tag optional?
+        implicit: bool,
+        /// The mapping style.
+        style: yaml_mapping_style_t,
+    },
+    MappingEnd,
 }
 
 /// Node types.

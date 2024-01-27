@@ -3,11 +3,9 @@ use crate::externs::{memset, strcmp};
 use crate::fmt::WriteToPtr;
 use crate::ops::ForceMul as _;
 use crate::yaml::{
-    yaml_anchors_t, yaml_char_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_mark_t,
-    yaml_node_item_t, yaml_node_pair_t, yaml_node_t, YAML_ALIAS_EVENT, YAML_ANY_ENCODING,
-    YAML_DOCUMENT_END_EVENT, YAML_DOCUMENT_START_EVENT, YAML_MAPPING_END_EVENT, YAML_MAPPING_NODE,
-    YAML_MAPPING_START_EVENT, YAML_SCALAR_EVENT, YAML_SCALAR_NODE, YAML_SEQUENCE_END_EVENT,
-    YAML_SEQUENCE_NODE, YAML_SEQUENCE_START_EVENT, YAML_STREAM_END_EVENT, YAML_STREAM_START_EVENT,
+    yaml_anchors_t, yaml_char_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_item_t,
+    yaml_node_pair_t, yaml_node_t, YamlEventData, YAML_ANY_ENCODING, YAML_MAPPING_NODE,
+    YAML_SCALAR_NODE, YAML_SEQUENCE_NODE,
 };
 use crate::{libc, yaml_document_delete, yaml_emitter_emit, PointerExt};
 use core::mem::size_of;
@@ -17,17 +15,13 @@ use core::ptr::{self, addr_of_mut};
 ///
 /// This function should be used before yaml_emitter_dump() is called.
 pub unsafe fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
-    let mark = yaml_mark_t {
-        index: 0_u64,
-        line: 0_u64,
-        column: 0_u64,
-    };
     __assert!(!emitter.opened);
-    let mut event = yaml_event_t::default();
-    event.type_ = YAML_STREAM_START_EVENT;
-    event.start_mark = mark;
-    event.end_mark = mark;
-    event.data.stream_start.encoding = YAML_ANY_ENCODING;
+    let event = yaml_event_t {
+        data: YamlEventData::StreamStart {
+            encoding: YAML_ANY_ENCODING,
+        },
+        ..Default::default()
+    };
     yaml_emitter_emit(emitter, &event)?;
     emitter.opened = true;
     Ok(())
@@ -37,19 +31,14 @@ pub unsafe fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), ()> 
 ///
 /// This function should be used after yaml_emitter_dump() is called.
 pub unsafe fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
-    let mark = yaml_mark_t {
-        index: 0_u64,
-        line: 0_u64,
-        column: 0_u64,
-    };
     __assert!(emitter.opened);
     if emitter.closed {
         return Ok(());
     }
-    let mut event = yaml_event_t::default();
-    event.type_ = YAML_STREAM_END_EVENT;
-    event.start_mark = mark;
-    event.end_mark = mark;
+    let event = yaml_event_t {
+        data: YamlEventData::StreamEnd,
+        ..Default::default()
+    };
     yaml_emitter_emit(emitter, &event)?;
     emitter.closed = true;
     Ok(())
@@ -66,11 +55,6 @@ pub unsafe fn yaml_emitter_dump(
     document: *mut yaml_document_t,
 ) -> Result<(), ()> {
     let current_block: u64;
-    let mark = yaml_mark_t {
-        index: 0_u64,
-        line: 0_u64,
-        column: 0_u64,
-    };
     __assert!(!document.is_null());
     emitter.document = document;
     if !emitter.opened {
@@ -103,22 +87,24 @@ pub unsafe fn yaml_emitter_dump(
                         .force_mul((*document).nodes.top.c_offset_from((*document).nodes.start)
                             as libc::c_ulong),
                 );
-                let mut event = yaml_event_t::default();
-                event.type_ = YAML_DOCUMENT_START_EVENT;
-                event.start_mark = mark;
-                event.end_mark = mark;
-                event.data.document_start.version_directive = (*document).version_directive;
-                event.data.document_start.tag_directives.start = (*document).tag_directives.start;
-                event.data.document_start.tag_directives.end = (*document).tag_directives.end;
-                event.data.document_start.implicit = (*document).start_implicit;
+                let event = yaml_event_t {
+                    data: YamlEventData::DocumentStart {
+                        version_directive: (*document).version_directive,
+                        tag_directives_start: (*document).tag_directives.start,
+                        tag_directives_end: (*document).tag_directives.end,
+                        implicit: (*document).start_implicit,
+                    },
+                    ..Default::default()
+                };
                 if let Ok(()) = yaml_emitter_emit(emitter, &event) {
                     yaml_emitter_anchor_node(emitter, 1);
                     if let Ok(()) = yaml_emitter_dump_node(emitter, 1) {
-                        event = yaml_event_t::default();
-                        event.type_ = YAML_DOCUMENT_END_EVENT;
-                        event.start_mark = mark;
-                        event.end_mark = mark;
-                        event.data.document_end.implicit = (*document).end_implicit;
+                        let event = yaml_event_t {
+                            data: YamlEventData::DocumentEnd {
+                                implicit: (*document).end_implicit,
+                            },
+                            ..Default::default()
+                        };
                         if let Ok(()) = yaml_emitter_emit(emitter, &event) {
                             yaml_emitter_delete_document_and_anchors(emitter);
                             return Ok(());
@@ -256,16 +242,10 @@ unsafe fn yaml_emitter_dump_alias(
     emitter: &mut yaml_emitter_t,
     anchor: *mut yaml_char_t,
 ) -> Result<(), ()> {
-    let mark = yaml_mark_t {
-        index: 0_u64,
-        line: 0_u64,
-        column: 0_u64,
+    let event = yaml_event_t {
+        data: YamlEventData::Alias { anchor },
+        ..Default::default()
     };
-    let mut event = yaml_event_t::default();
-    event.type_ = YAML_ALIAS_EVENT;
-    event.start_mark = mark;
-    event.end_mark = mark;
-    event.data.alias.anchor = anchor;
     yaml_emitter_emit(emitter, &event)
 }
 
@@ -274,11 +254,6 @@ unsafe fn yaml_emitter_dump_scalar(
     node: *mut yaml_node_t,
     anchor: *mut yaml_char_t,
 ) -> Result<(), ()> {
-    let mark = yaml_mark_t {
-        index: 0_u64,
-        line: 0_u64,
-        column: 0_u64,
-    };
     let plain_implicit = strcmp(
         (*node).tag as *mut libc::c_char,
         b"tag:yaml.org,2002:str\0" as *const u8 as *const libc::c_char,
@@ -287,17 +262,20 @@ unsafe fn yaml_emitter_dump_scalar(
         (*node).tag as *mut libc::c_char,
         b"tag:yaml.org,2002:str\0" as *const u8 as *const libc::c_char,
     ) == 0;
-    let mut event = yaml_event_t::default();
-    event.type_ = YAML_SCALAR_EVENT;
-    event.start_mark = mark;
-    event.end_mark = mark;
-    event.data.scalar.anchor = anchor;
-    event.data.scalar.tag = (*node).tag;
-    event.data.scalar.value = (*node).data.scalar.value;
-    event.data.scalar.length = (*node).data.scalar.length;
-    event.data.scalar.plain_implicit = plain_implicit;
-    event.data.scalar.quoted_implicit = quoted_implicit;
-    event.data.scalar.style = (*node).data.scalar.style;
+
+    let event = yaml_event_t {
+        data: YamlEventData::Scalar {
+            anchor,
+            tag: (*node).tag,
+            value: (*node).data.scalar.value,
+            length: (*node).data.scalar.length,
+            plain_implicit,
+            quoted_implicit,
+            style: (*node).data.scalar.style,
+        },
+        ..Default::default()
+    };
+
     yaml_emitter_emit(emitter, &event)
 }
 
@@ -306,34 +284,32 @@ unsafe fn yaml_emitter_dump_sequence(
     node: *mut yaml_node_t,
     anchor: *mut yaml_char_t,
 ) -> Result<(), ()> {
-    let mark = yaml_mark_t {
-        index: 0_u64,
-        line: 0_u64,
-        column: 0_u64,
-    };
     let implicit = strcmp(
         (*node).tag as *mut libc::c_char,
         b"tag:yaml.org,2002:seq\0" as *const u8 as *const libc::c_char,
     ) == 0;
     let mut item: *mut yaml_node_item_t;
-    let mut event = yaml_event_t::default();
-    event.type_ = YAML_SEQUENCE_START_EVENT;
-    event.start_mark = mark;
-    event.end_mark = mark;
-    event.data.sequence_start.anchor = anchor;
-    event.data.sequence_start.tag = (*node).tag;
-    event.data.sequence_start.implicit = implicit;
-    event.data.sequence_start.style = (*node).data.sequence.style;
+
+    let event = yaml_event_t {
+        data: YamlEventData::SequenceStart {
+            anchor,
+            tag: (*node).tag,
+            implicit,
+            style: (*node).data.sequence.style,
+        },
+        ..Default::default()
+    };
+
     yaml_emitter_emit(emitter, &event)?;
     item = (*node).data.sequence.items.start;
     while item < (*node).data.sequence.items.top {
         yaml_emitter_dump_node(emitter, *item)?;
         item = item.wrapping_offset(1);
     }
-    event = yaml_event_t::default();
-    event.type_ = YAML_SEQUENCE_END_EVENT;
-    event.start_mark = mark;
-    event.end_mark = mark;
+    let event = yaml_event_t {
+        data: YamlEventData::SequenceEnd,
+        ..Default::default()
+    };
     yaml_emitter_emit(emitter, &event)
 }
 
@@ -342,24 +318,22 @@ unsafe fn yaml_emitter_dump_mapping(
     node: *mut yaml_node_t,
     anchor: *mut yaml_char_t,
 ) -> Result<(), ()> {
-    let mark = yaml_mark_t {
-        index: 0_u64,
-        line: 0_u64,
-        column: 0_u64,
-    };
     let implicit = strcmp(
         (*node).tag as *mut libc::c_char,
         b"tag:yaml.org,2002:map\0" as *const u8 as *const libc::c_char,
     ) == 0;
     let mut pair: *mut yaml_node_pair_t;
-    let mut event = yaml_event_t::default();
-    event.type_ = YAML_MAPPING_START_EVENT;
-    event.start_mark = mark;
-    event.end_mark = mark;
-    event.data.mapping_start.anchor = anchor;
-    event.data.mapping_start.tag = (*node).tag;
-    event.data.mapping_start.implicit = implicit;
-    event.data.mapping_start.style = (*node).data.mapping.style;
+
+    let event = yaml_event_t {
+        data: YamlEventData::MappingStart {
+            anchor,
+            tag: (*node).tag,
+            implicit,
+            style: (*node).data.mapping.style,
+        },
+        ..Default::default()
+    };
+
     yaml_emitter_emit(emitter, &event)?;
     pair = (*node).data.mapping.pairs.start;
     while pair < (*node).data.mapping.pairs.top {
@@ -367,9 +341,9 @@ unsafe fn yaml_emitter_dump_mapping(
         yaml_emitter_dump_node(emitter, (*pair).value)?;
         pair = pair.wrapping_offset(1);
     }
-    event = yaml_event_t::default();
-    event.type_ = YAML_MAPPING_END_EVENT;
-    event.start_mark = mark;
-    event.end_mark = mark;
+    let event = yaml_event_t {
+        data: YamlEventData::MappingEnd,
+        ..Default::default()
+    };
     yaml_emitter_emit(emitter, &event)
 }

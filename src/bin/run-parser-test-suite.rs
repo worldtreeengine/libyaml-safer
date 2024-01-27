@@ -15,13 +15,10 @@ mod cstr;
 
 use self::cstr::CStr;
 use libyaml_safer::{
-    yaml_event_delete, yaml_event_t, yaml_event_type_t, yaml_parser_delete, yaml_parser_initialize,
-    yaml_parser_parse, yaml_parser_set_input, yaml_parser_t, YAML_ALIAS_EVENT,
-    YAML_DOCUMENT_END_EVENT, YAML_DOCUMENT_START_EVENT, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_MAPPING_END_EVENT,
-    YAML_MAPPING_START_EVENT, YAML_NO_EVENT, YAML_PLAIN_SCALAR_STYLE, YAML_SCALAR_EVENT,
-    YAML_SEQUENCE_END_EVENT, YAML_SEQUENCE_START_EVENT, YAML_SINGLE_QUOTED_SCALAR_STYLE,
-    YAML_STREAM_END_EVENT, YAML_STREAM_START_EVENT,
+    yaml_event_delete, yaml_event_t, yaml_parser_delete, yaml_parser_initialize, yaml_parser_parse,
+    yaml_parser_set_input, yaml_parser_t, YamlEventData, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
+    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE,
+    YAML_SINGLE_QUOTED_SCALAR_STYLE,
 };
 use std::env;
 use std::error::Error;
@@ -79,101 +76,92 @@ pub(crate) unsafe fn unsafe_main(
             return Err(error.into());
         }
 
-        let type_: yaml_event_type_t = event.type_;
-        if type_ == YAML_NO_EVENT {
-            let _ = writeln!(stdout, "???");
-        } else if type_ == YAML_STREAM_START_EVENT {
-            let _ = writeln!(stdout, "+STR");
-        } else if type_ == YAML_STREAM_END_EVENT {
-            let _ = writeln!(stdout, "-STR");
-        } else if type_ == YAML_DOCUMENT_START_EVENT {
-            let _ = write!(stdout, "+DOC");
-            if !event.data.document_start.implicit {
-                let _ = write!(stdout, " ---");
+        let mut is_end = false;
+
+        match &event.data {
+            YamlEventData::NoEvent => {
+                _ = writeln!(stdout, "???");
             }
-            let _ = writeln!(stdout);
-        } else if type_ == YAML_DOCUMENT_END_EVENT {
-            let _ = write!(stdout, "-DOC");
-            if !event.data.document_end.implicit {
-                let _ = write!(stdout, " ...");
+            YamlEventData::StreamStart { .. } => {
+                _ = writeln!(stdout, "+STR");
             }
-            let _ = writeln!(stdout);
-        } else if type_ == YAML_MAPPING_START_EVENT {
-            let _ = write!(stdout, "+MAP");
-            if !event.data.mapping_start.anchor.is_null() {
-                let _ = write!(
-                    stdout,
-                    " &{}",
-                    CStr::from_ptr(event.data.mapping_start.anchor as *const i8),
-                );
+            YamlEventData::StreamEnd => {
+                is_end = true;
+                _ = writeln!(stdout, "-STR");
             }
-            if !event.data.mapping_start.tag.is_null() {
-                let _ = write!(
-                    stdout,
-                    " <{}>",
-                    CStr::from_ptr(event.data.mapping_start.tag as *const i8),
-                );
+            YamlEventData::DocumentStart { implicit, .. } => {
+                _ = write!(stdout, "+DOC");
+                if !*implicit {
+                    _ = write!(stdout, " ---");
+                }
+                _ = writeln!(stdout);
             }
-            let _ = writeln!(stdout);
-        } else if type_ == YAML_MAPPING_END_EVENT {
-            let _ = writeln!(stdout, "-MAP");
-        } else if type_ == YAML_SEQUENCE_START_EVENT {
-            let _ = write!(stdout, "+SEQ");
-            if !event.data.sequence_start.anchor.is_null() {
-                let _ = write!(
-                    stdout,
-                    " &{}",
-                    CStr::from_ptr(event.data.sequence_start.anchor as *const i8),
-                );
+            YamlEventData::DocumentEnd { implicit } => {
+                _ = write!(stdout, "-DOC");
+                if !*implicit {
+                    _ = write!(stdout, " ...");
+                }
+                _ = writeln!(stdout);
             }
-            if !event.data.sequence_start.tag.is_null() {
-                let _ = write!(
-                    stdout,
-                    " <{}>",
-                    CStr::from_ptr(event.data.sequence_start.tag as *const i8),
-                );
+            YamlEventData::Alias { anchor } => {
+                _ = writeln!(stdout, "=ALI *{}", CStr::from_ptr(*anchor as *const i8),);
             }
-            let _ = writeln!(stdout);
-        } else if type_ == YAML_SEQUENCE_END_EVENT {
-            let _ = writeln!(stdout, "-SEQ");
-        } else if type_ == YAML_SCALAR_EVENT {
-            let _ = write!(stdout, "=VAL");
-            if !event.data.scalar.anchor.is_null() {
-                let _ = write!(
-                    stdout,
-                    " &{}",
-                    CStr::from_ptr(event.data.scalar.anchor as *const i8),
-                );
+            YamlEventData::Scalar {
+                anchor,
+                tag,
+                value,
+                length,
+                style,
+                ..
+            } => {
+                let _ = write!(stdout, "=VAL");
+                if !anchor.is_null() {
+                    _ = write!(stdout, " &{}", CStr::from_ptr(*anchor as *const i8),);
+                }
+                if !tag.is_null() {
+                    _ = write!(stdout, " <{}>", CStr::from_ptr(*tag as *const i8),);
+                }
+                _ = stdout.write_all(match *style {
+                    YAML_PLAIN_SCALAR_STYLE => b" :",
+                    YAML_SINGLE_QUOTED_SCALAR_STYLE => b" '",
+                    YAML_DOUBLE_QUOTED_SCALAR_STYLE => b" \"",
+                    YAML_LITERAL_SCALAR_STYLE => b" |",
+                    YAML_FOLDED_SCALAR_STYLE => b" >",
+                    _ => process::abort(),
+                });
+                print_escaped(stdout, *value, *length);
+                _ = writeln!(stdout);
             }
-            if !event.data.scalar.tag.is_null() {
-                let _ = write!(
-                    stdout,
-                    " <{}>",
-                    CStr::from_ptr(event.data.scalar.tag as *const i8),
-                );
+            YamlEventData::SequenceStart { anchor, tag, .. } => {
+                let _ = write!(stdout, "+SEQ");
+                if !anchor.is_null() {
+                    _ = write!(stdout, " &{}", CStr::from_ptr(*anchor as *const i8),);
+                }
+                if !tag.is_null() {
+                    _ = write!(stdout, " <{}>", CStr::from_ptr(*tag as *const i8),);
+                }
+                _ = writeln!(stdout);
             }
-            let _ = stdout.write_all(match event.data.scalar.style {
-                YAML_PLAIN_SCALAR_STYLE => b" :",
-                YAML_SINGLE_QUOTED_SCALAR_STYLE => b" '",
-                YAML_DOUBLE_QUOTED_SCALAR_STYLE => b" \"",
-                YAML_LITERAL_SCALAR_STYLE => b" |",
-                YAML_FOLDED_SCALAR_STYLE => b" >",
-                _ => process::abort(),
-            });
-            print_escaped(stdout, event.data.scalar.value, event.data.scalar.length);
-            let _ = writeln!(stdout);
-        } else if type_ == YAML_ALIAS_EVENT {
-            let _ = writeln!(
-                stdout,
-                "=ALI *{}",
-                CStr::from_ptr(event.data.alias.anchor as *const i8),
-            );
-        } else {
-            process::abort();
+            YamlEventData::SequenceEnd => {
+                _ = writeln!(stdout, "-SEQ");
+            }
+            YamlEventData::MappingStart { anchor, tag, .. } => {
+                let _ = write!(stdout, "+MAP");
+                if !anchor.is_null() {
+                    _ = write!(stdout, " &{}", CStr::from_ptr(*anchor as *const i8),);
+                }
+                if !tag.is_null() {
+                    _ = write!(stdout, " <{}>", CStr::from_ptr(*tag as *const i8),);
+                }
+                _ = writeln!(stdout);
+            }
+            YamlEventData::MappingEnd => {
+                _ = writeln!(stdout, "-MAP");
+            }
         }
 
         yaml_event_delete(&mut event);
-        if type_ == YAML_STREAM_END_EVENT {
+        if is_end {
             break;
         }
     }
