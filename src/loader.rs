@@ -130,7 +130,7 @@ unsafe fn yaml_parser_load_document(
         (*parser.document).start_implicit = *implicit;
         (*parser.document).start_mark = event.start_mark;
         STACK_INIT!(ctx, libc::c_int);
-        if let Err(()) = yaml_parser_load_nodes(parser, addr_of_mut!(ctx)) {
+        if let Err(()) = yaml_parser_load_nodes(parser, &mut ctx) {
             STACK_DEL!(ctx);
             return Err(());
         }
@@ -143,7 +143,7 @@ unsafe fn yaml_parser_load_document(
 
 unsafe fn yaml_parser_load_nodes(
     parser: &mut yaml_parser_t,
-    ctx: *mut loader_ctx,
+    ctx: &mut loader_ctx,
 ) -> Result<(), ()> {
     let mut event = yaml_event_t::default();
     let end_implicit;
@@ -278,10 +278,10 @@ unsafe fn yaml_parser_load_node_add(
 
 unsafe fn yaml_parser_load_alias(
     parser: &mut yaml_parser_t,
-    event: *mut yaml_event_t, // TODO: take by value
-    ctx: *mut loader_ctx,
+    event: &mut yaml_event_t, // TODO: Take by value
+    ctx: &mut loader_ctx,
 ) -> Result<(), ()> {
-    let anchor: *mut yaml_char_t = if let YamlEventData::Alias { anchor } = &(*event).data {
+    let anchor: *mut yaml_char_t = if let YamlEventData::Alias { anchor } = &event.data {
         *anchor
     } else {
         unreachable!()
@@ -306,8 +306,8 @@ unsafe fn yaml_parser_load_alias(
 
 unsafe fn yaml_parser_load_scalar(
     parser: &mut yaml_parser_t,
-    event: *mut yaml_event_t, // TODO: Take by value
-    ctx: *mut loader_ctx,
+    event: &mut yaml_event_t, // TODO: Take by value
+    ctx: &mut loader_ctx,
 ) -> Result<(), ()> {
     let (mut tag, value, length, style, anchor) = if let YamlEventData::Scalar {
         tag,
@@ -316,7 +316,7 @@ unsafe fn yaml_parser_load_scalar(
         style,
         anchor,
         ..
-    } = &(*event).data
+    } = &event.data
     {
         (*tag, *value, *length, *style, *anchor)
     } else {
@@ -376,12 +376,12 @@ unsafe fn yaml_parser_load_scalar(
 
 unsafe fn yaml_parser_load_sequence(
     parser: &mut yaml_parser_t,
-    event: *mut yaml_event_t, // TODO: Take by value.
-    ctx: *mut loader_ctx,
+    event: &mut yaml_event_t, // TODO: Take by value.
+    ctx: &mut loader_ctx,
 ) -> Result<(), ()> {
     let (tag, style, anchor) = if let YamlEventData::SequenceStart {
         anchor, tag, style, ..
-    } = &(*event).data
+    } = &event.data
     {
         (*tag, *style, *anchor)
     } else {
@@ -476,12 +476,12 @@ unsafe fn yaml_parser_load_sequence_end(
 
 unsafe fn yaml_parser_load_mapping(
     parser: &mut yaml_parser_t,
-    event: *mut yaml_event_t, // TODO: take by value
-    ctx: *mut loader_ctx,
+    event: &mut yaml_event_t, // TODO: take by value
+    ctx: &mut loader_ctx,
 ) -> Result<(), ()> {
     let (tag, style, anchor) = if let YamlEventData::MappingStart {
         anchor, tag, style, ..
-    } = &(*event).data
+    } = &event.data
     {
         (*tag, *style, *anchor)
     } else {

@@ -87,10 +87,10 @@ unsafe fn WRITE_BREAK(emitter: &mut yaml_emitter_t, string: &mut yaml_string_t) 
 
 unsafe fn yaml_emitter_set_emitter_error(
     emitter: &mut yaml_emitter_t,
-    problem: *const libc::c_char,
+    problem: &'static str,
 ) -> Result<(), ()> {
     emitter.error = YAML_EMITTER_ERROR;
-    emitter.problem = problem;
+    emitter.problem = Some(problem);
     Err(())
 }
 
@@ -178,10 +178,7 @@ unsafe fn yaml_emitter_append_tag_directive(
             if allow_duplicates {
                 return Ok(());
             }
-            return yaml_emitter_set_emitter_error(
-                emitter,
-                b"duplicate %TAG directive\0" as *const u8 as *const libc::c_char,
-            );
+            return yaml_emitter_set_emitter_error(emitter, "duplicate %TAG directive");
         }
         tag_directive = tag_directive.wrapping_offset(1);
     }
@@ -248,10 +245,9 @@ unsafe fn yaml_emitter_state_machine(
         YAML_EMIT_BLOCK_MAPPING_VALUE_STATE => {
             yaml_emitter_emit_block_mapping_value(emitter, event, false)
         }
-        YAML_EMIT_END_STATE => yaml_emitter_set_emitter_error(
-            emitter,
-            b"expected nothing after STREAM-END\0" as *const u8 as *const libc::c_char,
-        ),
+        YAML_EMIT_END_STATE => {
+            yaml_emitter_set_emitter_error(emitter, "expected nothing after STREAM-END")
+        }
     }
 }
 
@@ -290,10 +286,7 @@ unsafe fn yaml_emitter_emit_stream_start(
         emitter.state = YAML_EMIT_FIRST_DOCUMENT_START_STATE;
         return Ok(());
     }
-    yaml_emitter_set_emitter_error(
-        emitter,
-        b"expected STREAM-START\0" as *const u8 as *const libc::c_char,
-    )
+    yaml_emitter_set_emitter_error(emitter, "expected STREAM-START")
 }
 
 unsafe fn yaml_emitter_emit_document_start(
@@ -445,10 +438,7 @@ unsafe fn yaml_emitter_emit_document_start(
         return Ok(());
     }
 
-    yaml_emitter_set_emitter_error(
-        emitter,
-        b"expected DOCUMENT-START or STREAM-END\0" as *const u8 as *const libc::c_char,
-    )
+    yaml_emitter_set_emitter_error(emitter, "expected DOCUMENT-START or STREAM-END")
 }
 
 unsafe fn yaml_emitter_emit_document_content(
@@ -488,10 +478,7 @@ unsafe fn yaml_emitter_emit_document_end(
         return Ok(());
     }
 
-    yaml_emitter_set_emitter_error(
-        emitter,
-        b"expected DOCUMENT-END\0" as *const u8 as *const libc::c_char,
-    )
+    yaml_emitter_set_emitter_error(emitter, "expected DOCUMENT-END")
 }
 
 unsafe fn yaml_emitter_emit_flow_sequence_item(
@@ -754,8 +741,7 @@ unsafe fn yaml_emitter_emit_node(
         YamlEventData::MappingStart { .. } => yaml_emitter_emit_mapping_start(emitter, event),
         _ => yaml_emitter_set_emitter_error(
             emitter,
-            b"expected SCALAR, SEQUENCE-START, MAPPING-START, or ALIAS\0" as *const u8
-                as *const libc::c_char,
+            "expected SCALAR, SEQUENCE-START, MAPPING-START, or ALIAS",
         ),
     }
 }
@@ -937,8 +923,7 @@ unsafe fn yaml_emitter_select_scalar_style(
         if no_tag && !*plain_implicit && !*quoted_implicit {
             return yaml_emitter_set_emitter_error(
                 emitter,
-                b"neither tag nor implicit flags are specified\0" as *const u8
-                    as *const libc::c_char,
+                "neither tag nor implicit flags are specified",
             );
         }
         if style == YAML_ANY_SCALAR_STYLE {
@@ -1106,10 +1091,7 @@ unsafe fn yaml_emitter_analyze_version_directive(
 ) -> Result<(), ()> {
     if version_directive.major != 1 || version_directive.minor != 1 && version_directive.minor != 2
     {
-        return yaml_emitter_set_emitter_error(
-            emitter,
-            b"incompatible %YAML directive\0" as *const u8 as *const libc::c_char,
-        );
+        return yaml_emitter_set_emitter_error(emitter, "incompatible %YAML directive");
     }
     Ok(())
 }
@@ -1123,39 +1105,26 @@ unsafe fn yaml_emitter_analyze_tag_directive(
     let mut handle = STRING_ASSIGN!(tag_directive.handle, handle_length);
     let prefix = STRING_ASSIGN!(tag_directive.prefix, prefix_length);
     if handle.start == handle.end {
-        return yaml_emitter_set_emitter_error(
-            emitter,
-            b"tag handle must not be empty\0" as *const u8 as *const libc::c_char,
-        );
+        return yaml_emitter_set_emitter_error(emitter, "tag handle must not be empty");
     }
     if *handle.start != b'!' {
-        return yaml_emitter_set_emitter_error(
-            emitter,
-            b"tag handle must start with '!'\0" as *const u8 as *const libc::c_char,
-        );
+        return yaml_emitter_set_emitter_error(emitter, "tag handle must start with '!'");
     }
     if *handle.end.wrapping_offset(-1_isize) != b'!' {
-        return yaml_emitter_set_emitter_error(
-            emitter,
-            b"tag handle must end with '!'\0" as *const u8 as *const libc::c_char,
-        );
+        return yaml_emitter_set_emitter_error(emitter, "tag handle must end with '!'");
     }
     handle.pointer = handle.pointer.wrapping_offset(1);
     while handle.pointer < handle.end.wrapping_offset(-1_isize) {
         if !IS_ALPHA!(handle) {
             return yaml_emitter_set_emitter_error(
                 emitter,
-                b"tag handle must contain alphanumerical characters only\0" as *const u8
-                    as *const libc::c_char,
+                "tag handle must contain alphanumerical characters only",
             );
         }
         MOVE!(handle);
     }
     if prefix.start == prefix.end {
-        return yaml_emitter_set_emitter_error(
-            emitter,
-            b"tag prefix must not be empty\0" as *const u8 as *const libc::c_char,
-        );
+        return yaml_emitter_set_emitter_error(emitter, "tag prefix must not be empty");
     }
     Ok(())
 }
@@ -1171,9 +1140,9 @@ unsafe fn yaml_emitter_analyze_anchor(
         return yaml_emitter_set_emitter_error(
             emitter,
             if alias {
-                b"alias value must not be empty\0" as *const u8 as *const libc::c_char
+                "alias value must not be empty"
             } else {
-                b"anchor value must not be empty\0" as *const u8 as *const libc::c_char
+                "anchor value must not be empty"
             },
         );
     }
@@ -1182,11 +1151,9 @@ unsafe fn yaml_emitter_analyze_anchor(
             return yaml_emitter_set_emitter_error(
                 emitter,
                 if alias {
-                    b"alias value must contain alphanumerical characters only\0" as *const u8
-                        as *const libc::c_char
+                    "alias value must contain alphanumerical characters only"
                 } else {
-                    b"anchor value must contain alphanumerical characters only\0" as *const u8
-                        as *const libc::c_char
+                    "anchor value must contain alphanumerical characters only"
                 },
             );
         }
@@ -1206,10 +1173,7 @@ unsafe fn yaml_emitter_analyze_tag(
     let tag_length: size_t = strlen(tag as *mut libc::c_char);
     let string = STRING_ASSIGN!(tag, tag_length);
     if string.start == string.end {
-        return yaml_emitter_set_emitter_error(
-            emitter,
-            b"tag value must not be empty\0" as *const u8 as *const libc::c_char,
-        );
+        return yaml_emitter_set_emitter_error(emitter, "tag value must not be empty");
     }
     tag_directive = emitter.tag_directives.start;
     while tag_directive != emitter.tag_directives.top {

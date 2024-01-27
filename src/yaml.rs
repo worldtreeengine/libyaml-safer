@@ -910,10 +910,7 @@ pub struct yaml_emitter_t {
     #[cfg(not(doc))]
     pub(crate) error: yaml_error_type_t,
     /// Error description.
-    #[cfg(doc)]
-    pub problem: *const libc::c_char,
-    #[cfg(not(doc))]
-    pub(crate) problem: *const libc::c_char,
+    pub(crate) problem: Option<&'static str>,
     /// Write handler.
     pub(crate) write_handler: Option<yaml_write_handler_t>,
     /// A pointer for passing to the write handler.

@@ -7,10 +7,10 @@ use crate::{
 
 unsafe fn yaml_emitter_set_writer_error(
     emitter: &mut yaml_emitter_t,
-    problem: *const libc::c_char,
+    problem: &'static str,
 ) -> Result<(), ()> {
     emitter.error = YAML_WRITER_ERROR;
-    emitter.problem = problem;
+    emitter.problem = Some(problem);
     Err(())
 }
 
@@ -34,10 +34,7 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
             emitter.buffer.pointer = emitter.buffer.start;
             return Ok(());
         } else {
-            return yaml_emitter_set_writer_error(
-                emitter,
-                b"write error\0" as *const u8 as *const libc::c_char,
-            );
+            return yaml_emitter_set_writer_error(emitter, "write error");
         }
     }
     let low: libc::c_int = if emitter.encoding == YAML_UTF16LE_ENCODING {
@@ -122,9 +119,6 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
         emitter.raw_buffer.pointer = emitter.raw_buffer.start;
         Ok(())
     } else {
-        yaml_emitter_set_writer_error(
-            emitter,
-            b"write error\0" as *const u8 as *const libc::c_char,
-        )
+        yaml_emitter_set_writer_error(emitter, "write error")
     }
 }
