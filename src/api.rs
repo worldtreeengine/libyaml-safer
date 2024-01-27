@@ -559,8 +559,8 @@ pub unsafe fn yaml_document_start_event_initialize(
             __assert!(!((*tag_directive).handle).is_null());
             __assert!(!((*tag_directive).prefix).is_null());
             if yaml_check_utf8(
-                (*tag_directive).handle,
-                strlen((*tag_directive).handle as *mut libc::c_char),
+                (&*tag_directive).handle,
+                strlen((&*tag_directive).handle as *mut libc::c_char),
             )
             .is_err()
             {
@@ -576,15 +576,17 @@ pub unsafe fn yaml_document_start_event_initialize(
                 current_block = 14964981520188694172;
                 break;
             }
-            value.handle = yaml_strdup((*tag_directive).handle);
-            value.prefix = yaml_strdup((*tag_directive).prefix);
+            value.handle = yaml_strdup((&*tag_directive).handle);
+            value.prefix = yaml_strdup((&*tag_directive).prefix);
             if value.handle.is_null() || value.prefix.is_null() {
                 current_block = 14964981520188694172;
                 break;
             }
             PUSH!(tag_directives_copy, value);
-            value.handle = ptr::null_mut::<yaml_char_t>();
-            value.prefix = ptr::null_mut::<yaml_char_t>();
+            value = yaml_tag_directive_t {
+                handle: ptr::null_mut::<yaml_char_t>(),
+                prefix: ptr::null_mut::<yaml_char_t>(),
+            };
             tag_directive = tag_directive.wrapping_offset(1);
         }
     } else {
@@ -1034,8 +1036,10 @@ pub unsafe fn yaml_document_initialize(
                 break;
             }
             PUSH!(tag_directives_copy, value);
-            value.handle = ptr::null_mut::<yaml_char_t>();
-            value.prefix = ptr::null_mut::<yaml_char_t>();
+            value = yaml_tag_directive_t {
+                handle: ptr::null_mut::<yaml_char_t>(),
+                prefix: ptr::null_mut::<yaml_char_t>(),
+            };
             tag_directive = tag_directive.wrapping_offset(1);
         }
     } else {

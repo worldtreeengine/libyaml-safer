@@ -190,20 +190,19 @@ unsafe fn yaml_parser_register_anchor(
     index: libc::c_int,
     anchor: *mut yaml_char_t,
 ) -> Result<(), ()> {
-    let mut data = MaybeUninit::<yaml_alias_data_t>::uninit();
-    let data = data.as_mut_ptr();
-    let mut alias_data: *mut yaml_alias_data_t;
     if anchor.is_null() {
         return Ok(());
     }
-    (*data).anchor = anchor;
-    (*data).index = index;
-    (*data).mark = (*(*parser.document)
-        .nodes
-        .start
-        .wrapping_offset((index - 1) as isize))
-    .start_mark;
-    alias_data = parser.aliases.start;
+    let data = yaml_alias_data_t {
+        anchor,
+        index,
+        mark: (*(*parser.document)
+            .nodes
+            .start
+            .wrapping_offset((index - 1) as isize))
+        .start_mark,
+    };
+    let mut alias_data = parser.aliases.start;
     while alias_data != parser.aliases.top {
         if strcmp(
             (*alias_data).anchor as *mut libc::c_char,
@@ -216,12 +215,12 @@ unsafe fn yaml_parser_register_anchor(
                 "found duplicate anchor; first occurrence",
                 (*alias_data).mark,
                 "second occurrence",
-                (*data).mark,
+                data.mark,
             );
         }
         alias_data = alias_data.wrapping_offset(1);
     }
-    PUSH!(parser.aliases, *data);
+    PUSH!(parser.aliases, data);
     Ok(())
 }
 

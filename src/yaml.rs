@@ -6,7 +6,6 @@ pub use self::yaml_encoding_t::*;
 pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t, u8 as yaml_char_t};
 
 /// The version directive data.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_version_directive_t {
@@ -17,7 +16,6 @@ pub struct yaml_version_directive_t {
 }
 
 /// The tag directive data.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_tag_directive_t {
@@ -563,7 +561,6 @@ pub struct yaml_document_t {
     pub end_mark: yaml_mark_t,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct unnamed_yaml_document_t_tag_directives {
@@ -660,7 +657,6 @@ pub enum yaml_parser_state_t {
 }
 
 /// This structure holds aliases data.
-#[derive(Copy, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_alias_data_t {
@@ -795,7 +791,6 @@ impl Deref for yaml_parser_t {
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub(crate) struct unnamed_yaml_parser_t_input_string {
     /// The string start pointer.
@@ -975,7 +970,6 @@ impl Deref for yaml_emitter_t {
     }
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub(crate) struct unnamed_yaml_emitter_t_output_string {
     /// The buffer pointer.
@@ -986,7 +980,6 @@ pub(crate) struct unnamed_yaml_emitter_t_output_string {
     pub size_written: *mut size_t,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub(crate) struct unnamed_yaml_emitter_t_anchor_data {
     /// The anchor value.
@@ -997,7 +990,6 @@ pub(crate) struct unnamed_yaml_emitter_t_anchor_data {
     pub alias: bool,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub(crate) struct unnamed_yaml_emitter_t_tag_data {
     /// The tag handle.
@@ -1010,7 +1002,6 @@ pub(crate) struct unnamed_yaml_emitter_t_tag_data {
     pub suffix_length: size_t,
 }
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub(crate) struct unnamed_yaml_emitter_t_scalar_data {
     /// The scalar value.
@@ -1056,13 +1047,6 @@ pub(crate) struct yaml_buffer_t<T> {
     pub last: *mut T,
 }
 
-impl<T> Copy for yaml_buffer_t<T> {}
-impl<T> Clone for yaml_buffer_t<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
 #[repr(C)]
 pub struct yaml_stack_t<T> {
     /// The beginning of the stack.
@@ -1071,13 +1055,6 @@ pub struct yaml_stack_t<T> {
     pub end: *mut T,
     /// The top of the stack.
     pub top: *mut T,
-}
-
-impl<T> Copy for yaml_stack_t<T> {}
-impl<T> Clone for yaml_stack_t<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
 }
 
 #[repr(C)]
@@ -1090,11 +1067,4 @@ pub(crate) struct yaml_queue_t<T> {
     pub head: *mut T,
     /// The tail of the queue.
     pub tail: *mut T,
-}
-
-impl<T> Copy for yaml_queue_t<T> {}
-impl<T> Clone for yaml_queue_t<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
 }

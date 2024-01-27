@@ -160,7 +160,7 @@ unsafe fn yaml_emitter_need_more_events(emitter: &mut yaml_emitter_t) -> Result<
 
 unsafe fn yaml_emitter_append_tag_directive(
     emitter: &mut yaml_emitter_t,
-    value: yaml_tag_directive_t,
+    value: &yaml_tag_directive_t,
     allow_duplicates: bool,
 ) -> Result<(), ()> {
     let mut tag_directive: *mut yaml_tag_directive_t;
@@ -319,17 +319,17 @@ unsafe fn yaml_emitter_emit_document_start(
         let mut tag_directive: *mut yaml_tag_directive_t;
         let mut implicit = *implicit;
         if !version_directive.is_null() {
-            yaml_emitter_analyze_version_directive(emitter, **version_directive)?;
+            yaml_emitter_analyze_version_directive(emitter, &**version_directive)?;
         }
         tag_directive = *tag_directives_start;
         while tag_directive != *tag_directives_end {
-            yaml_emitter_analyze_tag_directive(emitter, *tag_directive)?;
-            yaml_emitter_append_tag_directive(emitter, *tag_directive, false)?;
+            yaml_emitter_analyze_tag_directive(emitter, &*tag_directive)?;
+            yaml_emitter_append_tag_directive(emitter, &*tag_directive, false)?;
             tag_directive = tag_directive.wrapping_offset(1);
         }
         tag_directive = default_tag_directives.as_mut_ptr();
         while !(*tag_directive).handle.is_null() {
-            yaml_emitter_append_tag_directive(emitter, *tag_directive, true)?;
+            yaml_emitter_append_tag_directive(emitter, &*tag_directive, true)?;
             tag_directive = tag_directive.wrapping_offset(1);
         }
         if !first || emitter.canonical {
@@ -1087,7 +1087,7 @@ unsafe fn yaml_emitter_process_scalar(emitter: &mut yaml_emitter_t) -> Result<()
 
 unsafe fn yaml_emitter_analyze_version_directive(
     emitter: &mut yaml_emitter_t,
-    version_directive: yaml_version_directive_t,
+    version_directive: &yaml_version_directive_t,
 ) -> Result<(), ()> {
     if version_directive.major != 1 || version_directive.minor != 1 && version_directive.minor != 2
     {
@@ -1098,7 +1098,7 @@ unsafe fn yaml_emitter_analyze_version_directive(
 
 unsafe fn yaml_emitter_analyze_tag_directive(
     emitter: &mut yaml_emitter_t,
-    tag_directive: yaml_tag_directive_t,
+    tag_directive: &yaml_tag_directive_t,
 ) -> Result<(), ()> {
     let handle_length: size_t = strlen(tag_directive.handle as *mut libc::c_char);
     let prefix_length: size_t = strlen(tag_directive.prefix as *mut libc::c_char);

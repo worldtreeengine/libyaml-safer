@@ -1149,7 +1149,7 @@ unsafe fn yaml_parser_process_directives(
                     prefix: *prefix,
                 };
                 if let Err(()) =
-                    yaml_parser_append_tag_directive(parser, value, false, (*token).start_mark)
+                    yaml_parser_append_tag_directive(parser, &value, false, (*token).start_mark)
                 {
                     current_block = 17143798186130252483;
                     break;
@@ -1172,7 +1172,7 @@ unsafe fn yaml_parser_process_directives(
                 }
                 if let Err(()) = yaml_parser_append_tag_directive(
                     parser,
-                    *default_tag_directive,
+                    &*default_tag_directive,
                     true,
                     (*token).start_mark,
                 ) {
@@ -1216,7 +1216,7 @@ unsafe fn yaml_parser_process_directives(
 
 unsafe fn yaml_parser_append_tag_directive(
     parser: &mut yaml_parser_t,
-    value: yaml_tag_directive_t,
+    value: &yaml_tag_directive_t,
     allow_duplicates: bool,
     mark: yaml_mark_t,
 ) -> Result<(), ()> {
