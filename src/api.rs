@@ -201,29 +201,19 @@ unsafe fn yaml_string_read_handler(
     size_read: *mut size_t,
 ) -> libc::c_int {
     let parser: &mut yaml_parser_t = &mut *(data as *mut yaml_parser_t);
-    if parser.input.string.current == parser.input.string.end {
+    if parser.input.current == parser.input.end {
         *size_read = 0_u64;
         return 1;
     }
-    if size
-        > (*parser)
-            .input
-            .string
-            .end
-            .c_offset_from(parser.input.string.current) as size_t
-    {
-        size = (*parser)
-            .input
-            .string
-            .end
-            .c_offset_from(parser.input.string.current) as size_t;
+    if size > (*parser).input.end.c_offset_from(parser.input.current) as size_t {
+        size = (*parser).input.end.c_offset_from(parser.input.current) as size_t;
     }
     memcpy(
         buffer as *mut libc::c_void,
-        parser.input.string.current as *const libc::c_void,
+        parser.input.current as *const libc::c_void,
         size,
     );
-    parser.input.string.current = parser.input.string.current.wrapping_offset(size as isize);
+    parser.input.current = parser.input.current.wrapping_offset(size as isize);
     *size_read = size;
     1
 }
@@ -243,9 +233,9 @@ pub unsafe fn yaml_parser_set_input_string(
     parser.read_handler = Some(yaml_string_read_handler);
     let parser_ptr = parser as *mut _ as *mut libc::c_void;
     parser.read_handler_data = parser_ptr;
-    parser.input.string.start = input;
-    parser.input.string.current = input;
-    parser.input.string.end = input.wrapping_offset(size as isize);
+    parser.input.start = input;
+    parser.input.current = input;
+    parser.input.end = input.wrapping_offset(size as isize);
 }
 
 /// Set a generic input handler.
@@ -311,39 +301,34 @@ unsafe fn yaml_string_write_handler(
     let emitter = &mut *(data as *mut yaml_emitter_t);
     if emitter
         .output
-        .string
         .size
-        .wrapping_sub(*emitter.output.string.size_written)
+        .wrapping_sub(*emitter.output.size_written)
         < size
     {
         memcpy(
             (*emitter)
                 .output
-                .string
                 .buffer
-                .wrapping_offset(*emitter.output.string.size_written as isize)
+                .wrapping_offset(*emitter.output.size_written as isize)
                 as *mut libc::c_void,
             buffer as *const libc::c_void,
             (*emitter)
                 .output
-                .string
                 .size
-                .wrapping_sub(*emitter.output.string.size_written),
+                .wrapping_sub(*emitter.output.size_written),
         );
-        *emitter.output.string.size_written = emitter.output.string.size;
+        *emitter.output.size_written = emitter.output.size;
         return 0;
     }
     memcpy(
         (*emitter)
             .output
-            .string
             .buffer
-            .wrapping_offset(*emitter.output.string.size_written as isize)
-            as *mut libc::c_void,
+            .wrapping_offset(*emitter.output.size_written as isize) as *mut libc::c_void,
         buffer as *const libc::c_void,
         size,
     );
-    let fresh153 = &mut (*emitter.output.string.size_written);
+    let fresh153 = &mut (*emitter.output.size_written);
     *fresh153 = (*fresh153 as libc::c_ulong).force_add(size) as size_t;
     1
 }
@@ -367,9 +352,9 @@ pub unsafe fn yaml_emitter_set_output_string(
             as unsafe fn(*mut libc::c_void, *mut libc::c_uchar, size_t) -> libc::c_int,
     );
     emitter.write_handler_data = emitter as *mut _ as *mut libc::c_void;
-    emitter.output.string.buffer = output;
-    emitter.output.string.size = size;
-    emitter.output.string.size_written = size_written;
+    emitter.output.buffer = output;
+    emitter.output.size = size;
+    emitter.output.size_written = size_written;
     *size_written = 0_u64;
 }
 

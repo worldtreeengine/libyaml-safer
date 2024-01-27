@@ -719,7 +719,7 @@ pub struct yaml_parser_t {
     /// A pointer for passing to the read handler.
     pub(crate) read_handler_data: *mut libc::c_void,
     /// Standard (string or file) input data.
-    pub(crate) input: unnamed_yaml_parser_t_input,
+    pub(crate) input: unnamed_yaml_parser_t_input_string,
     /// EOF flag
     pub(crate) eof: bool,
     /// The working buffer.
@@ -793,13 +793,6 @@ impl Deref for yaml_parser_t {
     fn deref(&self) -> &Self::Target {
         unsafe { &*addr_of!(*self).cast() }
     }
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) union unnamed_yaml_parser_t_input {
-    /// String input data.
-    pub string: unnamed_yaml_parser_t_input_string,
 }
 
 #[derive(Copy, Clone)]
@@ -897,7 +890,7 @@ pub struct yaml_emitter_t {
     /// A pointer for passing to the write handler.
     pub(crate) write_handler_data: *mut libc::c_void,
     /// Standard (string or file) output data.
-    pub(crate) output: unnamed_yaml_emitter_t_output,
+    pub(crate) output: unnamed_yaml_emitter_t_output_string,
     /// The working buffer.
     pub(crate) buffer: yaml_buffer_t<yaml_char_t>,
     /// The raw buffer.
@@ -980,13 +973,6 @@ impl Deref for yaml_emitter_t {
     fn deref(&self) -> &Self::Target {
         unsafe { &*addr_of!(*self).cast() }
     }
-}
-
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) union unnamed_yaml_emitter_t_output {
-    /// String output data.
-    pub string: unnamed_yaml_emitter_t_output_string,
 }
 
 #[derive(Copy, Clone)]
