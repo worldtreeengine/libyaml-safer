@@ -1,14 +1,13 @@
 use crate::externs::{free, malloc, memcpy, memmove, memset, realloc, strdup, strlen};
 use crate::ops::{ForceAdd as _, ForceMul as _};
-use crate::yaml::{size_t, yaml_char_t, YamlEventData};
+use crate::yaml::{size_t, yaml_char_t, YamlEventData, YamlTokenData};
 use crate::{
     libc, yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t, yaml_encoding_t,
     yaml_event_t, yaml_mapping_style_t, yaml_mark_t, yaml_node_item_t, yaml_node_pair_t,
     yaml_node_t, yaml_parser_state_t, yaml_parser_t, yaml_read_handler_t, yaml_scalar_style_t,
     yaml_sequence_style_t, yaml_simple_key_t, yaml_tag_directive_t, yaml_token_t,
-    yaml_version_directive_t, yaml_write_handler_t, PointerExt, YAML_ALIAS_TOKEN,
-    YAML_ANCHOR_TOKEN, YAML_ANY_ENCODING, YAML_MAPPING_NODE, YAML_SCALAR_NODE, YAML_SCALAR_TOKEN,
-    YAML_SEQUENCE_NODE, YAML_TAG_DIRECTIVE_TOKEN, YAML_TAG_TOKEN,
+    yaml_version_directive_t, yaml_write_handler_t, PointerExt, YAML_ANY_ENCODING,
+    YAML_MAPPING_NODE, YAML_SCALAR_NODE, YAML_SEQUENCE_NODE,
 };
 use core::mem::{size_of, MaybeUninit};
 use core::ptr::{self, addr_of_mut};
@@ -420,23 +419,23 @@ pub unsafe fn yaml_emitter_set_break(emitter: &mut yaml_emitter_t, line_break: y
 
 /// Free any memory allocated for a token object.
 pub unsafe fn yaml_token_delete(token: &mut yaml_token_t) {
-    match token.type_ {
-        YAML_TAG_DIRECTIVE_TOKEN => {
-            yaml_free(token.data.tag_directive.handle as *mut libc::c_void);
-            yaml_free(token.data.tag_directive.prefix as *mut libc::c_void);
+    match &token.data {
+        YamlTokenData::TagDirective { handle, prefix } => {
+            yaml_free(*handle as *mut libc::c_void);
+            yaml_free(*prefix as *mut libc::c_void);
         }
-        YAML_ALIAS_TOKEN => {
-            yaml_free(token.data.alias.value as *mut libc::c_void);
+        YamlTokenData::Alias { value } => {
+            yaml_free(*value as *mut libc::c_void);
         }
-        YAML_ANCHOR_TOKEN => {
-            yaml_free(token.data.anchor.value as *mut libc::c_void);
+        YamlTokenData::Anchor { value } => {
+            yaml_free(*value as *mut libc::c_void);
         }
-        YAML_TAG_TOKEN => {
-            yaml_free(token.data.tag.handle as *mut libc::c_void);
-            yaml_free(token.data.tag.suffix as *mut libc::c_void);
+        YamlTokenData::Tag { handle, suffix } => {
+            yaml_free(*handle as *mut libc::c_void);
+            yaml_free(*suffix as *mut libc::c_void);
         }
-        YAML_SCALAR_TOKEN => {
-            yaml_free(token.data.scalar.value as *mut libc::c_void);
+        YamlTokenData::Scalar { value, .. } => {
+            yaml_free(*value as *mut libc::c_void);
         }
         _ => {}
     }

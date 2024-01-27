@@ -190,160 +190,202 @@ pub enum yaml_token_type_t {
 }
 
 /// The token structure.
+#[derive(Default)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_token_t {
     /// The token type.
-    pub type_: yaml_token_type_t,
-    /// The token data.
-    ///
-    /// ```
-    /// # const _: &str = stringify! {
-    /// union {
-    ///     /// The stream start (for YAML_STREAM_START_TOKEN).
-    ///     stream_start: struct {
-    ///         /// The stream encoding.
-    ///         encoding: yaml_encoding_t,
-    ///     },
-    ///     /// The alias (for YAML_ALIAS_TOKEN).
-    ///     alias: struct {
-    ///         /// The alias value.
-    ///         value: *mut u8,
-    ///     },
-    ///     /// The anchor (for YAML_ANCHOR_TOKEN).
-    ///     anchor: struct {
-    ///         /// The anchor value.
-    ///         value: *mut u8,
-    ///     },
-    ///     /// The tag (for YAML_TAG_TOKEN).
-    ///     tag: struct {
-    ///         /// The tag handle.
-    ///         handle: *mut u8,
-    ///         /// The tag suffix.
-    ///         suffix: *mut u8,
-    ///     },
-    ///     /// The scalar value (for YAML_SCALAR_TOKEN).
-    ///     scalar: struct {
-    ///         /// The scalar value.
-    ///         value: *mut u8,
-    ///         /// The length of the scalar value.
-    ///         length: u64,
-    ///         /// The scalar style.
-    ///         style: yaml_scalar_style_t,
-    ///     },
-    ///     /// The version directive (for YAML_VERSION_DIRECTIVE_TOKEN).
-    ///     version_directive: struct {
-    ///         /// The major version number.
-    ///         major: i32,
-    ///         /// The minor version number.
-    ///         minor: i32,
-    ///     },
-    ///     /// The tag directive (for YAML_TAG_DIRECTIVE_TOKEN).
-    ///     tag_directive: struct {
-    ///         /// The tag handle.
-    ///         handle: *mut u8,
-    ///         /// The tag prefix.
-    ///         prefix: *mut u8,
-    ///     },
-    /// }
-    /// # };
-    /// ```
-    pub data: unnamed_yaml_token_t_data,
+    pub data: YamlTokenData,
     /// The beginning of the token.
     pub start_mark: yaml_mark_t,
     /// The end of the token.
     pub end_mark: yaml_mark_t,
 }
 
-impl Default for yaml_token_t {
-    fn default() -> Self {
-        unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
+#[derive(Default)]
+pub enum YamlTokenData {
+    /// An empty token.
+    #[default]
+    NoToken,
+    /// A STREAM-START token.
+    StreamStart {
+        /// The stream encoding.
+        encoding: yaml_encoding_t,
+    },
+    /// A STREAM-END token.
+    StreamEnd,
+    /// A VERSION-DIRECTIVE token.
+    VersionDirective {
+        /// The major version number.
+        major: libc::c_int,
+        /// The minor version number.
+        minor: libc::c_int,
+    },
+    /// A TAG-DIRECTIVE token.
+    TagDirective {
+        /// The tag handle.
+        handle: *mut yaml_char_t,
+        /// The tag prefix.
+        prefix: *mut yaml_char_t,
+    },
+    /// A DOCUMENT-START token.
+    DocumentStart,
+    /// A DOCUMENT-END token.
+    DocumentEnd,
+    /// A BLOCK-SEQUENCE-START token.
+    BlockSequenceStart,
+    /// A BLOCK-MAPPING-START token.
+    BlockMappingStart,
+    /// A BLOCK-END token.
+    BlockEnd,
+    /// A FLOW-SEQUENCE-START token.
+    FlowSequenceStart,
+    /// A FLOW-SEQUENCE-END token.
+    FlowSequenceEnd,
+    /// A FLOW-MAPPING-START token.
+    FlowMappingStart,
+    /// A FLOW-MAPPING-END token.
+    FlowMappingEnd,
+    /// A BLOCK-ENTRY token.
+    BlockEntry,
+    /// A FLOW-ENTRY token.
+    FlowEntry,
+    /// A KEY token.
+    Key,
+    /// A VALUE token.
+    Value,
+    /// An ALIAS token.
+    Alias {
+        /// The alias value.
+        value: *mut yaml_char_t,
+    },
+    /// An ANCHOR token.
+    Anchor {
+        /// The anchor value.
+        value: *mut yaml_char_t,
+    },
+    /// A TAG token.
+    Tag {
+        /// The tag handle.
+        handle: *mut yaml_char_t,
+        /// The tag suffix.
+        suffix: *mut yaml_char_t,
+    },
+    /// A SCALAR token.
+    Scalar {
+        /// The scalar value.
+        value: *mut yaml_char_t,
+        /// The length of the scalar value.
+        length: size_t,
+        /// The scalar style.
+        style: yaml_scalar_style_t,
+    },
+}
+
+impl YamlTokenData {
+    /// Returns `true` if the yaml token data is [`VersionDirective`].
+    ///
+    /// [`VersionDirective`]: YamlTokenData::VersionDirective
+    #[must_use]
+    pub fn is_version_directive(&self) -> bool {
+        matches!(self, Self::VersionDirective { .. })
     }
-}
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub union unnamed_yaml_token_t_data {
-    /// The stream start (for YAML_STREAM_START_TOKEN).
-    pub stream_start: unnamed_yaml_token_t_data_stream_start,
-    /// The alias (for YAML_ALIAS_TOKEN).
-    pub alias: unnamed_yaml_token_t_data_alias,
-    /// The anchor (for YAML_ANCHOR_TOKEN).
-    pub anchor: unnamed_yaml_token_t_data_anchor,
-    /// The tag (for YAML_TAG_TOKEN).
-    pub tag: unnamed_yaml_token_t_data_tag,
-    /// The scalar value (for YAML_SCALAR_TOKEN).
-    pub scalar: unnamed_yaml_token_t_data_scalar,
-    /// The version directive (for YAML_VERSION_DIRECTIVE_TOKEN).
-    pub version_directive: unnamed_yaml_token_t_data_version_directive,
-    /// The tag directive (for YAML_TAG_DIRECTIVE_TOKEN).
-    pub tag_directive: unnamed_yaml_token_t_data_tag_directive,
-}
+    /// Returns `true` if the yaml token data is [`TagDirective`].
+    ///
+    /// [`TagDirective`]: YamlTokenData::TagDirective
+    #[must_use]
+    pub fn is_tag_directive(&self) -> bool {
+        matches!(self, Self::TagDirective { .. })
+    }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_token_t_data_stream_start {
-    /// The stream encoding.
-    pub encoding: yaml_encoding_t,
-}
+    /// Returns `true` if the yaml token data is [`DocumentStart`].
+    ///
+    /// [`DocumentStart`]: YamlTokenData::DocumentStart
+    #[must_use]
+    pub fn is_document_start(&self) -> bool {
+        matches!(self, Self::DocumentStart)
+    }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_token_t_data_alias {
-    /// The alias value.
-    pub value: *mut yaml_char_t,
-}
+    /// Returns `true` if the yaml token data is [`StreamEnd`].
+    ///
+    /// [`StreamEnd`]: YamlTokenData::StreamEnd
+    #[must_use]
+    pub fn is_stream_end(&self) -> bool {
+        matches!(self, Self::StreamEnd)
+    }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_token_t_data_anchor {
-    /// The anchor value.
-    pub value: *mut yaml_char_t,
-}
+    /// Returns `true` if the yaml token data is [`BlockEntry`].
+    ///
+    /// [`BlockEntry`]: YamlTokenData::BlockEntry
+    #[must_use]
+    pub fn is_block_entry(&self) -> bool {
+        matches!(self, Self::BlockEntry)
+    }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_token_t_data_tag {
-    /// The tag handle.
-    pub handle: *mut yaml_char_t,
-    /// The tag suffix.
-    pub suffix: *mut yaml_char_t,
-}
+    /// Returns `true` if the yaml token data is [`BlockSequenceStart`].
+    ///
+    /// [`BlockSequenceStart`]: YamlTokenData::BlockSequenceStart
+    #[must_use]
+    pub fn is_block_sequence_start(&self) -> bool {
+        matches!(self, Self::BlockSequenceStart)
+    }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_token_t_data_scalar {
-    /// The scalar value.
-    pub value: *mut yaml_char_t,
-    /// The length of the scalar value.
-    pub length: size_t,
-    /// The scalar style.
-    pub style: yaml_scalar_style_t,
-}
+    /// Returns `true` if the yaml token data is [`BlockMappingStart`].
+    ///
+    /// [`BlockMappingStart`]: YamlTokenData::BlockMappingStart
+    #[must_use]
+    pub fn is_block_mapping_start(&self) -> bool {
+        matches!(self, Self::BlockMappingStart)
+    }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_token_t_data_version_directive {
-    /// The major version number.
-    pub major: libc::c_int,
-    /// The minor version number.
-    pub minor: libc::c_int,
-}
+    /// Returns `true` if the yaml token data is [`BlockEnd`].
+    ///
+    /// [`BlockEnd`]: YamlTokenData::BlockEnd
+    #[must_use]
+    pub fn is_block_end(&self) -> bool {
+        matches!(self, Self::BlockEnd)
+    }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_token_t_data_tag_directive {
-    /// The tag handle.
-    pub handle: *mut yaml_char_t,
-    /// The tag prefix.
-    pub prefix: *mut yaml_char_t,
+    /// Returns `true` if the yaml token data is [`Key`].
+    ///
+    /// [`Key`]: YamlTokenData::Key
+    #[must_use]
+    pub fn is_key(&self) -> bool {
+        matches!(self, Self::Key)
+    }
+
+    /// Returns `true` if the yaml token data is [`Value`].
+    ///
+    /// [`Value`]: YamlTokenData::Value
+    #[must_use]
+    pub fn is_value(&self) -> bool {
+        matches!(self, Self::Value)
+    }
+
+    /// Returns `true` if the yaml token data is [`FlowSequenceEnd`].
+    ///
+    /// [`FlowSequenceEnd`]: YamlTokenData::FlowSequenceEnd
+    #[must_use]
+    pub fn is_flow_sequence_end(&self) -> bool {
+        matches!(self, Self::FlowSequenceEnd)
+    }
+
+    /// Returns `true` if the yaml token data is [`FlowEntry`].
+    ///
+    /// [`FlowEntry`]: YamlTokenData::FlowEntry
+    #[must_use]
+    pub fn is_flow_entry(&self) -> bool {
+        matches!(self, Self::FlowEntry)
+    }
+
+    /// Returns `true` if the yaml token data is [`FlowMappingEnd`].
+    ///
+    /// [`FlowMappingEnd`]: YamlTokenData::FlowMappingEnd
+    #[must_use]
+    pub fn is_flow_mapping_end(&self) -> bool {
+        matches!(self, Self::FlowMappingEnd)
+    }
 }
 
 /// The event structure.

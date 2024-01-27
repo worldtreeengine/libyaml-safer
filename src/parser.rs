@@ -2,21 +2,16 @@ use crate::api::{yaml_free, yaml_malloc, yaml_stack_extend, yaml_strdup};
 use crate::externs::{memcpy, strcmp, strlen};
 use crate::ops::ForceAdd as _;
 use crate::scanner::yaml_parser_fetch_more_tokens;
-use crate::yaml::{size_t, yaml_char_t, YamlEventData};
+use crate::yaml::{size_t, yaml_char_t, YamlEventData, YamlTokenData};
 use crate::{
     libc, yaml_event_t, yaml_mark_t, yaml_parser_t, yaml_tag_directive_t, yaml_token_t,
-    yaml_version_directive_t, YAML_ALIAS_TOKEN, YAML_ANCHOR_TOKEN, YAML_BLOCK_END_TOKEN,
-    YAML_BLOCK_ENTRY_TOKEN, YAML_BLOCK_MAPPING_START_TOKEN, YAML_BLOCK_MAPPING_STYLE,
-    YAML_BLOCK_SEQUENCE_START_TOKEN, YAML_BLOCK_SEQUENCE_STYLE, YAML_DOCUMENT_END_TOKEN,
-    YAML_DOCUMENT_START_TOKEN, YAML_FLOW_ENTRY_TOKEN, YAML_FLOW_MAPPING_END_TOKEN,
-    YAML_FLOW_MAPPING_START_TOKEN, YAML_FLOW_MAPPING_STYLE, YAML_FLOW_SEQUENCE_END_TOKEN,
-    YAML_FLOW_SEQUENCE_START_TOKEN, YAML_FLOW_SEQUENCE_STYLE, YAML_KEY_TOKEN, YAML_NO_ERROR,
-    YAML_PARSER_ERROR, YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE,
-    YAML_PARSE_BLOCK_MAPPING_KEY_STATE, YAML_PARSE_BLOCK_MAPPING_VALUE_STATE,
-    YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE, YAML_PARSE_BLOCK_NODE_STATE,
-    YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE, YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE,
-    YAML_PARSE_DOCUMENT_CONTENT_STATE, YAML_PARSE_DOCUMENT_END_STATE,
-    YAML_PARSE_DOCUMENT_START_STATE, YAML_PARSE_END_STATE,
+    yaml_version_directive_t, YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE,
+    YAML_FLOW_MAPPING_STYLE, YAML_FLOW_SEQUENCE_STYLE, YAML_NO_ERROR, YAML_PARSER_ERROR,
+    YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE, YAML_PARSE_BLOCK_MAPPING_KEY_STATE,
+    YAML_PARSE_BLOCK_MAPPING_VALUE_STATE, YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE,
+    YAML_PARSE_BLOCK_NODE_STATE, YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE,
+    YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE, YAML_PARSE_DOCUMENT_CONTENT_STATE,
+    YAML_PARSE_DOCUMENT_END_STATE, YAML_PARSE_DOCUMENT_START_STATE, YAML_PARSE_END_STATE,
     YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE, YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE,
     YAML_PARSE_FLOW_MAPPING_KEY_STATE, YAML_PARSE_FLOW_MAPPING_VALUE_STATE,
     YAML_PARSE_FLOW_NODE_STATE, YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE,
@@ -24,8 +19,7 @@ use crate::{
     YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE, YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE,
     YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE, YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE,
     YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE, YAML_PARSE_STREAM_START_STATE,
-    YAML_PLAIN_SCALAR_STYLE, YAML_SCALAR_TOKEN, YAML_STREAM_END_TOKEN, YAML_STREAM_START_TOKEN,
-    YAML_TAG_DIRECTIVE_TOKEN, YAML_TAG_TOKEN, YAML_VALUE_TOKEN, YAML_VERSION_DIRECTIVE_TOKEN,
+    YAML_PLAIN_SCALAR_STYLE,
 };
 use core::mem::size_of;
 use core::ptr::{self, addr_of_mut};
@@ -41,7 +35,11 @@ unsafe fn PEEK_TOKEN(parser: &mut yaml_parser_t) -> *mut yaml_token_t {
 unsafe fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
     parser.token_available = false;
     parser.tokens_parsed = parser.tokens_parsed.wrapping_add(1);
-    parser.stream_end_produced = (*parser.tokens.head).type_ == YAML_STREAM_END_TOKEN;
+    parser.stream_end_produced = if let YamlTokenData::StreamEnd = &(*parser.tokens.head).data {
+        true
+    } else {
+        false
+    };
     parser.tokens.head = parser.tokens.head.wrapping_offset(1);
 }
 
@@ -169,7 +167,20 @@ unsafe fn yaml_parser_parse_stream_start(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ != YAML_STREAM_START_TOKEN {
+    let token = &mut *token;
+
+    if let YamlTokenData::StreamStart { encoding } = &token.data {
+        parser.state = YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE;
+        *event = yaml_event_t {
+            data: YamlEventData::StreamStart {
+                encoding: *encoding,
+            },
+            start_mark: (*token).start_mark,
+            end_mark: (*token).end_mark,
+        };
+        SKIP_TOKEN(parser);
+        Ok(())
+    } else {
         yaml_parser_set_parser_error(
             parser,
             "did not find expected <stream-start>",
@@ -177,16 +188,6 @@ unsafe fn yaml_parser_parse_stream_start(
         );
         return Err(());
     }
-    parser.state = YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE;
-    *event = yaml_event_t {
-        data: YamlEventData::StreamStart {
-            encoding: (*token).data.stream_start.encoding,
-        },
-        start_mark: (*token).start_mark,
-        end_mark: (*token).end_mark,
-    };
-    SKIP_TOKEN(parser);
-    Ok(())
 }
 
 unsafe fn yaml_parser_parse_document_start(
@@ -210,7 +211,7 @@ unsafe fn yaml_parser_parse_document_start(
         return Err(());
     }
     if !implicit {
-        while (*token).type_ == YAML_DOCUMENT_END_TOKEN {
+        while let YamlTokenData::DocumentEnd = &(*token).data {
             SKIP_TOKEN(parser);
             token = PEEK_TOKEN(parser);
             if token.is_null() {
@@ -219,10 +220,10 @@ unsafe fn yaml_parser_parse_document_start(
         }
     }
     if implicit
-        && (*token).type_ != YAML_VERSION_DIRECTIVE_TOKEN
-        && (*token).type_ != YAML_TAG_DIRECTIVE_TOKEN
-        && (*token).type_ != YAML_DOCUMENT_START_TOKEN
-        && (*token).type_ != YAML_STREAM_END_TOKEN
+        && !(*token).data.is_version_directive()
+        && !(*token).data.is_tag_directive()
+        && !(*token).data.is_document_start()
+        && !(*token).data.is_stream_end()
     {
         yaml_parser_process_directives(
             parser,
@@ -243,7 +244,7 @@ unsafe fn yaml_parser_parse_document_start(
             end_mark: (*token).end_mark,
         };
         Ok(())
-    } else if (*token).type_ != YAML_STREAM_END_TOKEN {
+    } else if !(*token).data.is_stream_end() {
         let end_mark: yaml_mark_t;
         let start_mark: yaml_mark_t = (*token).start_mark;
         yaml_parser_process_directives(
@@ -254,7 +255,7 @@ unsafe fn yaml_parser_parse_document_start(
         )?;
         token = PEEK_TOKEN(parser);
         if !token.is_null() {
-            if (*token).type_ != YAML_DOCUMENT_START_TOKEN {
+            if !(*token).data.is_document_start() {
                 yaml_parser_set_parser_error(
                     parser,
                     "did not find expected <document start>",
@@ -308,11 +309,11 @@ unsafe fn yaml_parser_parse_document_content(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ == YAML_VERSION_DIRECTIVE_TOKEN
-        || (*token).type_ == YAML_TAG_DIRECTIVE_TOKEN
-        || (*token).type_ == YAML_DOCUMENT_START_TOKEN
-        || (*token).type_ == YAML_DOCUMENT_END_TOKEN
-        || (*token).type_ == YAML_STREAM_END_TOKEN
+    if let YamlTokenData::VersionDirective { .. }
+    | YamlTokenData::TagDirective { .. }
+    | YamlTokenData::DocumentStart
+    | YamlTokenData::DocumentEnd
+    | YamlTokenData::StreamEnd = &(*token).data
     {
         parser.state = POP!(parser.states);
         yaml_parser_process_empty_scalar(event, (*token).start_mark)
@@ -333,7 +334,7 @@ unsafe fn yaml_parser_parse_document_end(
     }
     end_mark = (*token).start_mark;
     let start_mark: yaml_mark_t = end_mark;
-    if (*token).type_ == YAML_DOCUMENT_END_TOKEN {
+    if let YamlTokenData::DocumentEnd = &(*token).data {
         end_mark = (*token).end_mark;
         SKIP_TOKEN(parser);
         implicit = false;
@@ -376,12 +377,10 @@ unsafe fn yaml_parser_parse_node(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ == YAML_ALIAS_TOKEN {
+    if let YamlTokenData::Alias { value } = &(*token).data {
         parser.state = POP!(parser.states);
         *event = yaml_event_t {
-            data: YamlEventData::Alias {
-                anchor: (*token).data.alias.value,
-            },
+            data: YamlEventData::Alias { anchor: *value },
             start_mark: (*token).start_mark,
             end_mark: (*token).end_mark,
         };
@@ -390,17 +389,17 @@ unsafe fn yaml_parser_parse_node(
     } else {
         end_mark = (*token).start_mark;
         start_mark = end_mark;
-        if (*token).type_ == YAML_ANCHOR_TOKEN {
-            anchor = (*token).data.anchor.value;
+        if let YamlTokenData::Anchor { value } = &(*token).data {
+            anchor = *value;
             start_mark = (*token).start_mark;
             end_mark = (*token).end_mark;
             SKIP_TOKEN(parser);
             token = PEEK_TOKEN(parser);
             if token.is_null() {
                 current_block = 17786380918591080555;
-            } else if (*token).type_ == YAML_TAG_TOKEN {
-                tag_handle = (*token).data.tag.handle;
-                tag_suffix = (*token).data.tag.suffix;
+            } else if let YamlTokenData::Tag { handle, suffix } = &(*token).data {
+                tag_handle = *handle;
+                tag_suffix = *suffix;
                 tag_mark = (*token).start_mark;
                 end_mark = (*token).end_mark;
                 SKIP_TOKEN(parser);
@@ -413,9 +412,9 @@ unsafe fn yaml_parser_parse_node(
             } else {
                 current_block = 11743904203796629665;
             }
-        } else if (*token).type_ == YAML_TAG_TOKEN {
-            tag_handle = (*token).data.tag.handle;
-            tag_suffix = (*token).data.tag.suffix;
+        } else if let YamlTokenData::Tag { handle, suffix } = &(*token).data {
+            tag_handle = *handle;
+            tag_suffix = *suffix;
             tag_mark = (*token).start_mark;
             start_mark = tag_mark;
             end_mark = (*token).end_mark;
@@ -423,8 +422,8 @@ unsafe fn yaml_parser_parse_node(
             token = PEEK_TOKEN(parser);
             if token.is_null() {
                 current_block = 17786380918591080555;
-            } else if (*token).type_ == YAML_ANCHOR_TOKEN {
-                anchor = (*token).data.anchor.value;
+            } else if let YamlTokenData::Anchor { value } = &(*token).data {
+                anchor = *value;
                 end_mark = (*token).end_mark;
                 SKIP_TOKEN(parser);
                 token = PEEK_TOKEN(parser);
@@ -506,7 +505,7 @@ unsafe fn yaml_parser_parse_node(
             }
             if current_block != 17786380918591080555 {
                 implicit = tag.is_null() || *tag == 0;
-                if indentless_sequence && (*token).type_ == YAML_BLOCK_ENTRY_TOKEN {
+                if indentless_sequence && (*token).data.is_block_entry() {
                     end_mark = (*token).end_mark;
                     parser.state = YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE;
                     *event = yaml_event_t {
@@ -520,11 +519,16 @@ unsafe fn yaml_parser_parse_node(
                         end_mark,
                     };
                     return Ok(());
-                } else if (*token).type_ == YAML_SCALAR_TOKEN {
+                } else if let YamlTokenData::Scalar {
+                    value,
+                    length,
+                    style,
+                } = &(*token).data
+                {
                     let mut plain_implicit = false;
                     let mut quoted_implicit = false;
                     end_mark = (*token).end_mark;
-                    if (*token).data.scalar.style == YAML_PLAIN_SCALAR_STYLE && tag.is_null()
+                    if *style == YAML_PLAIN_SCALAR_STYLE && tag.is_null()
                         || !tag.is_null()
                             && strcmp(
                                 tag as *mut libc::c_char,
@@ -540,18 +544,18 @@ unsafe fn yaml_parser_parse_node(
                         data: YamlEventData::Scalar {
                             anchor,
                             tag,
-                            value: (*token).data.scalar.value,
-                            length: (*token).data.scalar.length,
+                            value: *value,
+                            length: *length,
                             plain_implicit,
                             quoted_implicit,
-                            style: (*token).data.scalar.style,
+                            style: *style,
                         },
                         start_mark,
                         end_mark,
                     };
                     SKIP_TOKEN(parser);
                     return Ok(());
-                } else if (*token).type_ == YAML_FLOW_SEQUENCE_START_TOKEN {
+                } else if let YamlTokenData::FlowSequenceStart = &(*token).data {
                     end_mark = (*token).end_mark;
                     parser.state = YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE;
                     *event = yaml_event_t {
@@ -565,7 +569,7 @@ unsafe fn yaml_parser_parse_node(
                         end_mark,
                     };
                     return Ok(());
-                } else if (*token).type_ == YAML_FLOW_MAPPING_START_TOKEN {
+                } else if let YamlTokenData::FlowMappingStart = &(*token).data {
                     end_mark = (*token).end_mark;
                     parser.state = YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE;
                     *event = yaml_event_t {
@@ -579,7 +583,7 @@ unsafe fn yaml_parser_parse_node(
                         end_mark,
                     };
                     return Ok(());
-                } else if block && (*token).type_ == YAML_BLOCK_SEQUENCE_START_TOKEN {
+                } else if block && (*token).data.is_block_sequence_start() {
                     end_mark = (*token).end_mark;
                     parser.state = YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE;
                     *event = yaml_event_t {
@@ -593,7 +597,7 @@ unsafe fn yaml_parser_parse_node(
                         end_mark,
                     };
                     return Ok(());
-                } else if block && (*token).type_ == YAML_BLOCK_MAPPING_START_TOKEN {
+                } else if block && (*token).data.is_block_mapping_start() {
                     end_mark = (*token).end_mark;
                     parser.state = YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE;
                     *event = yaml_event_t {
@@ -663,21 +667,21 @@ unsafe fn yaml_parser_parse_block_sequence_entry(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ == YAML_BLOCK_ENTRY_TOKEN {
+    if let YamlTokenData::BlockEntry = &(*token).data {
         let mark: yaml_mark_t = (*token).end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser);
         if token.is_null() {
             return Err(());
         }
-        if (*token).type_ != YAML_BLOCK_ENTRY_TOKEN && (*token).type_ != YAML_BLOCK_END_TOKEN {
+        if !(*token).data.is_block_entry() && !(*token).data.is_block_end() {
             PUSH!(parser.states, YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE);
             yaml_parser_parse_node(parser, event, true, false)
         } else {
             parser.state = YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE;
             yaml_parser_process_empty_scalar(event, mark)
         }
-    } else if (*token).type_ == YAML_BLOCK_END_TOKEN {
+    } else if (*token).data.is_block_end() {
         parser.state = POP!(parser.states);
         let _ = POP!(parser.marks);
         *event = yaml_event_t {
@@ -709,17 +713,17 @@ unsafe fn yaml_parser_parse_indentless_sequence_entry(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ == YAML_BLOCK_ENTRY_TOKEN {
+    if (*token).data.is_block_entry() {
         let mark: yaml_mark_t = (*token).end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser);
         if token.is_null() {
             return Err(());
         }
-        if (*token).type_ != YAML_BLOCK_ENTRY_TOKEN
-            && (*token).type_ != YAML_KEY_TOKEN
-            && (*token).type_ != YAML_VALUE_TOKEN
-            && (*token).type_ != YAML_BLOCK_END_TOKEN
+        if !(*token).data.is_block_entry()
+            && !(*token).data.is_key()
+            && !(*token).data.is_value()
+            && !(*token).data.is_block_end()
         {
             PUSH!(parser.states, YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE);
             yaml_parser_parse_node(parser, event, true, false)
@@ -753,24 +757,21 @@ unsafe fn yaml_parser_parse_block_mapping_key(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ == YAML_KEY_TOKEN {
+    if (*token).data.is_key() {
         let mark: yaml_mark_t = (*token).end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser);
         if token.is_null() {
             return Err(());
         }
-        if (*token).type_ != YAML_KEY_TOKEN
-            && (*token).type_ != YAML_VALUE_TOKEN
-            && (*token).type_ != YAML_BLOCK_END_TOKEN
-        {
+        if !(*token).data.is_key() && !(*token).data.is_value() && !(*token).data.is_block_end() {
             PUSH!(parser.states, YAML_PARSE_BLOCK_MAPPING_VALUE_STATE);
             yaml_parser_parse_node(parser, event, true, true)
         } else {
             parser.state = YAML_PARSE_BLOCK_MAPPING_VALUE_STATE;
             yaml_parser_process_empty_scalar(event, mark)
         }
-    } else if (*token).type_ == YAML_BLOCK_END_TOKEN {
+    } else if (*token).data.is_block_end() {
         parser.state = POP!(parser.states);
         let _ = POP!(parser.marks);
         *event = yaml_event_t {
@@ -802,17 +803,14 @@ unsafe fn yaml_parser_parse_block_mapping_value(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ == YAML_VALUE_TOKEN {
+    if (*token).data.is_value() {
         let mark: yaml_mark_t = (*token).end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser);
         if token.is_null() {
             return Err(());
         }
-        if (*token).type_ != YAML_KEY_TOKEN
-            && (*token).type_ != YAML_VALUE_TOKEN
-            && (*token).type_ != YAML_BLOCK_END_TOKEN
-        {
+        if !(*token).data.is_key() && !(*token).data.is_value() && !(*token).data.is_block_end() {
             PUSH!(parser.states, YAML_PARSE_BLOCK_MAPPING_KEY_STATE);
             yaml_parser_parse_node(parser, event, true, true)
         } else {
@@ -840,9 +838,9 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ != YAML_FLOW_SEQUENCE_END_TOKEN {
+    if !(*token).data.is_flow_sequence_end() {
         if !first {
-            if (*token).type_ == YAML_FLOW_ENTRY_TOKEN {
+            if (*token).data.is_flow_entry() {
                 SKIP_TOKEN(parser);
                 token = PEEK_TOKEN(parser);
                 if token.is_null() {
@@ -860,7 +858,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
                 return Err(());
             }
         }
-        if (*token).type_ == YAML_KEY_TOKEN {
+        if (*token).data.is_key() {
             parser.state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE;
             *event = yaml_event_t::default();
             *event = yaml_event_t {
@@ -875,7 +873,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
             };
             SKIP_TOKEN(parser);
             return Ok(());
-        } else if (*token).type_ != YAML_FLOW_SEQUENCE_END_TOKEN {
+        } else if !(*token).data.is_flow_sequence_end() {
             PUSH!(parser.states, YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE);
             return yaml_parser_parse_node(parser, event, false, false);
         }
@@ -899,9 +897,9 @@ unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_key(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ != YAML_VALUE_TOKEN
-        && (*token).type_ != YAML_FLOW_ENTRY_TOKEN
-        && (*token).type_ != YAML_FLOW_SEQUENCE_END_TOKEN
+    if !(*token).data.is_value()
+        && !(*token).data.is_flow_entry()
+        && !(*token).data.is_flow_sequence_end()
     {
         PUSH!(
             parser.states,
@@ -925,14 +923,13 @@ unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_value(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ == YAML_VALUE_TOKEN {
+    if (*token).data.is_value() {
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser);
         if token.is_null() {
             return Err(());
         }
-        if (*token).type_ != YAML_FLOW_ENTRY_TOKEN && (*token).type_ != YAML_FLOW_SEQUENCE_END_TOKEN
-        {
+        if !(*token).data.is_flow_entry() && !(*token).data.is_flow_sequence_end() {
             PUSH!(
                 parser.states,
                 YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE
@@ -976,9 +973,9 @@ unsafe fn yaml_parser_parse_flow_mapping_key(
     if token.is_null() {
         return Err(());
     }
-    if (*token).type_ != YAML_FLOW_MAPPING_END_TOKEN {
+    if !(*token).data.is_flow_mapping_end() {
         if !first {
-            if (*token).type_ == YAML_FLOW_ENTRY_TOKEN {
+            if (*token).data.is_flow_entry() {
                 SKIP_TOKEN(parser);
                 token = PEEK_TOKEN(parser);
                 if token.is_null() {
@@ -996,15 +993,15 @@ unsafe fn yaml_parser_parse_flow_mapping_key(
                 return Err(());
             }
         }
-        if (*token).type_ == YAML_KEY_TOKEN {
+        if (*token).data.is_key() {
             SKIP_TOKEN(parser);
             token = PEEK_TOKEN(parser);
             if token.is_null() {
                 return Err(());
             }
-            if (*token).type_ != YAML_VALUE_TOKEN
-                && (*token).type_ != YAML_FLOW_ENTRY_TOKEN
-                && (*token).type_ != YAML_FLOW_MAPPING_END_TOKEN
+            if !(*token).data.is_value()
+                && !(*token).data.is_flow_entry()
+                && !(*token).data.is_flow_mapping_end()
             {
                 PUSH!(parser.states, YAML_PARSE_FLOW_MAPPING_VALUE_STATE);
                 return yaml_parser_parse_node(parser, event, false, false);
@@ -1012,7 +1009,7 @@ unsafe fn yaml_parser_parse_flow_mapping_key(
                 parser.state = YAML_PARSE_FLOW_MAPPING_VALUE_STATE;
                 return yaml_parser_process_empty_scalar(event, (*token).start_mark);
             }
-        } else if (*token).type_ != YAML_FLOW_MAPPING_END_TOKEN {
+        } else if !(*token).data.is_flow_mapping_end() {
             PUSH!(parser.states, YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE);
             return yaml_parser_parse_node(parser, event, false, false);
         }
@@ -1042,14 +1039,13 @@ unsafe fn yaml_parser_parse_flow_mapping_value(
         parser.state = YAML_PARSE_FLOW_MAPPING_KEY_STATE;
         return yaml_parser_process_empty_scalar(event, (*token).start_mark);
     }
-    if (*token).type_ == YAML_VALUE_TOKEN {
+    if (*token).data.is_value() {
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser);
         if token.is_null() {
             return Err(());
         }
-        if (*token).type_ != YAML_FLOW_ENTRY_TOKEN && (*token).type_ != YAML_FLOW_MAPPING_END_TOKEN
-        {
+        if !(*token).data.is_flow_entry() && !(*token).data.is_flow_mapping_end() {
             PUSH!(parser.states, YAML_PARSE_FLOW_MAPPING_KEY_STATE);
             return yaml_parser_parse_node(parser, event, false, false);
         }
@@ -1119,13 +1115,11 @@ unsafe fn yaml_parser_process_directives(
     token = PEEK_TOKEN(parser);
     if !token.is_null() {
         loop {
-            if !((*token).type_ == YAML_VERSION_DIRECTIVE_TOKEN
-                || (*token).type_ == YAML_TAG_DIRECTIVE_TOKEN)
-            {
+            if !((*token).data.is_version_directive() || (*token).data.is_tag_directive()) {
                 current_block = 16924917904204750491;
                 break;
             }
-            if (*token).type_ == YAML_VERSION_DIRECTIVE_TOKEN {
+            if let YamlTokenData::VersionDirective { major, minor } = &(*token).data {
                 if !version_directive.is_null() {
                     yaml_parser_set_parser_error(
                         parser,
@@ -1134,10 +1128,7 @@ unsafe fn yaml_parser_process_directives(
                     );
                     current_block = 17143798186130252483;
                     break;
-                } else if (*token).data.version_directive.major != 1
-                    || (*token).data.version_directive.minor != 1
-                        && (*token).data.version_directive.minor != 2
-                {
+                } else if *major != 1 || *minor != 1 && *minor != 2 {
                     yaml_parser_set_parser_error(
                         parser,
                         "found incompatible YAML document",
@@ -1149,13 +1140,13 @@ unsafe fn yaml_parser_process_directives(
                     version_directive =
                         yaml_malloc(size_of::<yaml_version_directive_t>() as libc::c_ulong)
                             as *mut yaml_version_directive_t;
-                    (*version_directive).major = (*token).data.version_directive.major;
-                    (*version_directive).minor = (*token).data.version_directive.minor;
+                    (*version_directive).major = *major;
+                    (*version_directive).minor = *minor;
                 }
-            } else if (*token).type_ == YAML_TAG_DIRECTIVE_TOKEN {
+            } else if let YamlTokenData::TagDirective { handle, prefix } = &(*token).data {
                 let value = yaml_tag_directive_t {
-                    handle: (*token).data.tag_directive.handle,
-                    prefix: (*token).data.tag_directive.prefix,
+                    handle: *handle,
+                    prefix: *prefix,
                 };
                 if let Err(()) =
                     yaml_parser_append_tag_directive(parser, value, false, (*token).start_mark)

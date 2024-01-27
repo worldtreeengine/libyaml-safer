@@ -5,20 +5,14 @@ use crate::api::{
 use crate::externs::{memcpy, memmove, memset, strcmp, strlen};
 use crate::ops::{ForceAdd as _, ForceMul as _};
 use crate::reader::yaml_parser_update_buffer;
-use crate::yaml::{ptrdiff_t, size_t, yaml_char_t, yaml_string_t, NULL_STRING};
+use crate::yaml::{ptrdiff_t, size_t, yaml_char_t, yaml_string_t, YamlTokenData, NULL_STRING};
 use crate::{
-    libc, yaml_mark_t, yaml_parser_t, yaml_simple_key_t, yaml_token_t, yaml_token_type_t,
-    PointerExt, YAML_ALIAS_TOKEN, YAML_ANCHOR_TOKEN, YAML_BLOCK_END_TOKEN, YAML_BLOCK_ENTRY_TOKEN,
-    YAML_BLOCK_MAPPING_START_TOKEN, YAML_BLOCK_SEQUENCE_START_TOKEN, YAML_DOCUMENT_END_TOKEN,
-    YAML_DOCUMENT_START_TOKEN, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FLOW_ENTRY_TOKEN,
-    YAML_FLOW_MAPPING_END_TOKEN, YAML_FLOW_MAPPING_START_TOKEN, YAML_FLOW_SEQUENCE_END_TOKEN,
-    YAML_FLOW_SEQUENCE_START_TOKEN, YAML_FOLDED_SCALAR_STYLE, YAML_KEY_TOKEN,
-    YAML_LITERAL_SCALAR_STYLE, YAML_MEMORY_ERROR, YAML_NO_ERROR, YAML_PLAIN_SCALAR_STYLE,
-    YAML_SCALAR_TOKEN, YAML_SCANNER_ERROR, YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_STREAM_END_TOKEN,
-    YAML_STREAM_START_TOKEN, YAML_TAG_DIRECTIVE_TOKEN, YAML_TAG_TOKEN, YAML_VALUE_TOKEN,
-    YAML_VERSION_DIRECTIVE_TOKEN,
+    libc, yaml_mark_t, yaml_parser_t, yaml_simple_key_t, yaml_token_t, PointerExt,
+    YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE,
+    YAML_MEMORY_ERROR, YAML_NO_ERROR, YAML_PLAIN_SCALAR_STYLE, YAML_SCANNER_ERROR,
+    YAML_SINGLE_QUOTED_SCALAR_STYLE,
 };
-use core::mem::{size_of, MaybeUninit};
+use core::mem::size_of;
 use core::ptr::{self, addr_of_mut};
 
 unsafe fn CACHE(parser: &mut yaml_parser_t, length: size_t) -> Result<(), ()> {
@@ -137,7 +131,7 @@ pub unsafe fn yaml_parser_scan(
     *token = DEQUEUE!(parser.tokens);
     parser.token_available = false;
     parser.tokens_parsed = parser.tokens_parsed.force_add(1);
-    if (*token).type_ == YAML_STREAM_END_TOKEN {
+    if let YamlTokenData::StreamEnd = &(*token).data {
         parser.stream_end_produced = true;
     }
     Ok(())
@@ -218,7 +212,7 @@ unsafe fn yaml_parser_fetch_next_token(parser: &mut yaml_parser_t) -> Result<(),
         && CHECK_AT!(parser.buffer, b'-', 2)
         && IS_BLANKZ_AT!(parser.buffer, 3)
     {
-        return yaml_parser_fetch_document_indicator(parser, YAML_DOCUMENT_START_TOKEN);
+        return yaml_parser_fetch_document_indicator(parser, YamlTokenData::DocumentStart);
     }
     if parser.mark.column == 0_u64
         && CHECK_AT!(parser.buffer, b'.', 0)
@@ -226,19 +220,19 @@ unsafe fn yaml_parser_fetch_next_token(parser: &mut yaml_parser_t) -> Result<(),
         && CHECK_AT!(parser.buffer, b'.', 2)
         && IS_BLANKZ_AT!(parser.buffer, 3)
     {
-        return yaml_parser_fetch_document_indicator(parser, YAML_DOCUMENT_END_TOKEN);
+        return yaml_parser_fetch_document_indicator(parser, YamlTokenData::DocumentEnd);
     }
     if CHECK!(parser.buffer, b'[') {
-        return yaml_parser_fetch_flow_collection_start(parser, YAML_FLOW_SEQUENCE_START_TOKEN);
+        return yaml_parser_fetch_flow_collection_start(parser, YamlTokenData::FlowSequenceStart);
     }
     if CHECK!(parser.buffer, b'{') {
-        return yaml_parser_fetch_flow_collection_start(parser, YAML_FLOW_MAPPING_START_TOKEN);
+        return yaml_parser_fetch_flow_collection_start(parser, YamlTokenData::FlowMappingStart);
     }
     if CHECK!(parser.buffer, b']') {
-        return yaml_parser_fetch_flow_collection_end(parser, YAML_FLOW_SEQUENCE_END_TOKEN);
+        return yaml_parser_fetch_flow_collection_end(parser, YamlTokenData::FlowSequenceEnd);
     }
     if CHECK!(parser.buffer, b'}') {
-        return yaml_parser_fetch_flow_collection_end(parser, YAML_FLOW_MAPPING_END_TOKEN);
+        return yaml_parser_fetch_flow_collection_end(parser, YamlTokenData::FlowMappingEnd);
     }
     if CHECK!(parser.buffer, b',') {
         return yaml_parser_fetch_flow_entry(parser);
@@ -253,10 +247,10 @@ unsafe fn yaml_parser_fetch_next_token(parser: &mut yaml_parser_t) -> Result<(),
         return yaml_parser_fetch_value(parser);
     }
     if CHECK!(parser.buffer, b'*') {
-        return yaml_parser_fetch_anchor(parser, YAML_ALIAS_TOKEN);
+        return yaml_parser_fetch_anchor(parser, true);
     }
     if CHECK!(parser.buffer, b'&') {
-        return yaml_parser_fetch_anchor(parser, YAML_ANCHOR_TOKEN);
+        return yaml_parser_fetch_anchor(parser, false);
     }
     if CHECK!(parser.buffer, b'!') {
         return yaml_parser_fetch_tag(parser);
@@ -401,7 +395,7 @@ unsafe fn yaml_parser_roll_indent(
     parser: &mut yaml_parser_t,
     column: ptrdiff_t,
     number: ptrdiff_t,
-    type_: yaml_token_type_t,
+    data: YamlTokenData,
     mark: yaml_mark_t,
 ) -> Result<(), ()> {
     if parser.flow_level != 0 {
@@ -414,10 +408,11 @@ unsafe fn yaml_parser_roll_indent(
             return Err(());
         }
         parser.indent = column as libc::c_int;
-        let mut token = yaml_token_t::default();
-        token.type_ = type_;
-        token.start_mark = mark;
-        token.end_mark = mark;
+        let token = yaml_token_t {
+            data,
+            start_mark: mark,
+            end_mark: mark,
+        };
         if number == -1_i64 {
             ENQUEUE!(parser.tokens, token);
         } else {
@@ -432,17 +427,16 @@ unsafe fn yaml_parser_roll_indent(
 }
 
 unsafe fn yaml_parser_unroll_indent(parser: &mut yaml_parser_t, column: ptrdiff_t) {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     if parser.flow_level != 0 {
         return;
     }
     while parser.indent as libc::c_long > column {
-        *token = yaml_token_t::default();
-        (*token).type_ = YAML_BLOCK_END_TOKEN;
-        (*token).start_mark = parser.mark;
-        (*token).end_mark = parser.mark;
-        ENQUEUE!(parser.tokens, *token);
+        let token = yaml_token_t {
+            data: YamlTokenData::BlockEnd,
+            start_mark: parser.mark,
+            end_mark: parser.mark,
+        };
+        ENQUEUE!(parser.tokens, token);
         parser.indent = POP!(parser.indents);
     }
 }
@@ -458,23 +452,21 @@ unsafe fn yaml_parser_fetch_stream_start(parser: &mut yaml_parser_t) {
             column: 0_u64,
         },
     };
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     parser.indent = -1;
     PUSH!(parser.simple_keys, simple_key);
     parser.simple_key_allowed = true;
     parser.stream_start_produced = true;
-    *token = yaml_token_t::default();
-    (*token).type_ = YAML_STREAM_START_TOKEN;
-    (*token).start_mark = parser.mark;
-    (*token).end_mark = parser.mark;
-    (*token).data.stream_start.encoding = parser.encoding;
-    ENQUEUE!(parser.tokens, *token);
+    let token = yaml_token_t {
+        data: YamlTokenData::StreamStart {
+            encoding: parser.encoding,
+        },
+        start_mark: parser.mark,
+        end_mark: parser.mark,
+    };
+    ENQUEUE!(parser.tokens, token);
 }
 
 unsafe fn yaml_parser_fetch_stream_end(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     if parser.mark.column != 0_u64 {
         parser.mark.column = 0_u64;
         parser.mark.line = parser.mark.line.force_add(1);
@@ -484,11 +476,12 @@ unsafe fn yaml_parser_fetch_stream_end(parser: &mut yaml_parser_t) -> Result<(),
         return Err(());
     }
     parser.simple_key_allowed = false;
-    *token = yaml_token_t::default();
-    (*token).type_ = YAML_STREAM_END_TOKEN;
-    (*token).start_mark = parser.mark;
-    (*token).end_mark = parser.mark;
-    ENQUEUE!(parser.tokens, *token);
+    let token = yaml_token_t {
+        data: YamlTokenData::StreamEnd,
+        start_mark: parser.mark,
+        end_mark: parser.mark,
+    };
+    ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
@@ -508,10 +501,8 @@ unsafe fn yaml_parser_fetch_directive(parser: &mut yaml_parser_t) -> Result<(), 
 
 unsafe fn yaml_parser_fetch_document_indicator(
     parser: &mut yaml_parser_t,
-    type_: yaml_token_type_t,
+    data: YamlTokenData,
 ) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     yaml_parser_unroll_indent(parser, -1_i64);
     if yaml_parser_remove_simple_key(parser).is_err() {
         return Err(());
@@ -522,20 +513,20 @@ unsafe fn yaml_parser_fetch_document_indicator(
     SKIP(parser);
     SKIP(parser);
     let end_mark: yaml_mark_t = parser.mark;
-    *token = yaml_token_t::default();
-    (*token).type_ = type_;
-    (*token).start_mark = start_mark;
-    (*token).end_mark = end_mark;
-    ENQUEUE!(parser.tokens, *token);
+
+    let token = yaml_token_t {
+        data,
+        start_mark,
+        end_mark,
+    };
+    ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
 unsafe fn yaml_parser_fetch_flow_collection_start(
     parser: &mut yaml_parser_t,
-    type_: yaml_token_type_t,
+    data: YamlTokenData,
 ) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     if yaml_parser_save_simple_key(parser).is_err() {
         return Err(());
     }
@@ -546,20 +537,19 @@ unsafe fn yaml_parser_fetch_flow_collection_start(
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
     let end_mark: yaml_mark_t = parser.mark;
-    *token = yaml_token_t::default();
-    (*token).type_ = type_;
-    (*token).start_mark = start_mark;
-    (*token).end_mark = end_mark;
-    ENQUEUE!(parser.tokens, *token);
+    let token = yaml_token_t {
+        data,
+        start_mark,
+        end_mark,
+    };
+    ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
 unsafe fn yaml_parser_fetch_flow_collection_end(
     parser: &mut yaml_parser_t,
-    type_: yaml_token_type_t,
+    data: YamlTokenData,
 ) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     if yaml_parser_remove_simple_key(parser).is_err() {
         return Err(());
     }
@@ -568,17 +558,16 @@ unsafe fn yaml_parser_fetch_flow_collection_end(
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
     let end_mark: yaml_mark_t = parser.mark;
-    *token = yaml_token_t::default();
-    (*token).type_ = type_;
-    (*token).start_mark = start_mark;
-    (*token).end_mark = end_mark;
-    ENQUEUE!(parser.tokens, *token);
+    let token = yaml_token_t {
+        data,
+        start_mark,
+        end_mark,
+    };
+    ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
 unsafe fn yaml_parser_fetch_flow_entry(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     if yaml_parser_remove_simple_key(parser).is_err() {
         return Err(());
     }
@@ -586,17 +575,16 @@ unsafe fn yaml_parser_fetch_flow_entry(parser: &mut yaml_parser_t) -> Result<(),
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
     let end_mark: yaml_mark_t = parser.mark;
-    *token = yaml_token_t::default();
-    (*token).type_ = YAML_FLOW_ENTRY_TOKEN;
-    (*token).start_mark = start_mark;
-    (*token).end_mark = end_mark;
-    ENQUEUE!(parser.tokens, *token);
+    let token = yaml_token_t {
+        data: YamlTokenData::FlowEntry,
+        start_mark,
+        end_mark,
+    };
+    ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
 unsafe fn yaml_parser_fetch_block_entry(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     if parser.flow_level == 0 {
         if !parser.simple_key_allowed {
             yaml_parser_set_scanner_error(
@@ -611,7 +599,7 @@ unsafe fn yaml_parser_fetch_block_entry(parser: &mut yaml_parser_t) -> Result<()
             parser,
             parser.mark.column as ptrdiff_t,
             -1_i64,
-            YAML_BLOCK_SEQUENCE_START_TOKEN,
+            YamlTokenData::BlockSequenceStart,
             parser.mark,
         )
         .is_err()
@@ -626,17 +614,16 @@ unsafe fn yaml_parser_fetch_block_entry(parser: &mut yaml_parser_t) -> Result<()
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
     let end_mark: yaml_mark_t = parser.mark;
-    *token = yaml_token_t::default();
-    (*token).type_ = YAML_BLOCK_ENTRY_TOKEN;
-    (*token).start_mark = start_mark;
-    (*token).end_mark = end_mark;
-    ENQUEUE!(parser.tokens, *token);
+    let token = yaml_token_t {
+        data: YamlTokenData::BlockEntry,
+        start_mark,
+        end_mark,
+    };
+    ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
 unsafe fn yaml_parser_fetch_key(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let mut token = MaybeUninit::<yaml_token_t>::uninit();
-    let token = token.as_mut_ptr();
     if parser.flow_level == 0 {
         if !parser.simple_key_allowed {
             yaml_parser_set_scanner_error(
@@ -651,7 +638,7 @@ unsafe fn yaml_parser_fetch_key(parser: &mut yaml_parser_t) -> Result<(), ()> {
             parser,
             parser.mark.column as ptrdiff_t,
             -1_i64,
-            YAML_BLOCK_MAPPING_START_TOKEN,
+            YamlTokenData::BlockMappingStart,
             parser.mark,
         )
         .is_err()
@@ -666,37 +653,35 @@ unsafe fn yaml_parser_fetch_key(parser: &mut yaml_parser_t) -> Result<(), ()> {
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
     let end_mark: yaml_mark_t = parser.mark;
-    *token = yaml_token_t::default();
-    (*token).type_ = YAML_KEY_TOKEN;
-    (*token).start_mark = start_mark;
-    (*token).end_mark = end_mark;
-    ENQUEUE!(parser.tokens, *token);
+    let token = yaml_token_t {
+        data: YamlTokenData::Key,
+        start_mark,
+        end_mark,
+    };
+    ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
 unsafe fn yaml_parser_fetch_value(parser: &mut yaml_parser_t) -> Result<(), ()> {
     let simple_key: *mut yaml_simple_key_t = parser.simple_keys.top.wrapping_offset(-1_isize);
     if (*simple_key).possible {
-        let mut token = yaml_token_t::default();
-        token.type_ = YAML_KEY_TOKEN;
-        token.start_mark = (*simple_key).mark;
-        token.end_mark = (*simple_key).mark;
+        let token = yaml_token_t {
+            data: YamlTokenData::Key,
+            start_mark: (*simple_key).mark,
+            end_mark: (*simple_key).mark,
+        };
         QUEUE_INSERT!(
             parser.tokens,
             ((*simple_key).token_number).wrapping_sub(parser.tokens_parsed),
             token
         );
-        if yaml_parser_roll_indent(
+        yaml_parser_roll_indent(
             parser,
             (*simple_key).mark.column as ptrdiff_t,
             (*simple_key).token_number as ptrdiff_t,
-            YAML_BLOCK_MAPPING_START_TOKEN,
+            YamlTokenData::BlockMappingStart,
             (*simple_key).mark,
-        )
-        .is_err()
-        {
-            return Err(());
-        }
+        )?;
         (*simple_key).possible = false;
         parser.simple_key_allowed = false;
     } else {
@@ -710,41 +695,38 @@ unsafe fn yaml_parser_fetch_value(parser: &mut yaml_parser_t) -> Result<(), ()> 
                 );
                 return Err(());
             }
-            if yaml_parser_roll_indent(
+            yaml_parser_roll_indent(
                 parser,
                 parser.mark.column as ptrdiff_t,
                 -1_i64,
-                YAML_BLOCK_MAPPING_START_TOKEN,
+                YamlTokenData::BlockMappingStart,
                 parser.mark,
-            )
-            .is_err()
-            {
-                return Err(());
-            }
+            )?;
         }
         parser.simple_key_allowed = parser.flow_level == 0;
     }
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
     let end_mark: yaml_mark_t = parser.mark;
-    let mut token = yaml_token_t::default();
-    token.type_ = YAML_VALUE_TOKEN;
-    token.start_mark = start_mark;
-    token.end_mark = end_mark;
+    let token = yaml_token_t {
+        data: YamlTokenData::Value,
+        start_mark,
+        end_mark,
+    };
     ENQUEUE!(parser.tokens, token);
     Ok(())
 }
 
 unsafe fn yaml_parser_fetch_anchor(
     parser: &mut yaml_parser_t,
-    type_: yaml_token_type_t,
+    fetch_alias_instead_of_anchor: bool,
 ) -> Result<(), ()> {
     let mut token = yaml_token_t::default();
     if yaml_parser_save_simple_key(parser).is_err() {
         return Err(());
     }
     parser.simple_key_allowed = false;
-    yaml_parser_scan_anchor(parser, &mut token, type_)?;
+    yaml_parser_scan_anchor(parser, &mut token, fetch_alias_instead_of_anchor)?;
     ENQUEUE!(parser.tokens, token);
     Ok(())
 }
@@ -849,12 +831,11 @@ unsafe fn yaml_parser_scan_directive(
                 current_block = 11397968426844348457;
             } else {
                 end_mark = parser.mark;
-                *token = yaml_token_t::default();
-                (*token).type_ = YAML_VERSION_DIRECTIVE_TOKEN;
-                (*token).start_mark = start_mark;
-                (*token).end_mark = end_mark;
-                (*token).data.version_directive.major = major;
-                (*token).data.version_directive.minor = minor;
+                *token = yaml_token_t {
+                    data: YamlTokenData::VersionDirective { major, minor },
+                    start_mark,
+                    end_mark,
+                };
                 current_block = 17407779659766490442;
             }
         } else if strcmp(name as *mut libc::c_char, b"TAG\0".as_ptr() as _) == 0 {
@@ -867,12 +848,11 @@ unsafe fn yaml_parser_scan_directive(
                 current_block = 11397968426844348457;
             } else {
                 end_mark = parser.mark;
-                *token = yaml_token_t::default();
-                (*token).type_ = YAML_TAG_DIRECTIVE_TOKEN;
-                (*token).start_mark = start_mark;
-                (*token).end_mark = end_mark;
-                (*token).data.tag_directive.handle = handle;
-                (*token).data.tag_directive.prefix = prefix;
+                *token = yaml_token_t {
+                    data: YamlTokenData::TagDirective { handle, prefix },
+                    start_mark,
+                    end_mark,
+                };
                 current_block = 17407779659766490442;
             }
         } else {
@@ -1153,7 +1133,7 @@ unsafe fn yaml_parser_scan_tag_directive_value(
 unsafe fn yaml_parser_scan_anchor(
     parser: &mut yaml_parser_t,
     token: &mut yaml_token_t,
-    type_: yaml_token_type_t,
+    scan_alias_instead_of_anchor: bool,
 ) -> Result<(), ()> {
     let current_block: u64;
     let mut length: libc::c_int = 0;
@@ -1190,7 +1170,7 @@ unsafe fn yaml_parser_scan_anchor(
             {
                 yaml_parser_set_scanner_error(
                     parser,
-                    if type_ == YAML_ANCHOR_TOKEN {
+                    if !scan_alias_instead_of_anchor {
                         "while scanning an anchor"
                     } else {
                         "while scanning an alias"
@@ -1199,19 +1179,19 @@ unsafe fn yaml_parser_scan_anchor(
                     "did not find expected alphabetic or numeric character",
                 );
             } else {
-                if type_ == YAML_ANCHOR_TOKEN {
-                    *token = yaml_token_t::default();
-                    (*token).type_ = YAML_ANCHOR_TOKEN;
-                    (*token).start_mark = start_mark;
-                    (*token).end_mark = end_mark;
-                    (*token).data.anchor.value = string.start;
-                } else {
-                    *token = yaml_token_t::default();
-                    (*token).type_ = YAML_ALIAS_TOKEN;
-                    (*token).start_mark = start_mark;
-                    (*token).end_mark = end_mark;
-                    (*token).data.alias.value = string.start;
-                }
+                *token = yaml_token_t {
+                    data: if scan_alias_instead_of_anchor {
+                        YamlTokenData::Alias {
+                            value: string.start,
+                        }
+                    } else {
+                        YamlTokenData::Anchor {
+                            value: string.start,
+                        }
+                    },
+                    start_mark,
+                    end_mark,
+                };
                 return Ok(());
             }
         }
@@ -1320,12 +1300,11 @@ unsafe fn yaml_parser_scan_tag(
                 }
                 if current_block != 17708497480799081542 {
                     end_mark = parser.mark;
-                    *token = yaml_token_t::default();
-                    (*token).type_ = YAML_TAG_TOKEN;
-                    (*token).start_mark = start_mark;
-                    (*token).end_mark = end_mark;
-                    (*token).data.tag.handle = handle;
-                    (*token).data.tag.suffix = suffix;
+                    *token = yaml_token_t {
+                        data: YamlTokenData::Tag { handle, suffix },
+                        start_mark,
+                        end_mark,
+                    };
                     return Ok(());
                 }
             }
@@ -1789,18 +1768,21 @@ unsafe fn yaml_parser_scan_block_scalar(
                                                 if chomping == 1 {
                                                     JOIN!(string, trailing_breaks);
                                                 }
-                                                *token = yaml_token_t::default();
-                                                (*token).type_ = YAML_SCALAR_TOKEN;
-                                                (*token).start_mark = start_mark;
-                                                (*token).end_mark = end_mark;
-                                                (*token).data.scalar.value = string.start;
-                                                (*token).data.scalar.length =
-                                                    string.pointer.c_offset_from(string.start)
-                                                        as size_t;
-                                                (*token).data.scalar.style = if literal {
-                                                    YAML_LITERAL_SCALAR_STYLE
-                                                } else {
-                                                    YAML_FOLDED_SCALAR_STYLE
+                                                *token = yaml_token_t {
+                                                    data: YamlTokenData::Scalar {
+                                                        value: string.start,
+                                                        length: string
+                                                            .pointer
+                                                            .c_offset_from(string.start)
+                                                            as size_t,
+                                                        style: if literal {
+                                                            YAML_LITERAL_SCALAR_STYLE
+                                                        } else {
+                                                            YAML_FOLDED_SCALAR_STYLE
+                                                        },
+                                                    },
+                                                    start_mark,
+                                                    end_mark,
                                                 };
                                                 STRING_DEL!(leading_break);
                                                 STRING_DEL!(trailing_breaks);
@@ -2237,16 +2219,18 @@ unsafe fn yaml_parser_scan_flow_scalar(
     if current_block != 8114179180390253173 {
         SKIP(parser);
         end_mark = parser.mark;
-        *token = yaml_token_t::default();
-        (*token).type_ = YAML_SCALAR_TOKEN;
-        (*token).start_mark = start_mark;
-        (*token).end_mark = end_mark;
-        (*token).data.scalar.value = string.start;
-        (*token).data.scalar.length = string.pointer.c_offset_from(string.start) as size_t;
-        (*token).data.scalar.style = if single {
-            YAML_SINGLE_QUOTED_SCALAR_STYLE
-        } else {
-            YAML_DOUBLE_QUOTED_SCALAR_STYLE
+        *token = yaml_token_t {
+            data: YamlTokenData::Scalar {
+                value: string.start,
+                length: string.pointer.c_offset_from(string.start) as size_t,
+                style: if single {
+                    YAML_SINGLE_QUOTED_SCALAR_STYLE
+                } else {
+                    YAML_DOUBLE_QUOTED_SCALAR_STYLE
+                },
+            },
+            start_mark,
+            end_mark,
         };
         STRING_DEL!(leading_break);
         STRING_DEL!(trailing_breaks);
@@ -2412,13 +2396,15 @@ unsafe fn yaml_parser_scan_plain_scalar(
         }
     }
     if current_block != 16642808987012640029 {
-        *token = yaml_token_t::default();
-        (*token).type_ = YAML_SCALAR_TOKEN;
-        (*token).start_mark = start_mark;
-        (*token).end_mark = end_mark;
-        (*token).data.scalar.value = string.start;
-        (*token).data.scalar.length = string.pointer.c_offset_from(string.start) as size_t;
-        (*token).data.scalar.style = YAML_PLAIN_SCALAR_STYLE;
+        *token = yaml_token_t {
+            data: YamlTokenData::Scalar {
+                value: string.start,
+                length: string.pointer.c_offset_from(string.start) as size_t,
+                style: YAML_PLAIN_SCALAR_STYLE,
+            },
+            start_mark,
+            end_mark,
+        };
         if leading_blanks {
             parser.simple_key_allowed = true;
         }
