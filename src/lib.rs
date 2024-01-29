@@ -308,7 +308,7 @@ pub use crate::yaml::{
     yaml_encoding_t, yaml_error_type_t, yaml_event_t, yaml_mapping_style_t, yaml_mark_t,
     yaml_node_item_t, yaml_node_pair_t, yaml_node_t, yaml_parser_state_t, yaml_parser_t,
     yaml_read_handler_t, yaml_scalar_style_t, yaml_sequence_style_t, yaml_simple_key_t,
-    yaml_stack_t, yaml_tag_directive_t, yaml_token_t, yaml_token_type_t, yaml_version_directive_t,
+    yaml_tag_directive_t, yaml_token_t, yaml_token_type_t, yaml_version_directive_t,
     yaml_write_handler_t, YamlEventData,
 };
 #[doc(hidden)]
@@ -317,3 +317,48 @@ pub use crate::yaml::{
     yaml_mapping_style_t::*, yaml_parser_state_t::*, yaml_scalar_style_t::*,
     yaml_sequence_style_t::*, yaml_token_type_t::*,
 };
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use super::*;
+
+    #[test]
+    fn sanity() {
+        unsafe {
+            let mut parser = core::mem::MaybeUninit::uninit();
+            yaml_parser_initialize(parser.as_mut_ptr()).unwrap();
+            let mut parser = parser.assume_init();
+            const SANITY_INPUT: &'static str = "- a: 2\n";
+            yaml_parser_set_input_string(
+                &mut parser,
+                SANITY_INPUT.as_ptr(),
+                SANITY_INPUT.len() as _,
+            );
+            let mut doc = core::mem::MaybeUninit::uninit();
+            if yaml_parser_load(&mut parser, doc.as_mut_ptr()).is_err() {
+                panic!("parser error: {:?} {:?}", parser.error, parser.problem);
+            }
+            let mut doc = doc.assume_init();
+
+            let mut emitter = core::mem::MaybeUninit::uninit();
+            yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
+            let mut emitter = emitter.assume_init();
+
+            let mut output = vec![0u8; 1024];
+            let mut size_written = 0;
+            yaml_emitter_set_output_string(
+                &mut emitter,
+                output.as_mut_ptr(),
+                1024,
+                &mut size_written,
+            );
+
+            if yaml_emitter_dump(&mut emitter, &mut doc).is_err() {
+                panic!("emitter error: {:?} {:?}", emitter.error, emitter.problem);
+            }
+            output.resize(size_written as _, 0);
+        }
+    }
+}

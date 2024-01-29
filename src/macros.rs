@@ -387,69 +387,13 @@ macro_rules! COPY {
     };
 }
 
-macro_rules! STACK_INIT {
-    ($stack:expr, $type:ty) => {{
-        $stack.start = yaml_malloc(16 * size_of::<$type>() as libc::c_ulong) as *mut $type;
-        $stack.top = $stack.start;
-        $stack.end = $stack.start.offset(16_isize);
-    }};
-}
-
-macro_rules! STACK_DEL {
-    ($stack:expr) => {
-        yaml_free($stack.start as *mut libc::c_void);
-        $stack.end = ptr::null_mut();
-        $stack.top = ptr::null_mut();
-        $stack.start = ptr::null_mut();
-    };
-}
-
-macro_rules! STACK_EMPTY {
-    ($stack:expr) => {
-        $stack.start == $stack.top
-    };
-}
-
 macro_rules! STACK_LIMIT {
     ($context:expr, $stack:expr) => {
-        if $stack.top.c_offset_from($stack.start) < libc::c_int::MAX as isize - 1 {
+        if $stack.len() < libc::c_int::MAX as usize - 1 {
             Ok(())
         } else {
             (*$context).error = YAML_MEMORY_ERROR;
             Err(())
         }
     };
-}
-
-macro_rules! PUSH {
-    (do $stack:expr, $push:expr) => {{
-        if $stack.top == $stack.end {
-            yaml_stack_extend(
-                addr_of_mut!($stack.start) as *mut *mut libc::c_void,
-                addr_of_mut!($stack.top) as *mut *mut libc::c_void,
-                addr_of_mut!($stack.end) as *mut *mut libc::c_void,
-            );
-        }
-        $push;
-        $stack.top = $stack.top.wrapping_offset(1);
-    }};
-    ($stack:expr, *$value:expr) => {
-        PUSH!(do $stack, ptr::copy_nonoverlapping($value, $stack.top, 1))
-    };
-    ($stack:expr, $value:expr) => {
-        PUSH!(do $stack, ptr::write($stack.top, $value))
-    };
-}
-
-macro_rules! POP {
-    ($stack:expr) => {{
-        $stack.top = $stack.top.offset(-1);
-        core::ptr::read($stack.top)
-    }};
-}
-
-macro_rules! QUEUE_INIT {
-    ($queue:expr, $type:ty) => {{
-        $queue.reserve(16);
-    }};
 }

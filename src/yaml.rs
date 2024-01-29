@@ -1,4 +1,5 @@
 use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 
 use crate::libc;
 use core::ops::Deref;
@@ -18,6 +19,7 @@ pub struct yaml_version_directive_t {
 }
 
 /// The tag directive data.
+#[derive(Debug)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_tag_directive_t {
@@ -84,7 +86,7 @@ pub enum yaml_error_type_t {
 }
 
 /// The pointer position.
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Debug)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_mark_t {
@@ -393,7 +395,7 @@ impl YamlTokenData {
 }
 
 /// The event structure.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_event_t {
@@ -405,7 +407,7 @@ pub struct yaml_event_t {
     pub end_mark: yaml_mark_t,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub enum YamlEventData {
     #[default]
     NoEvent,
@@ -419,10 +421,8 @@ pub enum YamlEventData {
     DocumentStart {
         /// The version directive.
         version_directive: *mut yaml_version_directive_t,
-        /// The beginning of the tag directives list.
-        tag_directives_start: *mut yaml_tag_directive_t,
-        /// The end of the tag directives list.
-        tag_directives_end: *mut yaml_tag_directive_t,
+        /// The tag directives list.
+        tag_directives: Vec<yaml_tag_directive_t>,
         /// Is the document indicator implicit?
         implicit: bool,
     },
@@ -492,6 +492,17 @@ pub struct yaml_node_t {
     pub end_mark: yaml_mark_t,
 }
 
+impl Default for yaml_node_t {
+    fn default() -> Self {
+        Self {
+            data: Default::default(),
+            tag: ptr::null_mut(),
+            start_mark: Default::default(),
+            end_mark: Default::default(),
+        }
+    }
+}
+
 /// Node types.
 #[derive(Default)]
 pub enum YamlNodeData {
@@ -510,14 +521,14 @@ pub enum YamlNodeData {
     /// A sequence node.
     Sequence {
         /// The stack of sequence items.
-        items: yaml_stack_t<yaml_node_item_t>,
+        items: Vec<yaml_node_item_t>,
         /// The sequence style.
         style: yaml_sequence_style_t,
     },
     /// A mapping node.
     Mapping {
         /// The stack of mapping pairs (key, value).
-        pairs: yaml_stack_t<yaml_node_pair_t>,
+        pairs: Vec<yaml_node_pair_t>,
         /// The mapping style.
         style: yaml_mapping_style_t,
     },
@@ -541,7 +552,7 @@ pub struct yaml_node_pair_t {
 #[non_exhaustive]
 pub struct yaml_document_t {
     /// The document nodes.
-    pub nodes: yaml_stack_t<yaml_node_t>,
+    pub nodes: Vec<yaml_node_t>,
     /// The version directive.
     pub version_directive: *mut yaml_version_directive_t,
     /// The list of tag directives.
@@ -556,7 +567,7 @@ pub struct yaml_document_t {
     /// }
     /// # };
     /// ```
-    pub tag_directives: unnamed_yaml_document_t_tag_directives,
+    pub tag_directives: Vec<yaml_tag_directive_t>,
     /// Is the document start indicator implicit?
     pub start_implicit: bool,
     /// Is the document end indicator implicit?
@@ -567,13 +578,18 @@ pub struct yaml_document_t {
     pub end_mark: yaml_mark_t,
 }
 
-#[repr(C)]
-#[non_exhaustive]
-pub struct unnamed_yaml_document_t_tag_directives {
-    /// The beginning of the tag directives list.
-    pub start: *mut yaml_tag_directive_t,
-    /// The end of the tag directives list.
-    pub end: *mut yaml_tag_directive_t,
+impl Default for yaml_document_t {
+    fn default() -> Self {
+        Self {
+            nodes: Default::default(),
+            version_directive: ptr::null_mut(),
+            tag_directives: Default::default(),
+            start_implicit: Default::default(),
+            end_implicit: Default::default(),
+            start_mark: Default::default(),
+            end_mark: Default::default(),
+        }
+    }
 }
 
 /// The prototype of a read handler.
@@ -750,23 +766,23 @@ pub struct yaml_parser_t {
     /// Does the tokens queue contain a token ready for dequeueing.
     pub(crate) token_available: bool,
     /// The indentation levels stack.
-    pub(crate) indents: yaml_stack_t<libc::c_int>,
+    pub(crate) indents: Vec<libc::c_int>,
     /// The current indentation level.
     pub(crate) indent: libc::c_int,
     /// May a simple key occur at the current position?
     pub(crate) simple_key_allowed: bool,
     /// The stack of simple keys.
-    pub(crate) simple_keys: yaml_stack_t<yaml_simple_key_t>,
+    pub(crate) simple_keys: Vec<yaml_simple_key_t>,
     /// The parser states stack.
-    pub(crate) states: yaml_stack_t<yaml_parser_state_t>,
+    pub(crate) states: Vec<yaml_parser_state_t>,
     /// The current parser state.
     pub(crate) state: yaml_parser_state_t,
     /// The stack of marks.
-    pub(crate) marks: yaml_stack_t<yaml_mark_t>,
+    pub(crate) marks: Vec<yaml_mark_t>,
     /// The list of TAG directives.
-    pub(crate) tag_directives: yaml_stack_t<yaml_tag_directive_t>,
+    pub(crate) tag_directives: Vec<yaml_tag_directive_t>,
     /// The alias data.
-    pub(crate) aliases: yaml_stack_t<yaml_alias_data_t>,
+    pub(crate) aliases: Vec<yaml_alias_data_t>,
     /// The currently parsed document.
     pub(crate) document: *mut yaml_document_t,
 }
@@ -913,7 +929,7 @@ pub enum yaml_emitter_state_t {
     YAML_EMIT_END_STATE = 17,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 pub(crate) struct yaml_anchors_t {
     /// The number of references.
@@ -932,9 +948,6 @@ pub(crate) struct yaml_anchors_t {
 #[non_exhaustive]
 pub struct yaml_emitter_t {
     /// Error type.
-    #[cfg(doc)]
-    pub error: yaml_error_type_t,
-    #[cfg(not(doc))]
     pub(crate) error: yaml_error_type_t,
     /// Error description.
     pub(crate) problem: Option<&'static str>,
@@ -961,15 +974,15 @@ pub struct yaml_emitter_t {
     /// The preferred line break.
     pub(crate) line_break: yaml_break_t,
     /// The stack of states.
-    pub(crate) states: yaml_stack_t<yaml_emitter_state_t>,
+    pub(crate) states: Vec<yaml_emitter_state_t>,
     /// The current emitter state.
     pub(crate) state: yaml_emitter_state_t,
     /// The event queue.
     pub(crate) events: VecDeque<yaml_event_t>,
     /// The stack of indentation levels.
-    pub(crate) indents: yaml_stack_t<libc::c_int>,
+    pub(crate) indents: Vec<libc::c_int>,
     /// The list of tag directives.
-    pub(crate) tag_directives: yaml_stack_t<yaml_tag_directive_t>,
+    pub(crate) tag_directives: Vec<yaml_tag_directive_t>,
     /// The current indentation level.
     pub(crate) indent: libc::c_int,
     /// The current flow level.
@@ -1003,12 +1016,10 @@ pub struct yaml_emitter_t {
     /// If the stream was already closed?
     pub(crate) closed: bool,
     /// The information associated with the document nodes.
-    pub(crate) anchors: *mut yaml_anchors_t,
+    // Note: Same length as `document.nodes`.
+    pub(crate) anchors: Vec<yaml_anchors_t>,
     /// The last assigned anchor id.
     pub(crate) last_anchor_id: libc::c_int,
-    /// The currently emitted document.
-    // NOTE: This is owned by the emitter.
-    pub(crate) document: *mut yaml_document_t,
 }
 
 impl Default for yaml_emitter_t {
@@ -1048,9 +1059,8 @@ impl Default for yaml_emitter_t {
             scalar_data: Default::default(),
             opened: Default::default(),
             closed: Default::default(),
-            anchors: ptr::null_mut(),
+            anchors: Default::default(),
             last_anchor_id: Default::default(),
-            document: ptr::null_mut(),
         }
     }
 }
@@ -1195,16 +1205,6 @@ pub(crate) struct yaml_buffer_t<T> {
     pub last: *mut T,
 }
 
-#[repr(C)]
-pub struct yaml_stack_t<T> {
-    /// The beginning of the stack.
-    pub start: *mut T,
-    /// The end of the stack.
-    pub end: *mut T,
-    /// The top of the stack.
-    pub top: *mut T,
-}
-
 impl<T> Default for yaml_buffer_t<T> {
     fn default() -> Self {
         Self {
@@ -1212,16 +1212,6 @@ impl<T> Default for yaml_buffer_t<T> {
             end: ptr::null_mut(),
             pointer: ptr::null_mut(),
             last: ptr::null_mut(),
-        }
-    }
-}
-
-impl<T> Default for yaml_stack_t<T> {
-    fn default() -> Self {
-        Self {
-            start: ptr::null_mut(),
-            end: ptr::null_mut(),
-            top: ptr::null_mut(),
         }
     }
 }

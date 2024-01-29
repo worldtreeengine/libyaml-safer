@@ -1,4 +1,4 @@
-use crate::api::{yaml_free, yaml_malloc, yaml_stack_extend, yaml_string_extend, yaml_string_join};
+use crate::api::{yaml_free, yaml_malloc, yaml_string_extend, yaml_string_join};
 use crate::externs::{memcpy, memset, strcmp, strlen};
 use crate::ops::{ForceAdd as _, ForceMul as _};
 use crate::reader::yaml_parser_update_buffer;
@@ -158,49 +158,33 @@ pub(crate) unsafe fn yaml_parser_fetch_more_tokens(parser: &mut yaml_parser_t) -
         if parser.tokens.is_empty() {
             need_more_tokens = true;
         } else {
-            let mut simple_key: *mut yaml_simple_key_t;
-            if yaml_parser_stale_simple_keys(parser).is_err() {
-                return Err(());
-            }
-            simple_key = parser.simple_keys.start;
-            while simple_key != parser.simple_keys.top {
-                if (*simple_key).possible && (*simple_key).token_number == parser.tokens_parsed {
+            yaml_parser_stale_simple_keys(parser)?;
+            for simple_key in parser.simple_keys.iter() {
+                if simple_key.possible && simple_key.token_number == parser.tokens_parsed {
                     need_more_tokens = true;
                     break;
-                } else {
-                    simple_key = simple_key.wrapping_offset(1);
                 }
             }
         }
         if !need_more_tokens {
             break;
         }
-        if yaml_parser_fetch_next_token(parser).is_err() {
-            return Err(());
-        }
+        yaml_parser_fetch_next_token(parser)?;
     }
     parser.token_available = true;
     Ok(())
 }
 
 unsafe fn yaml_parser_fetch_next_token(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    if CACHE(parser, 1_u64).is_err() {
-        return Err(());
-    }
+    CACHE(parser, 1_u64)?;
     if !parser.stream_start_produced {
         yaml_parser_fetch_stream_start(parser);
         return Ok(());
     }
-    if yaml_parser_scan_to_next_token(parser).is_err() {
-        return Err(());
-    }
-    if yaml_parser_stale_simple_keys(parser).is_err() {
-        return Err(());
-    }
+    yaml_parser_scan_to_next_token(parser)?;
+    yaml_parser_stale_simple_keys(parser)?;
     yaml_parser_unroll_indent(parser, parser.mark.column as ptrdiff_t);
-    if CACHE(parser, 4_u64).is_err() {
-        return Err(());
-    }
+    CACHE(parser, 4_u64)?;
     if IS_Z!(parser.buffer) {
         return yaml_parser_fetch_stream_end(parser);
     }
@@ -305,26 +289,24 @@ unsafe fn yaml_parser_fetch_next_token(parser: &mut yaml_parser_t) -> Result<(),
 }
 
 unsafe fn yaml_parser_stale_simple_keys(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let mut simple_key: *mut yaml_simple_key_t;
-    simple_key = parser.simple_keys.start;
-    while simple_key != parser.simple_keys.top {
-        if (*simple_key).possible
-            && ((*simple_key).mark.line < parser.mark.line
-                || (*simple_key).mark.index.force_add(1024_u64) < parser.mark.index)
+    for simple_key in parser.simple_keys.iter_mut() {
+        let mark = simple_key.mark;
+        if simple_key.possible
+            && (mark.line < parser.mark.line || mark.index.force_add(1024_u64) < parser.mark.index)
         {
-            if (*simple_key).required {
+            if simple_key.required {
                 yaml_parser_set_scanner_error(
                     parser,
                     "while scanning a simple key",
-                    (*simple_key).mark,
+                    mark,
                     "could not find expected ':'",
                 );
                 return Err(());
             }
-            (*simple_key).possible = false;
+            simple_key.possible = false;
         }
-        simple_key = simple_key.wrapping_offset(1);
     }
+
     Ok(())
 }
 
@@ -343,25 +325,26 @@ unsafe fn yaml_parser_save_simple_key(parser: &mut yaml_parser_t) -> Result<(), 
         if yaml_parser_remove_simple_key(parser).is_err() {
             return Err(());
         }
-        *parser.simple_keys.top.wrapping_offset(-1_isize) = simple_key;
+        *parser.simple_keys.last_mut().unwrap() = simple_key;
     }
     Ok(())
 }
 
 unsafe fn yaml_parser_remove_simple_key(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let simple_key: *mut yaml_simple_key_t = parser.simple_keys.top.wrapping_offset(-1_isize);
-    if (*simple_key).possible {
-        if (*simple_key).required {
+    let simple_key: &mut yaml_simple_key_t = parser.simple_keys.last_mut().unwrap();
+    if simple_key.possible {
+        let mark = simple_key.mark;
+        if simple_key.required {
             yaml_parser_set_scanner_error(
                 parser,
                 "while scanning a simple key",
-                (*simple_key).mark,
+                mark,
                 "could not find expected ':'",
             );
             return Err(());
         }
     }
-    (*simple_key).possible = false;
+    simple_key.possible = false;
     Ok(())
 }
 
@@ -376,7 +359,7 @@ unsafe fn yaml_parser_increase_flow_level(parser: &mut yaml_parser_t) -> Result<
             column: 0_u64,
         },
     };
-    PUSH!(parser.simple_keys, empty_simple_key);
+    parser.simple_keys.push(empty_simple_key);
     if parser.flow_level == libc::c_int::MAX {
         parser.error = YAML_MEMORY_ERROR;
         return Err(());
@@ -388,7 +371,7 @@ unsafe fn yaml_parser_increase_flow_level(parser: &mut yaml_parser_t) -> Result<
 unsafe fn yaml_parser_decrease_flow_level(parser: &mut yaml_parser_t) {
     if parser.flow_level != 0 {
         parser.flow_level -= 1;
-        let _ = POP!(parser.simple_keys);
+        let _ = parser.simple_keys.pop();
     }
 }
 
@@ -403,7 +386,7 @@ unsafe fn yaml_parser_roll_indent(
         return Ok(());
     }
     if (parser.indent as libc::c_long) < column {
-        PUSH!(parser.indents, parser.indent);
+        parser.indents.push(parser.indent);
         if column > ptrdiff_t::from(libc::c_int::MAX) {
             parser.error = YAML_MEMORY_ERROR;
             return Err(());
@@ -437,7 +420,7 @@ unsafe fn yaml_parser_unroll_indent(parser: &mut yaml_parser_t, column: ptrdiff_
             end_mark: parser.mark,
         };
         parser.tokens.push_back(token);
-        parser.indent = POP!(parser.indents);
+        parser.indent = parser.indents.pop().unwrap();
     }
 }
 
@@ -453,7 +436,7 @@ unsafe fn yaml_parser_fetch_stream_start(parser: &mut yaml_parser_t) {
         },
     };
     parser.indent = -1;
-    PUSH!(parser.simple_keys, simple_key);
+    parser.simple_keys.push(simple_key);
     parser.simple_key_allowed = true;
     parser.stream_start_produced = true;
     let token = yaml_token_t {
@@ -663,25 +646,28 @@ unsafe fn yaml_parser_fetch_key(parser: &mut yaml_parser_t) -> Result<(), ()> {
 }
 
 unsafe fn yaml_parser_fetch_value(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let simple_key: *mut yaml_simple_key_t = parser.simple_keys.top.wrapping_offset(-1_isize);
-    if (*simple_key).possible {
+    let simple_key: &mut yaml_simple_key_t = parser.simple_keys.last_mut().unwrap();
+    if simple_key.possible {
         let token = yaml_token_t {
             data: YamlTokenData::Key,
-            start_mark: (*simple_key).mark,
-            end_mark: (*simple_key).mark,
+            start_mark: simple_key.mark,
+            end_mark: simple_key.mark,
         };
         parser.tokens.insert(
-            ((*simple_key).token_number).wrapping_sub(parser.tokens_parsed) as usize,
+            simple_key.token_number.wrapping_sub(parser.tokens_parsed) as usize,
             token,
         );
+        let mark_column = simple_key.mark.column as ptrdiff_t;
+        let token_number = simple_key.token_number as ptrdiff_t;
+        let mark = simple_key.mark;
+        simple_key.possible = false;
         yaml_parser_roll_indent(
             parser,
-            (*simple_key).mark.column as ptrdiff_t,
-            (*simple_key).token_number as ptrdiff_t,
+            mark_column,
+            token_number,
             YamlTokenData::BlockMappingStart,
-            (*simple_key).mark,
+            mark,
         )?;
-        (*simple_key).possible = false;
         parser.simple_key_allowed = false;
     } else {
         if parser.flow_level == 0 {
