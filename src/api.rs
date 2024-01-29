@@ -43,34 +43,30 @@ pub(crate) unsafe fn yaml_strdup(str: *const yaml_char_t) -> *mut yaml_char_t {
 }
 
 pub(crate) unsafe fn yaml_string_extend(
-    start: *mut *mut yaml_char_t,
-    pointer: *mut *mut yaml_char_t,
-    end: *mut *mut yaml_char_t,
+    start: &mut *mut yaml_char_t,
+    pointer: &mut *mut yaml_char_t,
+    end: &mut *mut yaml_char_t,
 ) {
-    let new_start: *mut yaml_char_t = yaml_realloc(
-        *start as *mut libc::c_void,
-        (((*end).c_offset_from(*start) as libc::c_long).force_mul(2_i64)) as size_t,
-    ) as *mut yaml_char_t;
+    let old_len = end.c_offset_from(*start) as libc::c_ulong;
+    let new_len = old_len.force_mul(2) as size_t;
+    let new_start: *mut yaml_char_t = yaml_realloc(*start as _, new_len) as _;
     memset(
-        new_start.wrapping_offset((*end).c_offset_from(*start) as libc::c_long as isize)
-            as *mut libc::c_void,
+        new_start.wrapping_offset(old_len as _) as *mut libc::c_void,
         0,
-        (*end).c_offset_from(*start) as libc::c_ulong,
+        end.c_offset_from(*start) as libc::c_ulong,
     );
     *pointer = new_start.wrapping_offset((*pointer).c_offset_from(*start) as libc::c_long as isize);
-    *end = new_start.wrapping_offset(
-        (((*end).c_offset_from(*start) as libc::c_long).force_mul(2_i64)) as isize,
-    );
+    *end = new_start.wrapping_offset(new_len as _);
     *start = new_start;
 }
 
 pub(crate) unsafe fn yaml_string_join(
-    a_start: *mut *mut yaml_char_t,
-    a_pointer: *mut *mut yaml_char_t,
-    a_end: *mut *mut yaml_char_t,
-    b_start: *mut *mut yaml_char_t,
-    b_pointer: *mut *mut yaml_char_t,
-    _b_end: *mut *mut yaml_char_t,
+    a_start: &mut *mut yaml_char_t,
+    a_pointer: &mut *mut yaml_char_t,
+    a_end: &mut *mut yaml_char_t,
+    b_start: &mut *mut yaml_char_t,
+    b_pointer: &mut *mut yaml_char_t,
+    _b_end: &mut *mut yaml_char_t,
 ) {
     if *b_start == *b_pointer {
         return;
@@ -275,10 +271,7 @@ pub unsafe fn yaml_emitter_set_output_string(
 ) {
     __assert!((emitter.write_handler).is_none());
     __assert!(!output.is_null());
-    emitter.write_handler = Some(
-        yaml_string_write_handler
-            as unsafe fn(*mut libc::c_void, *mut libc::c_uchar, size_t) -> libc::c_int,
-    );
+    emitter.write_handler = Some(yaml_string_write_handler);
     emitter.write_handler_data = emitter as *mut _ as *mut libc::c_void;
     emitter.output.buffer = output;
     emitter.output.size = size;

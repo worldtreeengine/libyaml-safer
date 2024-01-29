@@ -120,9 +120,7 @@ pub unsafe fn yaml_parser_scan(
         return Ok(());
     }
     if !parser.token_available {
-        if yaml_parser_fetch_more_tokens(parser).is_err() {
-            return Err(());
-        }
+        yaml_parser_fetch_more_tokens(parser)?;
     }
     if let Some(popped) = parser.tokens.pop_front() {
         *token = popped;
@@ -1390,11 +1388,7 @@ unsafe fn yaml_parser_scan_tag_uri(
             }
             _ => {
                 if string.end.c_offset_from(string.start) as size_t <= length {
-                    yaml_string_extend(
-                        addr_of_mut!(string.start),
-                        addr_of_mut!(string.pointer),
-                        addr_of_mut!(string.end),
-                    );
+                    yaml_string_extend(&mut string.start, &mut string.pointer, &mut string.end);
                     current_block = 14916268686031723178;
                     continue;
                 } else {

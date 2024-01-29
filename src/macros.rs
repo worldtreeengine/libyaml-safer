@@ -54,11 +54,7 @@ macro_rules! STRING_DEL {
 macro_rules! STRING_EXTEND {
     ($string:expr) => {
         if $string.pointer.wrapping_add(5) >= $string.end {
-            yaml_string_extend(
-                addr_of_mut!($string.start),
-                addr_of_mut!($string.pointer),
-                addr_of_mut!($string.end),
-            );
+            yaml_string_extend(&mut $string.start, &mut $string.pointer, &mut $string.end);
         }
     };
 }
@@ -77,12 +73,12 @@ macro_rules! CLEAR {
 macro_rules! JOIN {
     ($string_a:expr, $string_b:expr) => {{
         yaml_string_join(
-            addr_of_mut!($string_a.start),
-            addr_of_mut!($string_a.pointer),
-            addr_of_mut!($string_a.end),
-            addr_of_mut!($string_b.start),
-            addr_of_mut!($string_b.pointer),
-            addr_of_mut!($string_b.end),
+            &mut $string_a.start,
+            &mut $string_a.pointer,
+            &mut $string_a.end,
+            &mut $string_b.start,
+            &mut $string_b.pointer,
+            &mut $string_b.end,
         );
         $string_b.pointer = $string_b.start;
     }};

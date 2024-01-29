@@ -92,22 +92,17 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
                 0xD8_u32.force_add(value >> 18) as libc::c_uchar;
             *emitter.raw_buffer.last.wrapping_offset(low as isize) =
                 (value >> 10 & 0xFF) as libc::c_uchar;
-            *(*emitter)
-                .raw_buffer
-                .last
-                .wrapping_offset((high + 2) as isize) =
+            *emitter.raw_buffer.last.wrapping_offset((high + 2) as isize) =
                 0xDC_u32.force_add(value >> 8 & 0xFF) as libc::c_uchar;
-            *(*emitter)
-                .raw_buffer
-                .last
-                .wrapping_offset((low + 2) as isize) = (value & 0xFF) as libc::c_uchar;
+            *emitter.raw_buffer.last.wrapping_offset((low + 2) as isize) =
+                (value & 0xFF) as libc::c_uchar;
             emitter.raw_buffer.last = emitter.raw_buffer.last.wrapping_offset(4_isize);
         }
     }
     if emitter.write_handler.expect("non-null function pointer")(
         emitter.write_handler_data,
         emitter.raw_buffer.start,
-        (*emitter)
+        emitter
             .raw_buffer
             .last
             .c_offset_from(emitter.raw_buffer.start) as size_t,
