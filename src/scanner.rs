@@ -47,7 +47,7 @@ unsafe fn SKIP_LINE(parser: &mut yaml_parser_t) {
 unsafe fn READ(parser: &mut yaml_parser_t, string: &mut yaml_string_t) {
     STRING_EXTEND!(*string);
     let width = WIDTH!(parser.buffer);
-    COPY!(*string, parser.buffer);
+    COPY!(string, parser.buffer);
     parser.mark.index = parser.mark.index.force_add(width as u64);
     parser.mark.column = parser.mark.column.force_add(1);
     parser.unread = parser.unread.wrapping_sub(1);

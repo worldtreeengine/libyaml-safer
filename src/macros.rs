@@ -315,6 +315,8 @@ macro_rules! IS_BLANKZ {
     };
 }
 
+/// Get the number of bytes for the UTF-8 character at `$offset` from the
+/// string's cursor position.
 macro_rules! WIDTH_AT {
     ($string:expr, $offset:expr) => {
         if *$string.pointer.wrapping_offset($offset as isize) & 0x80 == 0x00 {
@@ -331,6 +333,8 @@ macro_rules! WIDTH_AT {
     };
 }
 
+/// Get the number of bytes for the UTF-8 character at the string's cursor
+/// position.
 macro_rules! WIDTH {
     ($string:expr) => {
         WIDTH_AT!($string, 0)
@@ -343,6 +347,8 @@ macro_rules! MOVE {
     };
 }
 
+/// Copy one UTF-8 character from `string_b` to `string_a`, and increment the
+/// cursor for both strings.
 macro_rules! COPY {
     ($string_a:expr, $string_b:expr) => {
         if *$string_b.pointer & 0x80 == 0x00 {
