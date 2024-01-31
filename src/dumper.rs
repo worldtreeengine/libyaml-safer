@@ -2,15 +2,15 @@ use alloc::string::String;
 use alloc::vec;
 
 use crate::yaml::{
-    yaml_anchors_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t, YamlEventData,
-    YamlNodeData, YAML_ANY_ENCODING,
+    yaml_anchors_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t, EmitterError,
+    YamlEventData, YamlNodeData, YAML_ANY_ENCODING,
 };
 use crate::{libc, yaml_document_delete, yaml_emitter_emit};
 
 /// Start a YAML stream.
 ///
 /// This function should be used before yaml_emitter_dump() is called.
-pub fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+pub fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
     __assert!(!emitter.opened);
     let event = yaml_event_t {
         data: YamlEventData::StreamStart {
@@ -26,7 +26,7 @@ pub fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
 /// Finish a YAML stream.
 ///
 /// This function should be used after yaml_emitter_dump() is called.
-pub fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+pub fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
     __assert!(emitter.opened);
     if emitter.closed {
         return Ok(());
@@ -49,11 +49,11 @@ pub fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
 pub fn yaml_emitter_dump(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if !emitter.opened {
-        if let Err(()) = yaml_emitter_open(emitter) {
+        if let Err(err) = yaml_emitter_open(emitter) {
             yaml_emitter_delete_document_and_anchors(emitter, document);
-            return Err(());
+            return Err(err);
         }
     }
     if document.nodes.is_empty() {
@@ -156,7 +156,7 @@ fn yaml_emitter_dump_node(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
     index: libc::c_int,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let node = &mut document.nodes[index as usize - 1];
     let anchor_id: libc::c_int = emitter.anchors[index as usize - 1].anchor;
     let mut anchor: Option<String> = None;
@@ -179,7 +179,10 @@ fn yaml_emitter_dump_node(
     }
 }
 
-fn yaml_emitter_dump_alias(emitter: &mut yaml_emitter_t, anchor: String) -> Result<(), ()> {
+fn yaml_emitter_dump_alias(
+    emitter: &mut yaml_emitter_t,
+    anchor: String,
+) -> Result<(), EmitterError> {
     let event = yaml_event_t {
         data: YamlEventData::Alias { anchor },
         ..Default::default()
@@ -191,7 +194,7 @@ fn yaml_emitter_dump_scalar(
     emitter: &mut yaml_emitter_t,
     node: yaml_node_t,
     anchor: Option<String>,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     // TODO: Extract this constant as `YAML_DEFAULT_SCALAR_TAG` (source: dumper.c)
     let plain_implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:str");
     let quoted_implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:str"); // TODO: Why compare twice?! (even the C code does this)
@@ -219,7 +222,7 @@ fn yaml_emitter_dump_sequence(
     document: &mut yaml_document_t,
     node: yaml_node_t,
     anchor: Option<String>,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     // TODO: YAML_DEFAULT_SEQUENCE_TAG
     let implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:seq");
 
@@ -253,7 +256,7 @@ fn yaml_emitter_dump_mapping(
     document: &mut yaml_document_t,
     node: yaml_node_t,
     anchor: Option<String>,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     // TODO: YAML_DEFAULT_MAPPING_TAG
     let implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:map");
 

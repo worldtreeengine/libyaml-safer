@@ -5,12 +5,12 @@ use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_printable, is_space,
 };
 use crate::ops::ForceMul as _;
-use crate::yaml::YamlEventData;
+use crate::yaml::{EmitterError, WriterError, YamlEventData};
 use crate::{
     libc, yaml_emitter_flush, yaml_emitter_t, yaml_event_delete, yaml_event_t, yaml_scalar_style_t,
     yaml_tag_directive_t, yaml_version_directive_t, YAML_ANY_BREAK, YAML_ANY_ENCODING,
     YAML_ANY_SCALAR_STYLE, YAML_CRLN_BREAK, YAML_CR_BREAK, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-    YAML_EMITTER_ERROR, YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE, YAML_EMIT_BLOCK_MAPPING_KEY_STATE,
+    YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE, YAML_EMIT_BLOCK_MAPPING_KEY_STATE,
     YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE, YAML_EMIT_BLOCK_MAPPING_VALUE_STATE,
     YAML_EMIT_BLOCK_SEQUENCE_FIRST_ITEM_STATE, YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE,
     YAML_EMIT_DOCUMENT_CONTENT_STATE, YAML_EMIT_DOCUMENT_END_STATE, YAML_EMIT_DOCUMENT_START_STATE,
@@ -23,7 +23,7 @@ use crate::{
     YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
 };
 
-fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {
     if emitter.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
         Ok(())
     } else {
@@ -31,7 +31,7 @@ fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     }
 }
 
-fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
+fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), WriterError> {
     FLUSH(emitter)?;
     let ch = char::try_from(value).expect("invalid char");
     emitter.buffer.push(ch);
@@ -39,7 +39,7 @@ fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
     Ok(())
 }
 
-fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {
     FLUSH(emitter)?;
     if emitter.line_break == YAML_CR_BREAK {
         emitter.buffer.push('\r');
@@ -55,21 +55,21 @@ fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
 
 /// Write UTF-8 charanters from `string` to `emitter` and increment
 /// `emitter.column` the appropriate number of times.
-fn WRITE_STR(emitter: &mut yaml_emitter_t, string: &str) -> Result<(), ()> {
+fn WRITE_STR(emitter: &mut yaml_emitter_t, string: &str) -> Result<(), WriterError> {
     for ch in string.chars() {
         WRITE_CHAR(emitter, ch)?;
     }
     Ok(())
 }
 
-fn WRITE_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), ()> {
+fn WRITE_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), WriterError> {
     FLUSH(emitter)?;
     emitter.buffer.push(ch);
     emitter.column += 1;
     Ok(())
 }
 
-fn WRITE_BREAK_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), ()> {
+fn WRITE_BREAK_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), WriterError> {
     FLUSH(emitter)?;
     if ch == '\n' {
         _ = PUT_BREAK(emitter);
@@ -115,13 +115,11 @@ struct ScalarAnalysis<'a> {
     pub style: yaml_scalar_style_t,
 }
 
-fn yaml_emitter_set_emitter_error(
-    emitter: &mut yaml_emitter_t,
+fn yaml_emitter_set_emitter_error<T>(
+    _emitter: &mut yaml_emitter_t,
     problem: &'static str,
-) -> Result<(), ()> {
-    emitter.error = YAML_EMITTER_ERROR;
-    emitter.problem = Some(problem);
-    Err(())
+) -> Result<T, EmitterError> {
+    Err(EmitterError::Problem(problem))
 }
 
 /// Emit an event.
@@ -130,7 +128,10 @@ fn yaml_emitter_set_emitter_error(
 /// The emitter takes the responsibility for the event object and destroys its
 /// content after it is emitted. The event object is destroyed even if the
 /// function fails.
-pub fn yaml_emitter_emit(emitter: &mut yaml_emitter_t, event: yaml_event_t) -> Result<(), ()> {
+pub fn yaml_emitter_emit(
+    emitter: &mut yaml_emitter_t,
+    event: yaml_event_t,
+) -> Result<(), EmitterError> {
     emitter.events.push_back(event);
     while let Some(mut event) = yaml_emitter_needs_mode_events(emitter) {
         let tag_directives = core::mem::take(&mut emitter.tag_directives);
@@ -193,7 +194,7 @@ fn yaml_emitter_append_tag_directive(
     emitter: &mut yaml_emitter_t,
     value: &yaml_tag_directive_t,
     allow_duplicates: bool,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     for tag_directive in emitter.tag_directives.iter() {
         if value.handle == tag_directive.handle {
             if allow_duplicates {
@@ -219,7 +220,7 @@ fn yaml_emitter_state_machine(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     match emitter.state {
         YAML_EMIT_STREAM_START_STATE => yaml_emitter_emit_stream_start(emitter, event),
         YAML_EMIT_FIRST_DOCUMENT_START_STATE => {
@@ -275,7 +276,7 @@ fn yaml_emitter_state_machine(
 fn yaml_emitter_emit_stream_start(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     emitter.open_ended = 0;
     if let YamlEventData::StreamStart { ref encoding } = event.data {
         if emitter.encoding == YAML_ANY_ENCODING {
@@ -314,7 +315,7 @@ fn yaml_emitter_emit_document_start(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     first: bool,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if let YamlEventData::DocumentStart {
         version_directive,
         tag_directives,
@@ -404,7 +405,7 @@ fn yaml_emitter_emit_document_content(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     emitter.states.push(YAML_EMIT_DOCUMENT_END_STATE);
     yaml_emitter_emit_node(emitter, event, true, false, false, false, analysis)
 }
@@ -412,7 +413,7 @@ fn yaml_emitter_emit_document_content(
 fn yaml_emitter_emit_document_end(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if let YamlEventData::DocumentEnd { implicit } = &event.data {
         let implicit = *implicit;
         yaml_emitter_write_indent(emitter)?;
@@ -437,7 +438,7 @@ fn yaml_emitter_emit_flow_sequence_item(
     event: &yaml_event_t,
     first: bool,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if first {
         yaml_emitter_write_indicator(emitter, "[", true, true, false)?;
         yaml_emitter_increase_indent(emitter, true, false);
@@ -469,7 +470,7 @@ fn yaml_emitter_emit_flow_mapping_key(
     event: &yaml_event_t,
     first: bool,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if first {
         yaml_emitter_write_indicator(emitter, "{", true, true, false)?;
         yaml_emitter_increase_indent(emitter, true, false);
@@ -477,7 +478,7 @@ fn yaml_emitter_emit_flow_mapping_key(
     }
     if let YamlEventData::MappingEnd = &event.data {
         if emitter.indents.is_empty() {
-            return Err(());
+            panic!("emitter.indents should not be empty");
         }
         emitter.flow_level -= 1;
         emitter.indent = emitter.indents.pop().unwrap();
@@ -512,7 +513,7 @@ fn yaml_emitter_emit_flow_mapping_value(
     event: &yaml_event_t,
     simple: bool,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if simple {
         yaml_emitter_write_indicator(emitter, ":", false, false, false)?;
     } else {
@@ -530,7 +531,7 @@ fn yaml_emitter_emit_block_sequence_item(
     event: &yaml_event_t,
     first: bool,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if first {
         yaml_emitter_increase_indent(
             emitter,
@@ -554,7 +555,7 @@ fn yaml_emitter_emit_block_mapping_key(
     event: &yaml_event_t,
     first: bool,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if first {
         yaml_emitter_increase_indent(emitter, false, false);
     }
@@ -581,7 +582,7 @@ fn yaml_emitter_emit_block_mapping_value(
     event: &yaml_event_t,
     simple: bool,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if simple {
         yaml_emitter_write_indicator(emitter, ":", false, false, false)?;
     } else {
@@ -600,7 +601,7 @@ fn yaml_emitter_emit_node(
     mapping: bool,
     simple_key: bool,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     emitter.root_context = root;
     emitter.sequence_context = sequence;
     emitter.mapping_context = mapping;
@@ -626,7 +627,7 @@ fn yaml_emitter_emit_alias(
     emitter: &mut yaml_emitter_t,
     _event: &yaml_event_t,
     analysis: &Option<AnchorAnalysis>,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     yaml_emitter_process_anchor(emitter, analysis)?;
     if emitter.simple_key_context {
         PUT(emitter, b' ')?;
@@ -639,7 +640,7 @@ fn yaml_emitter_emit_scalar(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     analysis: &mut Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let Analysis {
         anchor,
         tag,
@@ -663,7 +664,7 @@ fn yaml_emitter_emit_sequence_start(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     analysis: &Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let Analysis { anchor, tag, .. } = analysis;
     yaml_emitter_process_anchor(emitter, anchor)?;
     yaml_emitter_process_tag(emitter, tag)?;
@@ -690,7 +691,7 @@ fn yaml_emitter_emit_mapping_start(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     analysis: &Analysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let Analysis { anchor, tag, .. } = analysis;
     yaml_emitter_process_anchor(emitter, anchor)?;
     yaml_emitter_process_tag(emitter, tag)?;
@@ -811,7 +812,7 @@ fn yaml_emitter_select_scalar_style(
     event: &yaml_event_t,
     scalar_analysis: &mut ScalarAnalysis,
     tag_analysis: &mut Option<TagAnalysis>,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if let YamlEventData::Scalar {
         plain_implicit,
         quoted_implicit,
@@ -880,7 +881,7 @@ fn yaml_emitter_select_scalar_style(
 fn yaml_emitter_process_anchor(
     emitter: &mut yaml_emitter_t,
     analysis: &Option<AnchorAnalysis>,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let Some(analysis) = analysis.as_ref() else {
         return Ok(());
     };
@@ -897,7 +898,7 @@ fn yaml_emitter_process_anchor(
 fn yaml_emitter_process_tag(
     emitter: &mut yaml_emitter_t,
     analysis: &Option<TagAnalysis>,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let Some(analysis) = analysis.as_ref() else {
         return Ok(());
     };
@@ -921,7 +922,7 @@ fn yaml_emitter_process_tag(
 fn yaml_emitter_process_scalar(
     emitter: &mut yaml_emitter_t,
     analysis: &ScalarAnalysis,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     match analysis.style {
         YAML_PLAIN_SCALAR_STYLE => {
             return yaml_emitter_write_plain_scalar(
@@ -950,15 +951,14 @@ fn yaml_emitter_process_scalar(
         YAML_FOLDED_SCALAR_STYLE => {
             return yaml_emitter_write_folded_scalar(emitter, analysis.value);
         }
-        _ => {}
+        YAML_ANY_SCALAR_STYLE => unreachable!("No scalar style chosen"),
     }
-    Err(())
 }
 
 fn yaml_emitter_analyze_version_directive(
     emitter: &mut yaml_emitter_t,
     version_directive: &yaml_version_directive_t,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if version_directive.major != 1 || version_directive.minor != 1 && version_directive.minor != 2
     {
         return yaml_emitter_set_emitter_error(emitter, "incompatible %YAML directive");
@@ -969,7 +969,7 @@ fn yaml_emitter_analyze_version_directive(
 fn yaml_emitter_analyze_tag_directive(
     emitter: &mut yaml_emitter_t,
     tag_directive: &yaml_tag_directive_t,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if tag_directive.handle.is_empty() {
         return yaml_emitter_set_emitter_error(emitter, "tag handle must not be empty");
     }
@@ -1002,7 +1002,7 @@ fn yaml_emitter_analyze_anchor<'a>(
     emitter: &mut yaml_emitter_t,
     anchor: &'a str,
     alias: bool,
-) -> Result<AnchorAnalysis<'a>, ()> {
+) -> Result<AnchorAnalysis<'a>, EmitterError> {
     if anchor.is_empty() {
         yaml_emitter_set_emitter_error(
             emitter,
@@ -1034,7 +1034,7 @@ fn yaml_emitter_analyze_tag<'a>(
     emitter: &mut yaml_emitter_t,
     tag: &'a str,
     tag_directives: &'a [yaml_tag_directive_t],
-) -> Result<TagAnalysis<'a>, ()> {
+) -> Result<TagAnalysis<'a>, EmitterError> {
     if tag.is_empty() {
         yaml_emitter_set_emitter_error(emitter, "tag value must not be empty")?;
     }
@@ -1057,7 +1057,7 @@ fn yaml_emitter_analyze_tag<'a>(
 fn yaml_emitter_analyze_scalar<'a>(
     emitter: &mut yaml_emitter_t,
     value: &'a str,
-) -> Result<ScalarAnalysis<'a>, ()> {
+) -> Result<ScalarAnalysis<'a>, EmitterError> {
     let mut block_indicators = false;
     let mut flow_indicators = false;
     let mut line_breaks = false;
@@ -1224,7 +1224,7 @@ fn yaml_emitter_analyze_event<'a>(
     emitter: &mut yaml_emitter_t,
     event: &'a yaml_event_t,
     tag_directives: &'a [yaml_tag_directive_t],
-) -> Result<Analysis<'a>, ()> {
+) -> Result<Analysis<'a>, EmitterError> {
     let mut analysis = Analysis::default();
 
     match &event.data {
@@ -1292,13 +1292,13 @@ fn yaml_emitter_analyze_event<'a>(
     Ok(analysis)
 }
 
-fn yaml_emitter_write_bom(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+fn yaml_emitter_write_bom(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
     FLUSH(emitter)?;
     emitter.buffer.push('\u{feff}');
     Ok(())
 }
 
-fn yaml_emitter_write_indent(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+fn yaml_emitter_write_indent(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
     let indent: libc::c_int = if emitter.indent >= 0 {
         emitter.indent
     } else {
@@ -1324,7 +1324,7 @@ fn yaml_emitter_write_indicator(
     need_whitespace: bool,
     is_whitespace: bool,
     is_indention: bool,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if need_whitespace && !emitter.whitespace {
         PUT(emitter, b' ')?;
     }
@@ -1334,14 +1334,20 @@ fn yaml_emitter_write_indicator(
     Ok(())
 }
 
-fn yaml_emitter_write_anchor(emitter: &mut yaml_emitter_t, value: &str) -> Result<(), ()> {
+fn yaml_emitter_write_anchor(
+    emitter: &mut yaml_emitter_t,
+    value: &str,
+) -> Result<(), EmitterError> {
     WRITE_STR(emitter, value)?;
     emitter.whitespace = false;
     emitter.indention = false;
     Ok(())
 }
 
-fn yaml_emitter_write_tag_handle(emitter: &mut yaml_emitter_t, value: &str) -> Result<(), ()> {
+fn yaml_emitter_write_tag_handle(
+    emitter: &mut yaml_emitter_t,
+    value: &str,
+) -> Result<(), EmitterError> {
     if !emitter.whitespace {
         PUT(emitter, b' ')?;
     }
@@ -1355,7 +1361,7 @@ fn yaml_emitter_write_tag_content(
     emitter: &mut yaml_emitter_t,
     value: &str,
     need_whitespace: bool,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     if need_whitespace && !emitter.whitespace {
         PUT(emitter, b' ')?;
     }
@@ -1396,7 +1402,7 @@ fn yaml_emitter_write_plain_scalar(
     emitter: &mut yaml_emitter_t,
     value: &str,
     allow_breaks: bool,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let mut spaces = false;
     let mut breaks = false;
     if !emitter.whitespace && (!value.is_empty() || emitter.flow_level != 0) {
@@ -1440,7 +1446,7 @@ fn yaml_emitter_write_single_quoted_scalar(
     emitter: &mut yaml_emitter_t,
     value: &str,
     allow_breaks: bool,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let mut spaces = false;
     let mut breaks = false;
     yaml_emitter_write_indicator(emitter, "'", true, false, false)?;
@@ -1498,7 +1504,7 @@ fn yaml_emitter_write_double_quoted_scalar(
     emitter: &mut yaml_emitter_t,
     value: &str,
     allow_breaks: bool,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let mut spaces = false;
     yaml_emitter_write_indicator(emitter, "\"", true, false, false)?;
     let mut chars = value.chars();
@@ -1615,7 +1621,7 @@ fn yaml_emitter_write_double_quoted_scalar(
 fn yaml_emitter_write_block_scalar_hints(
     emitter: &mut yaml_emitter_t,
     string: &str,
-) -> Result<(), ()> {
+) -> Result<(), EmitterError> {
     let mut chomp_hint: Option<&str> = None;
 
     let first = string.chars().next();
@@ -1655,7 +1661,10 @@ fn yaml_emitter_write_block_scalar_hints(
     Ok(())
 }
 
-fn yaml_emitter_write_literal_scalar(emitter: &mut yaml_emitter_t, value: &str) -> Result<(), ()> {
+fn yaml_emitter_write_literal_scalar(
+    emitter: &mut yaml_emitter_t,
+    value: &str,
+) -> Result<(), EmitterError> {
     let mut breaks = true;
     yaml_emitter_write_indicator(emitter, "|", true, false, false)?;
     yaml_emitter_write_block_scalar_hints(emitter, value)?;
@@ -1680,7 +1689,10 @@ fn yaml_emitter_write_literal_scalar(emitter: &mut yaml_emitter_t, value: &str) 
     Ok(())
 }
 
-fn yaml_emitter_write_folded_scalar(emitter: &mut yaml_emitter_t, value: &str) -> Result<(), ()> {
+fn yaml_emitter_write_folded_scalar(
+    emitter: &mut yaml_emitter_t,
+    value: &str,
+) -> Result<(), EmitterError> {
     let mut breaks = true;
     let mut leading_spaces = true;
     yaml_emitter_write_indicator(emitter, ">", true, false, false)?;

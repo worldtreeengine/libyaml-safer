@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::externs::memcpy;
-use crate::yaml::{size_t, Write, YamlEventData, YamlNodeData};
+use crate::yaml::{size_t, YamlEventData, YamlNodeData};
 use crate::{
     libc, yaml_break_t, yaml_document_t, yaml_emitter_t, yaml_encoding_t, yaml_event_t,
     yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t, yaml_parser_t,
@@ -146,7 +146,7 @@ pub fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
 /// YAML_WRITE_ERROR error.
 pub unsafe fn yaml_emitter_set_output_string<'w>(
     emitter: &mut yaml_emitter_t<'w>,
-    output: &'w mut String,
+    output: &'w mut Vec<u8>,
 ) {
     __assert!(emitter.write_handler.is_none());
     if emitter.encoding == YAML_ANY_ENCODING {
@@ -161,7 +161,7 @@ pub unsafe fn yaml_emitter_set_output_string<'w>(
 /// Set a generic output handler.
 pub unsafe fn yaml_emitter_set_output<'w>(
     emitter: &mut yaml_emitter_t<'w>,
-    handler: &'w mut dyn Write,
+    handler: &'w mut dyn std::io::Write,
 ) {
     __assert!(emitter.write_handler.is_none());
     emitter.write_handler = Some(handler);

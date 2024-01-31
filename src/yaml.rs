@@ -86,6 +86,22 @@ pub enum yaml_error_type_t {
     YAML_EMITTER_ERROR = 7,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum EmitterError {
+    #[error("{0}")]
+    Problem(&'static str),
+    #[error(transparent)]
+    Writer(#[from] WriterError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WriterError {
+    #[error("writer could not flush the entire buffer")]
+    Incomplete,
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
 /// The pointer position.
 #[derive(Copy, Clone, Default, Debug)]
 #[repr(C)]
@@ -872,12 +888,8 @@ pub(crate) struct yaml_anchors_t {
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_emitter_t<'w> {
-    /// Error type.
-    pub error: yaml_error_type_t,
-    /// Error description.
-    pub problem: Option<&'static str>,
     /// Write handler.
-    pub(crate) write_handler: Option<&'w mut dyn Write>,
+    pub(crate) write_handler: Option<&'w mut dyn std::io::Write>,
     /// Standard (string or file) output data.
     pub(crate) output: unnamed_yaml_emitter_t_output_string,
     /// The working buffer.
@@ -947,8 +959,6 @@ pub struct yaml_emitter_t<'w> {
 impl<'a> Default for yaml_emitter_t<'a> {
     fn default() -> Self {
         Self {
-            error: Default::default(),
-            problem: Default::default(),
             write_handler: None,
             output: Default::default(),
             buffer: Default::default(),
@@ -1000,33 +1010,5 @@ impl Default for unnamed_yaml_emitter_t_output_string {
             size: 0,
             size_written: ptr::null_mut(),
         }
-    }
-}
-
-pub trait Write {
-    fn write(&mut self, buffer: &[u8]) -> bool;
-}
-
-pub trait Read {
-    fn read(&mut self, buffer: &mut [u8]) -> usize;
-}
-
-impl Write for Vec<u8> {
-    fn write(&mut self, buffer: &[u8]) -> bool {
-        self.extend(buffer);
-        true
-    }
-}
-
-impl Write for String {
-    fn write(&mut self, buffer: &[u8]) -> bool {
-        self.push_str(core::str::from_utf8(buffer).expect("invalid UTF-8"));
-        true
-    }
-}
-
-impl Write for &mut &mut [u8] {
-    fn write(&mut self, buffer: &[u8]) -> bool {
-        todo!()
     }
 }

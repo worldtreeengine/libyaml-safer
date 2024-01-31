@@ -23,9 +23,8 @@ use libyaml_safer::{
     yaml_sequence_end_event_initialize, yaml_sequence_start_event_initialize,
     yaml_stream_end_event_initialize, yaml_stream_start_event_initialize, YAML_ANY_SCALAR_STYLE,
     YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-    YAML_EMITTER_ERROR, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_MEMORY_ERROR,
-    YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
-    YAML_WRITER_ERROR,
+    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE,
+    YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
 };
 use std::env;
 use std::error::Error;
@@ -33,16 +32,6 @@ use std::fs::File;
 use std::io::{self, BufRead, Read, Write};
 use std::mem::MaybeUninit;
 use std::process::ExitCode;
-
-struct WrapWrite<'w>(&'w mut dyn Write);
-impl<'w> libyaml_safer::Write for WrapWrite<'w> {
-    fn write(&mut self, buffer: &[u8]) -> bool {
-        match Write::write(self.0, buffer) {
-            Ok(n) => n != 0,
-            Err(_) => false,
-        }
-    }
-}
 
 pub(crate) unsafe fn unsafe_main(
     stdin: &mut dyn Read,
@@ -54,9 +43,7 @@ pub(crate) unsafe fn unsafe_main(
     }
     let mut emitter = emitter.assume_init();
 
-    let mut stdout = WrapWrite(stdout);
-
-    yaml_emitter_set_output(&mut emitter, &mut stdout);
+    yaml_emitter_set_output(&mut emitter, stdout);
     yaml_emitter_set_canonical(&mut emitter, false);
     yaml_emitter_set_unicode(&mut emitter, false);
 
@@ -126,22 +113,8 @@ pub(crate) unsafe fn unsafe_main(
         if result.is_err() {
             break Err("Memory error: Not enough memory for creating an event".into());
         }
-        if yaml_emitter_emit(&mut emitter, event).is_err() {
-            break Err(match emitter.error {
-                YAML_MEMORY_ERROR => "Memory error: Not enough memory for emitting".into(),
-                YAML_WRITER_ERROR => format!(
-                    "Writer error: {}",
-                    emitter.problem.unwrap_or("<NO ERROR MESSAGE>")
-                )
-                .into(),
-                YAML_EMITTER_ERROR => format!(
-                    "Emitter error: {}",
-                    emitter.problem.unwrap_or("<NO ERROR MESSAGE>")
-                )
-                .into(),
-                // Couldn't happen.
-                _ => "Internal error".into(),
-            });
+        if let Err(err) = yaml_emitter_emit(&mut emitter, event) {
+            break Err(err.into());
         }
     };
 

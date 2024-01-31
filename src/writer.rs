@@ -1,37 +1,32 @@
+use crate::yaml::WriterError;
 use crate::yaml_encoding_t::YAML_UTF16BE_ENCODING;
-use crate::{
-    yaml_emitter_t, YAML_ANY_ENCODING, YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING, YAML_WRITER_ERROR,
-};
-
-fn yaml_emitter_set_writer_error(
-    emitter: &mut yaml_emitter_t,
-    problem: &'static str,
-) -> Result<(), ()> {
-    emitter.error = YAML_WRITER_ERROR;
-    emitter.problem = Some(problem);
-    Err(())
-}
+use crate::{yaml_emitter_t, YAML_ANY_ENCODING, YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING};
 
 /// Flush the accumulated characters to the output.
-pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {
     __assert!((emitter.write_handler).is_some());
     __assert!(emitter.encoding != YAML_ANY_ENCODING);
 
     if emitter.buffer.is_empty() {
         return Ok(());
     }
+
+    // TODO: Support partial writes. These calls fail unless the writer is able
+    // to write absolutely everything in the buffer.
+
     if emitter.encoding == YAML_UTF8_ENCODING {
         let to_emit = emitter.buffer.as_bytes();
         if emitter
             .write_handler
             .as_mut()
-            .expect("non-null function pointer")
-            .write(to_emit)
+            .expect("non-null writer")
+            .write(to_emit)?
+            == to_emit.len()
         {
             emitter.buffer.clear();
             return Ok(());
         } else {
-            return yaml_emitter_set_writer_error(emitter, "write error");
+            return Err(WriterError::Incomplete);
         }
     }
 
@@ -56,12 +51,13 @@ pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
         .write_handler
         .as_mut()
         .expect("non-null function pointer")
-        .write(to_emit)
+        .write(to_emit)?
+        == to_emit.len()
     {
         emitter.buffer.clear();
         emitter.raw_buffer.clear();
         Ok(())
     } else {
-        yaml_emitter_set_writer_error(emitter, "write error")
+        return Err(WriterError::Incomplete);
     }
 }
