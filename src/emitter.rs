@@ -4,8 +4,8 @@ use crate::api::OUTPUT_BUFFER_SIZE;
 use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_printable, is_space,
 };
-use crate::ops::{ForceAdd as _, ForceMul as _};
-use crate::yaml::{size_t, yaml_char_t, YamlEventData};
+use crate::ops::ForceMul as _;
+use crate::yaml::YamlEventData;
 use crate::{
     libc, yaml_emitter_flush, yaml_emitter_t, yaml_event_delete, yaml_event_t, yaml_scalar_style_t,
     yaml_tag_directive_t, yaml_version_directive_t, YAML_ANY_BREAK, YAML_ANY_ENCODING,
@@ -22,7 +22,6 @@ use crate::{
     YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_LN_BREAK, YAML_PLAIN_SCALAR_STYLE,
     YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
 };
-use core::ptr::{self};
 
 unsafe fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     if emitter.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
@@ -82,6 +81,40 @@ unsafe fn WRITE_BREAK_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(),
     Ok(())
 }
 
+#[derive(Default)]
+struct Analysis<'a> {
+    pub anchor: Option<AnchorAnalysis<'a>>,
+    pub tag: Option<TagAnalysis<'a>>,
+    pub scalar: Option<ScalarAnalysis<'a>>,
+}
+
+struct AnchorAnalysis<'a> {
+    pub anchor: &'a str,
+    pub alias: bool,
+}
+
+struct TagAnalysis<'a> {
+    pub handle: &'a str,
+    pub suffix: &'a str,
+}
+
+struct ScalarAnalysis<'a> {
+    /// The scalar value.
+    pub value: &'a str,
+    /// Does the scalar contain line breaks?
+    pub multiline: bool,
+    /// Can the scalar be expessed in the flow plain style?
+    pub flow_plain_allowed: bool,
+    /// Can the scalar be expressed in the block plain style?
+    pub block_plain_allowed: bool,
+    /// Can the scalar be expressed in the single quoted style?
+    pub single_quoted_allowed: bool,
+    /// Can the scalar be expressed in the literal or folded styles?
+    pub block_allowed: bool,
+    /// The output style.
+    pub style: yaml_scalar_style_t,
+}
+
 fn yaml_emitter_set_emitter_error(
     emitter: &mut yaml_emitter_t,
     problem: &'static str,
@@ -103,9 +136,17 @@ pub unsafe fn yaml_emitter_emit(
 ) -> Result<(), ()> {
     emitter.events.push_back(event);
     while let Some(mut event) = yaml_emitter_needs_mode_events(emitter) {
-        yaml_emitter_analyze_event(emitter, &event)?;
-        yaml_emitter_state_machine(emitter, &event)?;
+        let tag_directives = core::mem::take(&mut emitter.tag_directives);
+
+        let mut analysis = yaml_emitter_analyze_event(emitter, &event, &tag_directives)?;
+        yaml_emitter_state_machine(emitter, &event, &mut analysis)?;
         yaml_event_delete(&mut event);
+
+        // The DOCUMENT-START event populates the tag directives, and this
+        // happens only once, so don't swap out the tags in that case.
+        if emitter.tag_directives.is_empty() {
+            emitter.tag_directives = tag_directives;
+        }
     }
     Ok(())
 }
@@ -180,6 +221,7 @@ unsafe fn yaml_emitter_increase_indent(emitter: &mut yaml_emitter_t, flow: bool,
 unsafe fn yaml_emitter_state_machine(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     match emitter.state {
         YAML_EMIT_STREAM_START_STATE => yaml_emitter_emit_stream_start(emitter, event),
@@ -187,43 +229,45 @@ unsafe fn yaml_emitter_state_machine(
             yaml_emitter_emit_document_start(emitter, event, true)
         }
         YAML_EMIT_DOCUMENT_START_STATE => yaml_emitter_emit_document_start(emitter, event, false),
-        YAML_EMIT_DOCUMENT_CONTENT_STATE => yaml_emitter_emit_document_content(emitter, event),
+        YAML_EMIT_DOCUMENT_CONTENT_STATE => {
+            yaml_emitter_emit_document_content(emitter, event, analysis)
+        }
         YAML_EMIT_DOCUMENT_END_STATE => yaml_emitter_emit_document_end(emitter, event),
         YAML_EMIT_FLOW_SEQUENCE_FIRST_ITEM_STATE => {
-            yaml_emitter_emit_flow_sequence_item(emitter, event, true)
+            yaml_emitter_emit_flow_sequence_item(emitter, event, true, analysis)
         }
         YAML_EMIT_FLOW_SEQUENCE_ITEM_STATE => {
-            yaml_emitter_emit_flow_sequence_item(emitter, event, false)
+            yaml_emitter_emit_flow_sequence_item(emitter, event, false, analysis)
         }
         YAML_EMIT_FLOW_MAPPING_FIRST_KEY_STATE => {
-            yaml_emitter_emit_flow_mapping_key(emitter, event, true)
+            yaml_emitter_emit_flow_mapping_key(emitter, event, true, analysis)
         }
         YAML_EMIT_FLOW_MAPPING_KEY_STATE => {
-            yaml_emitter_emit_flow_mapping_key(emitter, event, false)
+            yaml_emitter_emit_flow_mapping_key(emitter, event, false, analysis)
         }
         YAML_EMIT_FLOW_MAPPING_SIMPLE_VALUE_STATE => {
-            yaml_emitter_emit_flow_mapping_value(emitter, event, true)
+            yaml_emitter_emit_flow_mapping_value(emitter, event, true, analysis)
         }
         YAML_EMIT_FLOW_MAPPING_VALUE_STATE => {
-            yaml_emitter_emit_flow_mapping_value(emitter, event, false)
+            yaml_emitter_emit_flow_mapping_value(emitter, event, false, analysis)
         }
         YAML_EMIT_BLOCK_SEQUENCE_FIRST_ITEM_STATE => {
-            yaml_emitter_emit_block_sequence_item(emitter, event, true)
+            yaml_emitter_emit_block_sequence_item(emitter, event, true, analysis)
         }
         YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE => {
-            yaml_emitter_emit_block_sequence_item(emitter, event, false)
+            yaml_emitter_emit_block_sequence_item(emitter, event, false, analysis)
         }
         YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE => {
-            yaml_emitter_emit_block_mapping_key(emitter, event, true)
+            yaml_emitter_emit_block_mapping_key(emitter, event, true, analysis)
         }
         YAML_EMIT_BLOCK_MAPPING_KEY_STATE => {
-            yaml_emitter_emit_block_mapping_key(emitter, event, false)
+            yaml_emitter_emit_block_mapping_key(emitter, event, false, analysis)
         }
         YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE => {
-            yaml_emitter_emit_block_mapping_value(emitter, event, true)
+            yaml_emitter_emit_block_mapping_value(emitter, event, true, analysis)
         }
         YAML_EMIT_BLOCK_MAPPING_VALUE_STATE => {
-            yaml_emitter_emit_block_mapping_value(emitter, event, false)
+            yaml_emitter_emit_block_mapping_value(emitter, event, false, analysis)
         }
         YAML_EMIT_END_STATE => {
             yaml_emitter_set_emitter_error(emitter, "expected nothing after STREAM-END")
@@ -362,9 +406,10 @@ unsafe fn yaml_emitter_emit_document_start(
 unsafe fn yaml_emitter_emit_document_content(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     emitter.states.push(YAML_EMIT_DOCUMENT_END_STATE);
-    yaml_emitter_emit_node(emitter, event, true, false, false, false)
+    yaml_emitter_emit_node(emitter, event, true, false, false, false, analysis)
 }
 
 unsafe fn yaml_emitter_emit_document_end(
@@ -394,6 +439,7 @@ unsafe fn yaml_emitter_emit_flow_sequence_item(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     first: bool,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     if first {
         yaml_emitter_write_indicator(emitter, "[", true, true, false)?;
@@ -418,13 +464,14 @@ unsafe fn yaml_emitter_emit_flow_sequence_item(
         yaml_emitter_write_indent(emitter)?;
     }
     emitter.states.push(YAML_EMIT_FLOW_SEQUENCE_ITEM_STATE);
-    yaml_emitter_emit_node(emitter, event, false, true, false, false)
+    yaml_emitter_emit_node(emitter, event, false, true, false, false, analysis)
 }
 
 unsafe fn yaml_emitter_emit_flow_mapping_key(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     first: bool,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     if first {
         yaml_emitter_write_indicator(emitter, "{", true, true, false)?;
@@ -451,15 +498,15 @@ unsafe fn yaml_emitter_emit_flow_mapping_key(
     if emitter.canonical || emitter.column > emitter.best_width {
         yaml_emitter_write_indent(emitter)?;
     }
-    if !emitter.canonical && yaml_emitter_check_simple_key(emitter, event) {
+    if !emitter.canonical && yaml_emitter_check_simple_key(emitter, event, analysis) {
         emitter
             .states
             .push(YAML_EMIT_FLOW_MAPPING_SIMPLE_VALUE_STATE);
-        yaml_emitter_emit_node(emitter, event, false, false, true, true)
+        yaml_emitter_emit_node(emitter, event, false, false, true, true, analysis)
     } else {
         yaml_emitter_write_indicator(emitter, "?", true, false, false)?;
         emitter.states.push(YAML_EMIT_FLOW_MAPPING_VALUE_STATE);
-        yaml_emitter_emit_node(emitter, event, false, false, true, false)
+        yaml_emitter_emit_node(emitter, event, false, false, true, false, analysis)
     }
 }
 
@@ -467,6 +514,7 @@ unsafe fn yaml_emitter_emit_flow_mapping_value(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     simple: bool,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     if simple {
         yaml_emitter_write_indicator(emitter, ":", false, false, false)?;
@@ -477,13 +525,14 @@ unsafe fn yaml_emitter_emit_flow_mapping_value(
         yaml_emitter_write_indicator(emitter, ":", true, false, false)?;
     }
     emitter.states.push(YAML_EMIT_FLOW_MAPPING_KEY_STATE);
-    yaml_emitter_emit_node(emitter, event, false, false, true, false)
+    yaml_emitter_emit_node(emitter, event, false, false, true, false, analysis)
 }
 
 unsafe fn yaml_emitter_emit_block_sequence_item(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     first: bool,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     if first {
         yaml_emitter_increase_indent(
@@ -500,13 +549,14 @@ unsafe fn yaml_emitter_emit_block_sequence_item(
     yaml_emitter_write_indent(emitter)?;
     yaml_emitter_write_indicator(emitter, "-", true, false, true)?;
     emitter.states.push(YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE);
-    yaml_emitter_emit_node(emitter, event, false, true, false, false)
+    yaml_emitter_emit_node(emitter, event, false, true, false, false, analysis)
 }
 
 unsafe fn yaml_emitter_emit_block_mapping_key(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     first: bool,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     if first {
         yaml_emitter_increase_indent(emitter, false, false);
@@ -517,15 +567,15 @@ unsafe fn yaml_emitter_emit_block_mapping_key(
         return Ok(());
     }
     yaml_emitter_write_indent(emitter)?;
-    if yaml_emitter_check_simple_key(emitter, event) {
+    if yaml_emitter_check_simple_key(emitter, event, analysis) {
         emitter
             .states
             .push(YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE);
-        yaml_emitter_emit_node(emitter, event, false, false, true, true)
+        yaml_emitter_emit_node(emitter, event, false, false, true, true, analysis)
     } else {
         yaml_emitter_write_indicator(emitter, "?", true, false, true)?;
         emitter.states.push(YAML_EMIT_BLOCK_MAPPING_VALUE_STATE);
-        yaml_emitter_emit_node(emitter, event, false, false, true, false)
+        yaml_emitter_emit_node(emitter, event, false, false, true, false, analysis)
     }
 }
 
@@ -533,6 +583,7 @@ unsafe fn yaml_emitter_emit_block_mapping_value(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
     simple: bool,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     if simple {
         yaml_emitter_write_indicator(emitter, ":", false, false, false)?;
@@ -541,7 +592,7 @@ unsafe fn yaml_emitter_emit_block_mapping_value(
         yaml_emitter_write_indicator(emitter, ":", true, false, true)?;
     }
     emitter.states.push(YAML_EMIT_BLOCK_MAPPING_KEY_STATE);
-    yaml_emitter_emit_node(emitter, event, false, false, true, false)
+    yaml_emitter_emit_node(emitter, event, false, false, true, false, analysis)
 }
 
 unsafe fn yaml_emitter_emit_node(
@@ -551,6 +602,7 @@ unsafe fn yaml_emitter_emit_node(
     sequence: bool,
     mapping: bool,
     simple_key: bool,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
     emitter.root_context = root;
     emitter.sequence_context = sequence;
@@ -558,10 +610,14 @@ unsafe fn yaml_emitter_emit_node(
     emitter.simple_key_context = simple_key;
 
     match event.data {
-        YamlEventData::Alias { .. } => yaml_emitter_emit_alias(emitter, event),
-        YamlEventData::Scalar { .. } => yaml_emitter_emit_scalar(emitter, event),
-        YamlEventData::SequenceStart { .. } => yaml_emitter_emit_sequence_start(emitter, event),
-        YamlEventData::MappingStart { .. } => yaml_emitter_emit_mapping_start(emitter, event),
+        YamlEventData::Alias { .. } => yaml_emitter_emit_alias(emitter, event, &analysis.anchor),
+        YamlEventData::Scalar { .. } => yaml_emitter_emit_scalar(emitter, event, analysis),
+        YamlEventData::SequenceStart { .. } => {
+            yaml_emitter_emit_sequence_start(emitter, event, analysis)
+        }
+        YamlEventData::MappingStart { .. } => {
+            yaml_emitter_emit_mapping_start(emitter, event, analysis)
+        }
         _ => yaml_emitter_set_emitter_error(
             emitter,
             "expected SCALAR, SEQUENCE-START, MAPPING-START, or ALIAS",
@@ -572,8 +628,9 @@ unsafe fn yaml_emitter_emit_node(
 unsafe fn yaml_emitter_emit_alias(
     emitter: &mut yaml_emitter_t,
     _event: &yaml_event_t,
+    analysis: &Option<AnchorAnalysis>,
 ) -> Result<(), ()> {
-    yaml_emitter_process_anchor(emitter)?;
+    yaml_emitter_process_anchor(emitter, analysis)?;
     if emitter.simple_key_context {
         PUT(emitter, b' ')?;
     }
@@ -584,12 +641,22 @@ unsafe fn yaml_emitter_emit_alias(
 unsafe fn yaml_emitter_emit_scalar(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
+    analysis: &mut Analysis,
 ) -> Result<(), ()> {
-    yaml_emitter_select_scalar_style(emitter, event)?;
-    yaml_emitter_process_anchor(emitter)?;
-    yaml_emitter_process_tag(emitter)?;
+    let Analysis {
+        anchor,
+        tag,
+        scalar: Some(scalar),
+    } = analysis
+    else {
+        unreachable!("no scalar analysis");
+    };
+
+    yaml_emitter_select_scalar_style(emitter, event, scalar, tag)?;
+    yaml_emitter_process_anchor(emitter, anchor)?;
+    yaml_emitter_process_tag(emitter, tag)?;
     yaml_emitter_increase_indent(emitter, true, false);
-    yaml_emitter_process_scalar(emitter)?;
+    yaml_emitter_process_scalar(emitter, scalar)?;
     emitter.indent = emitter.indents.pop().unwrap();
     emitter.state = emitter.states.pop().unwrap();
     Ok(())
@@ -598,9 +665,11 @@ unsafe fn yaml_emitter_emit_scalar(
 unsafe fn yaml_emitter_emit_sequence_start(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
+    analysis: &Analysis,
 ) -> Result<(), ()> {
-    yaml_emitter_process_anchor(emitter)?;
-    yaml_emitter_process_tag(emitter)?;
+    let Analysis { anchor, tag, .. } = analysis;
+    yaml_emitter_process_anchor(emitter, anchor)?;
+    yaml_emitter_process_tag(emitter, tag)?;
 
     let style = if let YamlEventData::SequenceStart { style, .. } = &event.data {
         *style
@@ -623,9 +692,11 @@ unsafe fn yaml_emitter_emit_sequence_start(
 unsafe fn yaml_emitter_emit_mapping_start(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
+    analysis: &Analysis,
 ) -> Result<(), ()> {
-    yaml_emitter_process_anchor(emitter)?;
-    yaml_emitter_process_tag(emitter)?;
+    let Analysis { anchor, tag, .. } = analysis;
+    yaml_emitter_process_anchor(emitter, anchor)?;
+    yaml_emitter_process_tag(emitter, tag)?;
 
     let style = if let YamlEventData::MappingStart { style, .. } = &event.data {
         *style
@@ -649,10 +720,7 @@ unsafe fn yaml_emitter_check_empty_document(_emitter: &yaml_emitter_t) -> bool {
     false
 }
 
-unsafe fn yaml_emitter_check_empty_sequence(
-    emitter: &yaml_emitter_t,
-    event: &yaml_event_t,
-) -> bool {
+fn yaml_emitter_check_empty_sequence(emitter: &yaml_emitter_t, event: &yaml_event_t) -> bool {
     if emitter.events.len() < 1 {
         return false;
     }
@@ -669,7 +737,7 @@ unsafe fn yaml_emitter_check_empty_sequence(
     start && end
 }
 
-unsafe fn yaml_emitter_check_empty_mapping(emitter: &yaml_emitter_t, event: &yaml_event_t) -> bool {
+fn yaml_emitter_check_empty_mapping(emitter: &yaml_emitter_t, event: &yaml_event_t) -> bool {
     if emitter.events.len() < 1 {
         return false;
     }
@@ -686,46 +754,55 @@ unsafe fn yaml_emitter_check_empty_mapping(emitter: &yaml_emitter_t, event: &yam
     start && end
 }
 
-unsafe fn yaml_emitter_check_simple_key(emitter: &yaml_emitter_t, event: &yaml_event_t) -> bool {
-    let mut length: size_t = 0_u64;
+fn yaml_emitter_check_simple_key(
+    emitter: &yaml_emitter_t,
+    event: &yaml_event_t,
+    analysis: &Analysis,
+) -> bool {
+    let Analysis {
+        tag,
+        anchor,
+        scalar,
+    } = analysis;
+
+    let mut length = anchor.as_ref().map(|a| a.anchor.len()).unwrap_or(0)
+        + tag
+            .as_ref()
+            .map(|t| t.handle.len() + t.suffix.len())
+            .unwrap_or(0);
 
     match event.data {
         YamlEventData::Alias { .. } => {
-            length =
-                (length as libc::c_ulong).force_add(emitter.anchor_data.anchor_length) as size_t;
+            length = analysis
+                .anchor
+                .as_ref()
+                .map(|a| a.anchor.len())
+                .unwrap_or(0);
         }
         YamlEventData::Scalar { .. } => {
-            if emitter.scalar_data.multiline {
+            let Some(scalar) = scalar else {
+                panic!("no analysis for scalar")
+            };
+
+            if scalar.multiline {
                 return false;
             }
-            length = (length as libc::c_ulong)
-                .force_add(emitter.anchor_data.anchor_length)
-                .force_add(emitter.tag_data.handle_length)
-                .force_add(emitter.tag_data.suffix_length)
-                .force_add(emitter.scalar_data.length) as size_t;
+            length += scalar.value.len();
         }
         YamlEventData::SequenceStart { .. } => {
             if !yaml_emitter_check_empty_sequence(emitter, event) {
                 return false;
             }
-            length = (length as libc::c_ulong)
-                .force_add(emitter.anchor_data.anchor_length)
-                .force_add(emitter.tag_data.handle_length)
-                .force_add(emitter.tag_data.suffix_length) as size_t;
         }
         YamlEventData::MappingStart { .. } => {
             if !yaml_emitter_check_empty_mapping(emitter, event) {
                 return false;
             }
-            length = (length as libc::c_ulong)
-                .force_add(emitter.anchor_data.anchor_length)
-                .force_add(emitter.tag_data.handle_length)
-                .force_add(emitter.tag_data.suffix_length) as size_t;
         }
         _ => return false,
     }
 
-    if length > 128_u64 {
+    if length > 128 {
         return false;
     }
 
@@ -735,6 +812,8 @@ unsafe fn yaml_emitter_check_simple_key(emitter: &yaml_emitter_t, event: &yaml_e
 unsafe fn yaml_emitter_select_scalar_style(
     emitter: &mut yaml_emitter_t,
     event: &yaml_event_t,
+    scalar_analysis: &mut ScalarAnalysis,
+    tag_analysis: &mut Option<TagAnalysis>,
 ) -> Result<(), ()> {
     if let YamlEventData::Scalar {
         plain_implicit,
@@ -744,12 +823,12 @@ unsafe fn yaml_emitter_select_scalar_style(
     } = &event.data
     {
         let mut style: yaml_scalar_style_t = *style;
-        let no_tag = emitter.tag_data.handle.is_null() && emitter.tag_data.suffix.is_null();
+        let no_tag = tag_analysis.is_none();
         if no_tag && !*plain_implicit && !*quoted_implicit {
-            return yaml_emitter_set_emitter_error(
+            yaml_emitter_set_emitter_error(
                 emitter,
                 "neither tag nor implicit flags are specified",
-            );
+            )?;
         }
         if style == YAML_ANY_SCALAR_STYLE {
             style = YAML_PLAIN_SCALAR_STYLE;
@@ -757,16 +836,16 @@ unsafe fn yaml_emitter_select_scalar_style(
         if emitter.canonical {
             style = YAML_DOUBLE_QUOTED_SCALAR_STYLE;
         }
-        if emitter.simple_key_context && emitter.scalar_data.multiline {
+        if emitter.simple_key_context && scalar_analysis.multiline {
             style = YAML_DOUBLE_QUOTED_SCALAR_STYLE;
         }
         if style == YAML_PLAIN_SCALAR_STYLE {
-            if emitter.flow_level != 0 && !emitter.scalar_data.flow_plain_allowed
-                || emitter.flow_level == 0 && !emitter.scalar_data.block_plain_allowed
+            if emitter.flow_level != 0 && !scalar_analysis.flow_plain_allowed
+                || emitter.flow_level == 0 && !scalar_analysis.block_plain_allowed
             {
                 style = YAML_SINGLE_QUOTED_SCALAR_STYLE;
             }
-            if emitter.scalar_data.length == 0
+            if scalar_analysis.value.is_empty()
                 && (emitter.flow_level != 0 || emitter.simple_key_context)
             {
                 style = YAML_SINGLE_QUOTED_SCALAR_STYLE;
@@ -776,12 +855,12 @@ unsafe fn yaml_emitter_select_scalar_style(
             }
         }
         if style == YAML_SINGLE_QUOTED_SCALAR_STYLE {
-            if !emitter.scalar_data.single_quoted_allowed {
+            if !scalar_analysis.single_quoted_allowed {
                 style = YAML_DOUBLE_QUOTED_SCALAR_STYLE;
             }
         }
         if style == YAML_LITERAL_SCALAR_STYLE || style == YAML_FOLDED_SCALAR_STYLE {
-            if !emitter.scalar_data.block_allowed
+            if !scalar_analysis.block_allowed
                 || emitter.flow_level != 0
                 || emitter.simple_key_context
             {
@@ -789,123 +868,90 @@ unsafe fn yaml_emitter_select_scalar_style(
             }
         }
         if no_tag && !*quoted_implicit && style != YAML_PLAIN_SCALAR_STYLE {
-            emitter.tag_data.handle =
-                b"!\0" as *const u8 as *const libc::c_char as *mut yaml_char_t;
-            emitter.tag_data.handle_length = 1_u64;
+            *tag_analysis = Some(TagAnalysis {
+                handle: "!",
+                suffix: "",
+            });
         }
-        emitter.scalar_data.style = style;
+        scalar_analysis.style = style;
         Ok(())
     } else {
         unreachable!()
     }
 }
 
-unsafe fn yaml_emitter_process_anchor(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
-    if emitter.anchor_data.anchor.is_null() {
+unsafe fn yaml_emitter_process_anchor(
+    emitter: &mut yaml_emitter_t,
+    analysis: &Option<AnchorAnalysis>,
+) -> Result<(), ()> {
+    let Some(analysis) = analysis.as_ref() else {
         return Ok(());
-    }
+    };
     yaml_emitter_write_indicator(
         emitter,
-        if emitter.anchor_data.alias { "*" } else { "&" },
+        if analysis.alias { "*" } else { "&" },
         true,
         false,
         false,
     )?;
-    yaml_emitter_write_anchor(
-        emitter,
-        core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-            emitter.anchor_data.anchor,
-            emitter.anchor_data.anchor_length as _,
-        )),
-    )
+    yaml_emitter_write_anchor(emitter, analysis.anchor)
 }
 
-unsafe fn yaml_emitter_process_tag(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
-    if emitter.tag_data.handle.is_null() && emitter.tag_data.suffix.is_null() {
+unsafe fn yaml_emitter_process_tag(
+    emitter: &mut yaml_emitter_t,
+    analysis: &Option<TagAnalysis>,
+) -> Result<(), ()> {
+    let Some(analysis) = analysis.as_ref() else {
+        return Ok(());
+    };
+
+    if analysis.handle.is_empty() && analysis.suffix.is_empty() {
         return Ok(());
     }
-    if !emitter.tag_data.handle.is_null() {
-        yaml_emitter_write_tag_handle(
-            emitter,
-            core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                emitter.tag_data.handle,
-                emitter.tag_data.handle_length as _,
-            )),
-        )?;
-        if !emitter.tag_data.suffix.is_null() {
-            yaml_emitter_write_tag_content(
-                emitter,
-                core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                    emitter.tag_data.suffix,
-                    emitter.tag_data.suffix_length as _,
-                )),
-                false,
-            )?;
+    if !analysis.handle.is_empty() {
+        yaml_emitter_write_tag_handle(emitter, analysis.handle)?;
+        if !analysis.suffix.is_empty() {
+            yaml_emitter_write_tag_content(emitter, analysis.suffix, false)?;
         }
     } else {
         yaml_emitter_write_indicator(emitter, "!<", true, false, false)?;
-        yaml_emitter_write_tag_content(
-            emitter,
-            core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                emitter.tag_data.suffix,
-                emitter.tag_data.suffix_length as _,
-            )),
-            false,
-        )?;
+        yaml_emitter_write_tag_content(emitter, analysis.suffix, false)?;
         yaml_emitter_write_indicator(emitter, ">", false, false, false)?;
     }
     Ok(())
 }
 
-unsafe fn yaml_emitter_process_scalar(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
-    match emitter.scalar_data.style {
+unsafe fn yaml_emitter_process_scalar(
+    emitter: &mut yaml_emitter_t,
+    analysis: &ScalarAnalysis,
+) -> Result<(), ()> {
+    match analysis.style {
         YAML_PLAIN_SCALAR_STYLE => {
             return yaml_emitter_write_plain_scalar(
                 emitter,
-                core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                    emitter.scalar_data.value,
-                    emitter.scalar_data.length as _,
-                )),
+                analysis.value,
                 !emitter.simple_key_context,
             );
         }
         YAML_SINGLE_QUOTED_SCALAR_STYLE => {
             return yaml_emitter_write_single_quoted_scalar(
                 emitter,
-                core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                    emitter.scalar_data.value,
-                    emitter.scalar_data.length as _,
-                )),
+                analysis.value,
                 !emitter.simple_key_context,
             );
         }
         YAML_DOUBLE_QUOTED_SCALAR_STYLE => {
             return yaml_emitter_write_double_quoted_scalar(
                 emitter,
-                core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                    emitter.scalar_data.value,
-                    emitter.scalar_data.length as _,
-                )),
+                analysis.value,
                 !emitter.simple_key_context,
             );
         }
         YAML_LITERAL_SCALAR_STYLE => {
-            return yaml_emitter_write_literal_scalar(
-                emitter,
-                core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                    emitter.scalar_data.value,
-                    emitter.scalar_data.length as _,
-                )),
-            );
+            return yaml_emitter_write_literal_scalar(emitter, analysis.value);
         }
         YAML_FOLDED_SCALAR_STYLE => {
-            return yaml_emitter_write_folded_scalar(
-                emitter,
-                core::str::from_utf8_unchecked(core::slice::from_raw_parts(
-                    emitter.scalar_data.value,
-                    emitter.scalar_data.length as _,
-                )),
-            );
+            return yaml_emitter_write_folded_scalar(emitter, analysis.value);
         }
         _ => {}
     }
@@ -955,63 +1001,66 @@ unsafe fn yaml_emitter_analyze_tag_directive(
     Ok(())
 }
 
-unsafe fn yaml_emitter_analyze_anchor(
+fn yaml_emitter_analyze_anchor<'a>(
     emitter: &mut yaml_emitter_t,
-    anchor: &str,
+    anchor: &'a str,
     alias: bool,
-) -> Result<(), ()> {
+) -> Result<AnchorAnalysis<'a>, ()> {
     if anchor.is_empty() {
-        return yaml_emitter_set_emitter_error(
+        yaml_emitter_set_emitter_error(
             emitter,
             if alias {
                 "alias value must not be empty"
             } else {
                 "anchor value must not be empty"
             },
-        );
+        )?;
     }
 
     for ch in anchor.chars() {
         if !IS_ALPHA_CHAR!(ch) {
-            return yaml_emitter_set_emitter_error(
+            yaml_emitter_set_emitter_error(
                 emitter,
                 if alias {
                     "alias value must contain alphanumerical characters only"
                 } else {
                     "anchor value must contain alphanumerical characters only"
                 },
-            );
+            )?;
         }
     }
 
-    emitter.anchor_data.anchor = anchor.as_ptr();
-    emitter.anchor_data.anchor_length = anchor.len() as _;
-    emitter.anchor_data.alias = alias;
-    Ok(())
+    Ok(AnchorAnalysis { anchor, alias })
 }
 
-unsafe fn yaml_emitter_analyze_tag(emitter: &mut yaml_emitter_t, tag: &str) -> Result<(), ()> {
+fn yaml_emitter_analyze_tag<'a>(
+    emitter: &mut yaml_emitter_t,
+    tag: &'a str,
+    tag_directives: &'a [yaml_tag_directive_t],
+) -> Result<TagAnalysis<'a>, ()> {
     if tag.is_empty() {
-        return yaml_emitter_set_emitter_error(emitter, "tag value must not be empty");
+        yaml_emitter_set_emitter_error(emitter, "tag value must not be empty")?;
     }
 
-    for tag_directive in emitter.tag_directives.iter() {
+    let mut handle = "";
+    let mut suffix = tag;
+
+    for tag_directive in tag_directives.iter() {
         let prefix_len = tag_directive.prefix.len();
         if prefix_len < tag.len() && tag_directive.prefix == tag[0..prefix_len] {
-            emitter.tag_data.handle = tag_directive.handle.as_ptr();
-            emitter.tag_data.handle_length = tag_directive.handle.len() as _;
-            let suffix = &tag[prefix_len..];
-            emitter.tag_data.suffix = suffix.as_ptr();
-            emitter.tag_data.suffix_length = suffix.len() as _;
-            return Ok(());
+            handle = &tag_directive.handle;
+            suffix = &tag[prefix_len..];
+            break;
         }
     }
-    emitter.tag_data.suffix = tag.as_ptr();
-    emitter.tag_data.suffix_length = tag.len() as _;
-    Ok(())
+
+    Ok(TagAnalysis { handle, suffix })
 }
 
-unsafe fn yaml_emitter_analyze_scalar(emitter: &mut yaml_emitter_t, value: &str) -> Result<(), ()> {
+fn yaml_emitter_analyze_scalar<'a>(
+    emitter: &mut yaml_emitter_t,
+    value: &'a str,
+) -> Result<ScalarAnalysis<'a>, ()> {
     let mut block_indicators = false;
     let mut flow_indicators = false;
     let mut line_breaks = false;
@@ -1026,16 +1075,16 @@ unsafe fn yaml_emitter_analyze_scalar(emitter: &mut yaml_emitter_t, value: &str)
     let mut previous_space = false;
     let mut previous_break = false;
 
-    emitter.scalar_data.value = value.as_ptr();
-    emitter.scalar_data.length = value.len() as _;
-
     if value.is_empty() {
-        emitter.scalar_data.multiline = false;
-        emitter.scalar_data.flow_plain_allowed = false;
-        emitter.scalar_data.block_plain_allowed = true;
-        emitter.scalar_data.single_quoted_allowed = true;
-        emitter.scalar_data.block_allowed = false;
-        return Ok(());
+        return Ok(ScalarAnalysis {
+            value: "",
+            multiline: false,
+            flow_plain_allowed: false,
+            block_plain_allowed: true,
+            single_quoted_allowed: true,
+            block_allowed: false,
+            style: YAML_ANY_SCALAR_STYLE,
+        });
     }
 
     if value.starts_with("---") || value.starts_with("...") {
@@ -1128,57 +1177,63 @@ unsafe fn yaml_emitter_analyze_scalar(emitter: &mut yaml_emitter_t, value: &str)
         first = false;
     }
 
-    emitter.scalar_data.multiline = line_breaks;
-    emitter.scalar_data.flow_plain_allowed = true;
-    emitter.scalar_data.block_plain_allowed = true;
-    emitter.scalar_data.single_quoted_allowed = true;
-    emitter.scalar_data.block_allowed = true;
+    let mut analysis = ScalarAnalysis {
+        value,
+        multiline: line_breaks,
+        flow_plain_allowed: true,
+        block_plain_allowed: true,
+        single_quoted_allowed: true,
+        block_allowed: true,
+        style: YAML_ANY_SCALAR_STYLE,
+    };
+
+    analysis.multiline = line_breaks;
+    analysis.flow_plain_allowed = true;
+    analysis.block_plain_allowed = true;
+    analysis.single_quoted_allowed = true;
+    analysis.block_allowed = true;
     if leading_space || leading_break || trailing_space || trailing_break {
-        emitter.scalar_data.flow_plain_allowed = false;
-        emitter.scalar_data.block_plain_allowed = false;
+        analysis.flow_plain_allowed = false;
+        analysis.block_plain_allowed = false;
     }
     if trailing_space {
-        emitter.scalar_data.block_allowed = false;
+        analysis.block_allowed = false;
     }
     if break_space {
-        emitter.scalar_data.flow_plain_allowed = false;
-        emitter.scalar_data.block_plain_allowed = false;
-        emitter.scalar_data.single_quoted_allowed = false;
+        analysis.flow_plain_allowed = false;
+        analysis.block_plain_allowed = false;
+        analysis.single_quoted_allowed = false;
     }
     if space_break || special_characters {
-        emitter.scalar_data.flow_plain_allowed = false;
-        emitter.scalar_data.block_plain_allowed = false;
-        emitter.scalar_data.single_quoted_allowed = false;
-        emitter.scalar_data.block_allowed = false;
+        analysis.flow_plain_allowed = false;
+        analysis.block_plain_allowed = false;
+        analysis.single_quoted_allowed = false;
+        analysis.block_allowed = false;
     }
     if line_breaks {
-        emitter.scalar_data.flow_plain_allowed = false;
-        emitter.scalar_data.block_plain_allowed = false;
+        analysis.flow_plain_allowed = false;
+        analysis.block_plain_allowed = false;
     }
     if flow_indicators {
-        emitter.scalar_data.flow_plain_allowed = false;
+        analysis.flow_plain_allowed = false;
     }
     if block_indicators {
-        emitter.scalar_data.block_plain_allowed = false;
+        analysis.block_plain_allowed = false;
     }
-    Ok(())
+    Ok(analysis)
 }
 
-unsafe fn yaml_emitter_analyze_event(
+fn yaml_emitter_analyze_event<'a>(
     emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
-) -> Result<(), ()> {
-    emitter.anchor_data.anchor = ptr::null_mut::<yaml_char_t>();
-    emitter.anchor_data.anchor_length = 0_u64;
-    emitter.tag_data.handle = ptr::null_mut::<yaml_char_t>();
-    emitter.tag_data.handle_length = 0_u64;
-    emitter.tag_data.suffix = ptr::null_mut::<yaml_char_t>();
-    emitter.tag_data.suffix_length = 0_u64;
-    emitter.scalar_data.value = ptr::null_mut::<yaml_char_t>();
-    emitter.scalar_data.length = 0_u64;
+    event: &'a yaml_event_t,
+    tag_directives: &'a [yaml_tag_directive_t],
+) -> Result<Analysis<'a>, ()> {
+    let mut analysis = Analysis::default();
 
     match &event.data {
-        YamlEventData::Alias { anchor } => yaml_emitter_analyze_anchor(emitter, anchor, true),
+        YamlEventData::Alias { anchor } => {
+            analysis.anchor = Some(yaml_emitter_analyze_anchor(emitter, anchor, true)?);
+        }
         YamlEventData::Scalar {
             anchor,
             tag,
@@ -1189,12 +1244,16 @@ unsafe fn yaml_emitter_analyze_event(
         } => {
             let (plain_implicit, quoted_implicit) = (*plain_implicit, *quoted_implicit);
             if let Some(anchor) = anchor {
-                yaml_emitter_analyze_anchor(emitter, anchor, false)?;
+                analysis.anchor = Some(yaml_emitter_analyze_anchor(emitter, anchor, false)?);
             }
             if tag.is_some() && (emitter.canonical || !plain_implicit && !quoted_implicit) {
-                yaml_emitter_analyze_tag(emitter, tag.as_deref().unwrap())?;
+                analysis.tag = Some(yaml_emitter_analyze_tag(
+                    emitter,
+                    tag.as_deref().unwrap(),
+                    tag_directives,
+                )?);
             }
-            yaml_emitter_analyze_scalar(emitter, value)
+            analysis.scalar = Some(yaml_emitter_analyze_scalar(emitter, value)?);
         }
         YamlEventData::SequenceStart {
             anchor,
@@ -1203,12 +1262,15 @@ unsafe fn yaml_emitter_analyze_event(
             ..
         } => {
             if let Some(anchor) = anchor {
-                yaml_emitter_analyze_anchor(emitter, anchor, false)?;
+                analysis.anchor = Some(yaml_emitter_analyze_anchor(emitter, anchor, false)?);
             }
             if tag.is_some() && (emitter.canonical || !*implicit) {
-                yaml_emitter_analyze_tag(emitter, tag.as_deref().unwrap())?;
+                analysis.tag = Some(yaml_emitter_analyze_tag(
+                    emitter,
+                    tag.as_deref().unwrap(),
+                    tag_directives,
+                )?);
             }
-            Ok(())
         }
         YamlEventData::MappingStart {
             anchor,
@@ -1217,15 +1279,20 @@ unsafe fn yaml_emitter_analyze_event(
             ..
         } => {
             if let Some(anchor) = anchor {
-                yaml_emitter_analyze_anchor(emitter, anchor, false)?;
+                analysis.anchor = Some(yaml_emitter_analyze_anchor(emitter, anchor, false)?);
             }
             if tag.is_some() && (emitter.canonical || !*implicit) {
-                yaml_emitter_analyze_tag(emitter, tag.as_deref().unwrap())?;
+                analysis.tag = Some(yaml_emitter_analyze_tag(
+                    emitter,
+                    tag.as_deref().unwrap(),
+                    tag_directives,
+                )?);
             }
-            Ok(())
         }
-        _ => Ok(()),
+        _ => {}
     }
+
+    Ok(analysis)
 }
 
 unsafe fn yaml_emitter_write_bom(emitter: &mut yaml_emitter_t) -> Result<(), ()> {

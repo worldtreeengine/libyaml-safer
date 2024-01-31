@@ -6,7 +6,7 @@ use crate::libc;
 use core::ptr;
 
 pub use self::yaml_encoding_t::*;
-pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t, u8 as yaml_char_t};
+pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t};
 
 /// The version directive data.
 #[derive(Clone, Copy, Debug)]
@@ -936,12 +936,6 @@ pub struct yaml_emitter_t {
     pub(crate) indention: bool,
     /// If an explicit document end is required?
     pub(crate) open_ended: libc::c_int,
-    /// Anchor analysis.
-    pub(crate) anchor_data: unnamed_yaml_emitter_t_anchor_data,
-    /// Tag analysis.
-    pub(crate) tag_data: unnamed_yaml_emitter_t_tag_data,
-    /// Scalar analysis.
-    pub(crate) scalar_data: unnamed_yaml_emitter_t_scalar_data,
     /// If the stream was already opened?
     pub(crate) opened: bool,
     /// If the stream was already closed?
@@ -985,9 +979,6 @@ impl Default for yaml_emitter_t {
             whitespace: Default::default(),
             indention: Default::default(),
             open_ended: Default::default(),
-            anchor_data: Default::default(),
-            tag_data: Default::default(),
-            scalar_data: Default::default(),
             opened: Default::default(),
             closed: Default::default(),
             anchors: Default::default(),
@@ -1012,84 +1003,6 @@ impl Default for unnamed_yaml_emitter_t_output_string {
             buffer: ptr::null_mut(),
             size: 0,
             size_written: ptr::null_mut(),
-        }
-    }
-}
-
-#[repr(C)]
-pub(crate) struct unnamed_yaml_emitter_t_anchor_data {
-    /// The anchor value.
-    pub anchor: *const yaml_char_t,
-    /// The anchor length.
-    pub anchor_length: size_t,
-    /// Is it an alias?
-    pub alias: bool,
-}
-
-impl Default for unnamed_yaml_emitter_t_anchor_data {
-    fn default() -> Self {
-        Self {
-            anchor: ptr::null_mut(),
-            anchor_length: 0,
-            alias: false,
-        }
-    }
-}
-
-#[repr(C)]
-pub(crate) struct unnamed_yaml_emitter_t_tag_data {
-    /// The tag handle.
-    pub handle: *const yaml_char_t,
-    /// The tag handle length.
-    pub handle_length: size_t,
-    /// The tag suffix.
-    pub suffix: *const yaml_char_t,
-    /// The tag suffix length.
-    pub suffix_length: size_t,
-}
-
-impl Default for unnamed_yaml_emitter_t_tag_data {
-    fn default() -> Self {
-        Self {
-            handle: ptr::null_mut(),
-            handle_length: 0,
-            suffix: ptr::null_mut(),
-            suffix_length: 0,
-        }
-    }
-}
-
-#[repr(C)]
-pub(crate) struct unnamed_yaml_emitter_t_scalar_data {
-    /// The scalar value.
-    pub value: *const yaml_char_t,
-    /// The scalar length.
-    pub length: size_t,
-    /// Does the scalar contain line breaks?
-    pub multiline: bool,
-    /// Can the scalar be expessed in the flow plain style?
-    pub flow_plain_allowed: bool,
-    /// Can the scalar be expressed in the block plain style?
-    pub block_plain_allowed: bool,
-    /// Can the scalar be expressed in the single quoted style?
-    pub single_quoted_allowed: bool,
-    /// Can the scalar be expressed in the literal or folded styles?
-    pub block_allowed: bool,
-    /// The output style.
-    pub style: yaml_scalar_style_t,
-}
-
-impl Default for unnamed_yaml_emitter_t_scalar_data {
-    fn default() -> Self {
-        Self {
-            value: ptr::null_mut(),
-            length: 0,
-            multiline: false,
-            flow_plain_allowed: false,
-            block_plain_allowed: false,
-            single_quoted_allowed: false,
-            block_allowed: false,
-            style: Default::default(),
         }
     }
 }
