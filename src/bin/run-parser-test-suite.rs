@@ -61,12 +61,12 @@ pub(crate) unsafe fn unsafe_main(
     loop {
         if yaml_parser_parse(&mut parser, &mut event).is_err() {
             let mut error = format!("Parse error: {}", parser.problem.unwrap_or(""));
-            if parser.problem_mark.line != 0 || (*parser).problem_mark.column != 0 {
+            if parser.problem_mark.line != 0 || parser.problem_mark.column != 0 {
                 let _ = write!(
                     error,
                     "\nLine: {} Column: {}",
-                    ((*parser).problem_mark.line).wrapping_add(1_u64),
-                    ((*parser).problem_mark.column).wrapping_add(1_u64),
+                    (parser.problem_mark.line).wrapping_add(1_u64),
+                    (parser.problem_mark.column).wrapping_add(1_u64),
                 );
             }
             yaml_parser_delete(&mut parser);

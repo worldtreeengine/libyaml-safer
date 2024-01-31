@@ -3,8 +3,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::libc;
-use core::ops::Deref;
-use core::ptr::{self, addr_of};
+use core::ptr;
 
 pub use self::yaml_encoding_t::*;
 pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t, u8 as yaml_char_t};
@@ -672,40 +671,19 @@ pub struct yaml_alias_data_t {
 #[non_exhaustive]
 pub struct yaml_parser_t {
     /// Error type.
-    #[cfg(doc)]
     pub error: yaml_error_type_t,
-    #[cfg(not(doc))]
-    pub(crate) error: yaml_error_type_t,
     /// Error description.
-    #[cfg(doc)]
-    pub problem: *const libc::c_char,
-    #[cfg(not(doc))]
-    pub(crate) problem: Option<&'static str>,
+    pub problem: Option<&'static str>,
     /// The byte about which the problem occured.
-    #[cfg(doc)]
     pub problem_offset: size_t,
-    #[cfg(not(doc))]
-    pub(crate) problem_offset: size_t,
     /// The problematic value (-1 is none).
-    #[cfg(doc)]
     pub problem_value: libc::c_int,
-    #[cfg(not(doc))]
-    pub(crate) problem_value: libc::c_int,
     /// The problem position.
-    #[cfg(doc)]
     pub problem_mark: yaml_mark_t,
-    #[cfg(not(doc))]
-    pub(crate) problem_mark: yaml_mark_t,
     /// The error context.
-    #[cfg(doc)]
-    pub context: *const libc::c_char,
-    #[cfg(not(doc))]
-    pub(crate) context: Option<&'static str>,
+    pub context: Option<&'static str>,
     /// The context position.
-    #[cfg(doc)]
     pub context_mark: yaml_mark_t,
-    #[cfg(not(doc))]
-    pub(crate) context_mark: yaml_mark_t,
     /// Read handler.
     pub(crate) read_handler: Option<yaml_read_handler_t>,
     /// A pointer for passing to the read handler.
@@ -806,33 +784,6 @@ impl Default for yaml_parser_t {
 }
 
 #[repr(C)]
-#[non_exhaustive]
-pub struct yaml_parser_t_prefix {
-    /// Error type.
-    pub error: yaml_error_type_t,
-    /// Error description.
-    pub problem: Option<&'static str>,
-    /// The byte about which the problem occured.
-    pub problem_offset: size_t,
-    /// The problematic value (-1 is none).
-    pub problem_value: libc::c_int,
-    /// The problem position.
-    pub problem_mark: yaml_mark_t,
-    /// The error context.
-    pub context: Option<&'static str>,
-    /// The context position.
-    pub context_mark: yaml_mark_t,
-}
-
-#[doc(hidden)]
-impl Deref for yaml_parser_t {
-    type Target = yaml_parser_t_prefix;
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*addr_of!(*self).cast() }
-    }
-}
-
-#[repr(C)]
 pub(crate) struct unnamed_yaml_parser_t_input_string {
     /// The string start pointer.
     pub start: *const libc::c_uchar,
@@ -926,9 +877,9 @@ pub(crate) struct yaml_anchors_t {
 #[non_exhaustive]
 pub struct yaml_emitter_t {
     /// Error type.
-    pub(crate) error: yaml_error_type_t,
+    pub error: yaml_error_type_t,
     /// Error description.
-    pub(crate) problem: Option<&'static str>,
+    pub problem: Option<&'static str>,
     /// Write handler.
     pub(crate) write_handler: Option<yaml_write_handler_t>,
     /// A pointer for passing to the write handler.
@@ -1045,23 +996,6 @@ impl Default for yaml_emitter_t {
             anchors: Default::default(),
             last_anchor_id: Default::default(),
         }
-    }
-}
-
-#[repr(C)]
-#[non_exhaustive]
-pub struct yaml_emitter_t_prefix {
-    /// Error type.
-    pub error: yaml_error_type_t,
-    /// Error description.
-    pub problem: Option<&'static str>,
-}
-
-#[doc(hidden)]
-impl Deref for yaml_emitter_t {
-    type Target = yaml_emitter_t_prefix;
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*addr_of!(*self).cast() }
     }
 }
 
