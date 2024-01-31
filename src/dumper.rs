@@ -10,7 +10,7 @@ use crate::{libc, yaml_document_delete, yaml_emitter_emit};
 /// Start a YAML stream.
 ///
 /// This function should be used before yaml_emitter_dump() is called.
-pub unsafe fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+pub fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     __assert!(!emitter.opened);
     let event = yaml_event_t {
         data: YamlEventData::StreamStart {
@@ -26,7 +26,7 @@ pub unsafe fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), ()> 
 /// Finish a YAML stream.
 ///
 /// This function should be used after yaml_emitter_dump() is called.
-pub unsafe fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+pub fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     __assert!(emitter.opened);
     if emitter.closed {
         return Ok(());
@@ -46,7 +46,7 @@ pub unsafe fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), ()>
 /// the yaml_document_initialize() function. The emitter takes the
 /// responsibility for the document object and clears its content after it is
 /// emitted. The document object is destroyed even if the function fails.
-pub unsafe fn yaml_emitter_dump(
+pub fn yaml_emitter_dump(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
 ) -> Result<(), ()> {
@@ -85,7 +85,7 @@ pub unsafe fn yaml_emitter_dump(
     Ok(())
 }
 
-unsafe fn yaml_emitter_delete_document_and_anchors(
+fn yaml_emitter_delete_document_and_anchors(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
 ) {
@@ -112,7 +112,7 @@ unsafe fn yaml_emitter_delete_document_and_anchors(
     emitter.last_anchor_id = 0;
 }
 
-unsafe fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: libc::c_int) {
+fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: libc::c_int) {
     emitter.anchors[index as usize - 1].references += 1;
     if emitter.anchors[index as usize - 1].references == 2 {
         emitter.last_anchor_id += 1;
@@ -120,7 +120,7 @@ unsafe fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: libc
     }
 }
 
-unsafe fn yaml_emitter_anchor_node(
+fn yaml_emitter_anchor_node(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
     index: libc::c_int,
@@ -148,14 +148,11 @@ unsafe fn yaml_emitter_anchor_node(
     }
 }
 
-unsafe fn yaml_emitter_generate_anchor(
-    _emitter: &mut yaml_emitter_t,
-    anchor_id: libc::c_int,
-) -> String {
+fn yaml_emitter_generate_anchor(_emitter: &mut yaml_emitter_t, anchor_id: libc::c_int) -> String {
     alloc::format!("id{:03}", anchor_id)
 }
 
-unsafe fn yaml_emitter_dump_node(
+fn yaml_emitter_dump_node(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
     index: libc::c_int,
@@ -182,7 +179,7 @@ unsafe fn yaml_emitter_dump_node(
     }
 }
 
-unsafe fn yaml_emitter_dump_alias(emitter: &mut yaml_emitter_t, anchor: String) -> Result<(), ()> {
+fn yaml_emitter_dump_alias(emitter: &mut yaml_emitter_t, anchor: String) -> Result<(), ()> {
     let event = yaml_event_t {
         data: YamlEventData::Alias { anchor },
         ..Default::default()
@@ -190,7 +187,7 @@ unsafe fn yaml_emitter_dump_alias(emitter: &mut yaml_emitter_t, anchor: String) 
     yaml_emitter_emit(emitter, event)
 }
 
-unsafe fn yaml_emitter_dump_scalar(
+fn yaml_emitter_dump_scalar(
     emitter: &mut yaml_emitter_t,
     node: yaml_node_t,
     anchor: Option<String>,
@@ -217,7 +214,7 @@ unsafe fn yaml_emitter_dump_scalar(
     }
 }
 
-unsafe fn yaml_emitter_dump_sequence(
+fn yaml_emitter_dump_sequence(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
     node: yaml_node_t,
@@ -251,7 +248,7 @@ unsafe fn yaml_emitter_dump_sequence(
     }
 }
 
-unsafe fn yaml_emitter_dump_mapping(
+fn yaml_emitter_dump_mapping(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
     node: yaml_node_t,

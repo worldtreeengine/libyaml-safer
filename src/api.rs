@@ -126,7 +126,7 @@ pub unsafe fn yaml_emitter_initialize(emitter: *mut yaml_emitter_t) -> Result<()
 }
 
 /// Destroy an emitter.
-pub unsafe fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
+pub fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
     emitter.buffer.clear();
     emitter.raw_buffer.clear();
     emitter.states.clear();
@@ -136,29 +136,6 @@ pub unsafe fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
     emitter.indents.clear();
     emitter.tag_directives.clear();
     *emitter = yaml_emitter_t::default();
-}
-
-unsafe fn yaml_string_write_handler(data: *mut libc::c_void, buffer: &[u8]) -> libc::c_int {
-    let emitter = &mut *(data as *mut yaml_emitter_t);
-    let size_written = &mut *emitter.output.size_written;
-    let available = (emitter.output.size - *size_written) as usize;
-    if available < buffer.len() {
-        let write_to = core::slice::from_raw_parts_mut(
-            emitter.output.buffer.add(*size_written as _),
-            available,
-        );
-        write_to.copy_from_slice(&buffer[..available]);
-        *emitter.output.size_written = emitter.output.size;
-        return 0;
-    }
-
-    let write_to = core::slice::from_raw_parts_mut(
-        emitter.output.buffer.add(*size_written as _),
-        buffer.len(),
-    );
-    write_to.copy_from_slice(buffer);
-    *size_written += buffer.len() as u64;
-    1
 }
 
 /// Set a string output.
@@ -288,10 +265,7 @@ pub fn yaml_document_end_event_initialize(
 }
 
 /// Create an ALIAS event.
-pub unsafe fn yaml_alias_event_initialize(
-    event: &mut yaml_event_t,
-    anchor: &str,
-) -> Result<(), ()> {
+pub fn yaml_alias_event_initialize(event: &mut yaml_event_t, anchor: &str) -> Result<(), ()> {
     *event = yaml_event_t {
         data: YamlEventData::Alias {
             anchor: String::from(anchor),
@@ -308,7 +282,7 @@ pub unsafe fn yaml_alias_event_initialize(
 /// Either the `tag` attribute or one of the `plain_implicit` and
 /// `quoted_implicit` flags must be set.
 ///
-pub unsafe fn yaml_scalar_event_initialize(
+pub fn yaml_scalar_event_initialize(
     event: &mut yaml_event_t,
     anchor: Option<&str>,
     tag: Option<&str>,
@@ -352,7 +326,7 @@ pub unsafe fn yaml_scalar_event_initialize(
 /// The `style` argument may be ignored by the emitter.
 ///
 /// Either the `tag` attribute or the `implicit` flag must be set.
-pub unsafe fn yaml_sequence_start_event_initialize(
+pub fn yaml_sequence_start_event_initialize(
     event: &mut yaml_event_t,
     anchor: Option<&str>,
     tag: Option<&str>,
@@ -395,7 +369,7 @@ pub fn yaml_sequence_end_event_initialize(event: &mut yaml_event_t) -> Result<()
 /// The `style` argument may be ignored by the emitter.
 ///
 /// Either the `tag` attribute or the `implicit` flag must be set.
-pub unsafe fn yaml_mapping_start_event_initialize(
+pub fn yaml_mapping_start_event_initialize(
     event: &mut yaml_event_t,
     anchor: Option<&str>,
     tag: Option<&str>,
@@ -436,12 +410,12 @@ pub fn yaml_mapping_end_event_initialize(event: &mut yaml_event_t) -> Result<(),
 }
 
 /// Free any memory allocated for an event object.
-pub unsafe fn yaml_event_delete(event: &mut yaml_event_t) {
+pub fn yaml_event_delete(event: &mut yaml_event_t) {
     *event = Default::default();
 }
 
 /// Create a YAML document.
-pub unsafe fn yaml_document_initialize(
+pub fn yaml_document_initialize(
     document: &mut yaml_document_t,
     version_directive: Option<yaml_version_directive_t>,
     tag_directives_in: &[yaml_tag_directive_t],
@@ -464,7 +438,7 @@ pub unsafe fn yaml_document_initialize(
 }
 
 /// Delete a YAML document and all its nodes.
-pub unsafe fn yaml_document_delete(document: &mut yaml_document_t) {
+pub fn yaml_document_delete(document: &mut yaml_document_t) {
     document.nodes.clear();
     document.version_directive = None;
     document.tag_directives.clear();
@@ -476,7 +450,7 @@ pub unsafe fn yaml_document_delete(document: &mut yaml_document_t) {
 /// modifying the documents are called.
 ///
 /// Returns the node object or NULL if `index` is out of range.
-pub unsafe fn yaml_document_get_node(
+pub fn yaml_document_get_node(
     document: &mut yaml_document_t,
     index: libc::c_int,
 ) -> *mut yaml_node_t {
@@ -496,7 +470,7 @@ pub unsafe fn yaml_document_get_node(
 /// An empty document produced by the parser signifies the end of a YAML stream.
 ///
 /// Returns the node object or NULL if the document is empty.
-pub unsafe fn yaml_document_get_root_node(document: &mut yaml_document_t) -> *mut yaml_node_t {
+pub fn yaml_document_get_root_node(document: &mut yaml_document_t) -> *mut yaml_node_t {
     if let Some(root) = document.nodes.get_mut(0) {
         root as _
     } else {
@@ -510,7 +484,7 @@ pub unsafe fn yaml_document_get_root_node(document: &mut yaml_document_t) -> *mu
 ///
 /// Returns the node id or 0 on error.
 #[must_use]
-pub unsafe fn yaml_document_add_scalar(
+pub fn yaml_document_add_scalar(
     document: &mut yaml_document_t,
     tag: Option<&str>,
     value: &str,
@@ -543,7 +517,7 @@ pub unsafe fn yaml_document_add_scalar(
 ///
 /// Returns the node id or 0 on error.
 #[must_use]
-pub unsafe fn yaml_document_add_sequence(
+pub fn yaml_document_add_sequence(
     document: &mut yaml_document_t,
     tag: Option<&str>,
     style: yaml_sequence_style_t,
@@ -573,7 +547,7 @@ pub unsafe fn yaml_document_add_sequence(
 ///
 /// Returns the node id or 0 on error.
 #[must_use]
-pub unsafe fn yaml_document_add_mapping(
+pub fn yaml_document_add_mapping(
     document: &mut yaml_document_t,
     tag: Option<&str>,
     style: yaml_mapping_style_t,
@@ -599,7 +573,7 @@ pub unsafe fn yaml_document_add_mapping(
 }
 
 /// Add an item to a SEQUENCE node.
-pub unsafe fn yaml_document_append_sequence_item(
+pub fn yaml_document_append_sequence_item(
     document: &mut yaml_document_t,
     sequence: libc::c_int,
     item: libc::c_int,
@@ -619,7 +593,7 @@ pub unsafe fn yaml_document_append_sequence_item(
 }
 
 /// Add a pair of a key and a value to a MAPPING node.
-pub unsafe fn yaml_document_append_mapping_pair(
+pub fn yaml_document_append_mapping_pair(
     document: &mut yaml_document_t,
     mapping: libc::c_int,
     key: libc::c_int,
