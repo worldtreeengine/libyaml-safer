@@ -838,7 +838,6 @@ unsafe fn yaml_parser_scan_directive(
     parser: &mut yaml_parser_t,
     token: &mut yaml_token_t,
 ) -> Result<(), ()> {
-    let mut current_block: u64;
     let end_mark: yaml_mark_t;
     let mut major: libc::c_int = 0;
     let mut minor: libc::c_int = 0;
@@ -846,31 +845,22 @@ unsafe fn yaml_parser_scan_directive(
     SKIP(parser);
     if let Ok(name) = yaml_parser_scan_directive_name(parser, start_mark) {
         if name == "YAML" {
-            if let Err(()) =
-                yaml_parser_scan_version_directive_value(parser, start_mark, &mut major, &mut minor)
-            {
-                current_block = 11397968426844348457;
-            } else {
-                end_mark = parser.mark;
-                *token = yaml_token_t {
-                    data: YamlTokenData::VersionDirective { major, minor },
-                    start_mark,
-                    end_mark,
-                };
-                current_block = 17407779659766490442;
-            }
+            yaml_parser_scan_version_directive_value(parser, start_mark, &mut major, &mut minor)?;
+
+            end_mark = parser.mark;
+            *token = yaml_token_t {
+                data: YamlTokenData::VersionDirective { major, minor },
+                start_mark,
+                end_mark,
+            };
         } else if name == "TAG" {
-            if let Ok((handle, prefix)) = yaml_parser_scan_tag_directive_value(parser, start_mark) {
-                end_mark = parser.mark;
-                *token = yaml_token_t {
-                    data: YamlTokenData::TagDirective { handle, prefix },
-                    start_mark,
-                    end_mark,
-                };
-                current_block = 17407779659766490442;
-            } else {
-                current_block = 11397968426844348457;
-            }
+            let (handle, prefix) = yaml_parser_scan_tag_directive_value(parser, start_mark)?;
+            end_mark = parser.mark;
+            *token = yaml_token_t {
+                data: YamlTokenData::TagDirective { handle, prefix },
+                start_mark,
+                end_mark,
+            };
         } else {
             yaml_parser_set_scanner_error(
                 parser,
@@ -878,63 +868,41 @@ unsafe fn yaml_parser_scan_directive(
                 start_mark,
                 "found unknown directive name",
             );
-            current_block = 11397968426844348457;
+            return Err(());
         }
-        if current_block != 11397968426844348457 {
-            if let Ok(()) = CACHE(parser, 1_u64) {
-                loop {
-                    if !IS_BLANK!(parser.buffer) {
-                        current_block = 11584701595673473500;
-                        break;
-                    }
-                    SKIP(parser);
-                    if let Err(()) = CACHE(parser, 1_u64) {
-                        current_block = 11397968426844348457;
-                        break;
-                    }
-                }
-                if current_block != 11397968426844348457 {
-                    if CHECK!(parser.buffer, b'#') {
-                        loop {
-                            if IS_BREAKZ!(parser.buffer) {
-                                current_block = 6669252993407410313;
-                                break;
-                            }
-                            SKIP(parser);
-                            if let Err(()) = CACHE(parser, 1_u64) {
-                                current_block = 11397968426844348457;
-                                break;
-                            }
-                        }
-                    } else {
-                        current_block = 6669252993407410313;
-                    }
-                    if current_block != 11397968426844348457 {
-                        if !IS_BREAKZ!(parser.buffer) {
-                            yaml_parser_set_scanner_error(
-                                parser,
-                                "while scanning a directive",
-                                start_mark,
-                                "did not find expected comment or line break",
-                            );
-                        } else {
-                            if IS_BREAK!(parser.buffer) {
-                                if let Err(()) = CACHE(parser, 2_u64) {
-                                    current_block = 11397968426844348457;
-                                } else {
-                                    SKIP_LINE(parser);
-                                    current_block = 652864300344834934;
-                                }
-                            } else {
-                                current_block = 652864300344834934;
-                            }
-                            if current_block != 11397968426844348457 {
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
+        CACHE(parser, 1_u64)?;
+        loop {
+            if !IS_BLANK!(parser.buffer) {
+                break;
             }
+            SKIP(parser);
+            CACHE(parser, 1_u64)?;
+        }
+
+        if CHECK!(parser.buffer, b'#') {
+            loop {
+                if IS_BREAKZ!(parser.buffer) {
+                    break;
+                }
+                SKIP(parser);
+                CACHE(parser, 1_u64)?;
+            }
+        }
+
+        if !IS_BREAKZ!(parser.buffer) {
+            yaml_parser_set_scanner_error(
+                parser,
+                "while scanning a directive",
+                start_mark,
+                "did not find expected comment or line break",
+            );
+            return Err(());
+        } else {
+            if IS_BREAK!(parser.buffer) {
+                CACHE(parser, 2_u64)?;
+                SKIP_LINE(parser);
+            }
+            return Ok(());
         }
     }
     Err(())

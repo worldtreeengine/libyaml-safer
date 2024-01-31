@@ -28,7 +28,6 @@ pub unsafe fn yaml_parser_load(
     parser: &mut yaml_parser_t,
     document: *mut yaml_document_t,
 ) -> Result<(), ()> {
-    let current_block: u64;
     let mut event = yaml_event_t::default();
     core::ptr::write(document, yaml_document_t::default());
     let document = &mut *document;
@@ -36,32 +35,30 @@ pub unsafe fn yaml_parser_load(
 
     if !parser.stream_start_produced {
         if let Err(()) = yaml_parser_parse(parser, &mut event) {
-            current_block = 6234624449317607669;
+            yaml_parser_delete_aliases(parser);
+            yaml_document_delete(document);
+            parser.document = ptr::null_mut::<yaml_document_t>();
+            return Err(());
         } else {
             if let YamlEventData::StreamStart { .. } = &event.data {
             } else {
                 panic!("expected stream start");
             }
-            current_block = 7815301370352969686;
         }
-    } else {
-        current_block = 7815301370352969686;
     }
-    if current_block != 6234624449317607669 {
-        if parser.stream_end_produced {
+    if parser.stream_end_produced {
+        return Ok(());
+    }
+    if let Ok(()) = yaml_parser_parse(parser, &mut event) {
+        if let YamlEventData::StreamEnd = &event.data {
             return Ok(());
         }
-        if let Ok(()) = yaml_parser_parse(parser, &mut event) {
-            if let YamlEventData::StreamEnd = &event.data {
-                return Ok(());
-            }
-            parser.aliases.reserve(16);
-            parser.document = document;
-            if let Ok(()) = yaml_parser_load_document(parser, &mut event) {
-                yaml_parser_delete_aliases(parser);
-                parser.document = ptr::null_mut::<yaml_document_t>();
-                return Ok(());
-            }
+        parser.aliases.reserve(16);
+        parser.document = document;
+        if let Ok(()) = yaml_parser_load_document(parser, &mut event) {
+            yaml_parser_delete_aliases(parser);
+            parser.document = ptr::null_mut::<yaml_document_t>();
+            return Ok(());
         }
     }
     yaml_parser_delete_aliases(parser);
@@ -210,7 +207,6 @@ unsafe fn yaml_parser_load_node_add(
     }
     let parent_index: libc::c_int = *ctx.last().unwrap();
     let parent = &mut (*parser.document).nodes[parent_index as usize - 1];
-    let current_block_17: u64;
     match parent.data {
         YamlNodeData::Sequence { ref mut items, .. } => {
             STACK_LIMIT!(parser, items)?;
@@ -219,25 +215,19 @@ unsafe fn yaml_parser_load_node_add(
         YamlNodeData::Mapping { ref mut pairs, .. } => {
             let mut pair = MaybeUninit::<yaml_node_pair_t>::uninit();
             let pair = pair.as_mut_ptr();
+            let mut do_push = true;
             if !pairs.is_empty() {
                 let p: &mut yaml_node_pair_t = pairs.last_mut().unwrap();
                 if p.key != 0 && p.value == 0 {
                     p.value = index;
-                    current_block_17 = 11307063007268554308;
-                } else {
-                    current_block_17 = 17407779659766490442;
+                    do_push = false;
                 }
-            } else {
-                current_block_17 = 17407779659766490442;
             }
-            match current_block_17 {
-                11307063007268554308 => {}
-                _ => {
-                    (*pair).key = index;
-                    (*pair).value = 0;
-                    STACK_LIMIT!(parser, pairs)?;
-                    pairs.push(*pair);
-                }
+            if do_push {
+                (*pair).key = index;
+                (*pair).value = 0;
+                STACK_LIMIT!(parser, pairs)?;
+                pairs.push(*pair);
             }
         }
         _ => {

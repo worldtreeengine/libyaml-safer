@@ -50,55 +50,39 @@ pub unsafe fn yaml_emitter_dump(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
 ) -> Result<(), ()> {
-    let current_block: u64;
     if !emitter.opened {
-        if yaml_emitter_open(emitter).is_err() {
-            current_block = 5018439318894558507;
-        } else {
-            current_block = 15619007995458559411;
+        if let Err(()) = yaml_emitter_open(emitter) {
+            yaml_emitter_delete_document_and_anchors(emitter, document);
+            return Err(());
         }
+    }
+    if document.nodes.is_empty() {
+        yaml_emitter_close(emitter)?;
     } else {
-        current_block = 15619007995458559411;
+        __assert!(emitter.opened);
+        emitter.anchors = vec![yaml_anchors_t::default(); (*document).nodes.len()];
+        let event = yaml_event_t {
+            data: YamlEventData::DocumentStart {
+                version_directive: (*document).version_directive,
+                tag_directives: core::mem::take(&mut (*document).tag_directives),
+                implicit: (*document).start_implicit,
+            },
+            ..Default::default()
+        };
+        yaml_emitter_emit(emitter, event)?;
+        yaml_emitter_anchor_node(emitter, document, 1);
+        yaml_emitter_dump_node(emitter, document, 1)?;
+        let event = yaml_event_t {
+            data: YamlEventData::DocumentEnd {
+                implicit: document.end_implicit,
+            },
+            ..Default::default()
+        };
+        yaml_emitter_emit(emitter, event)?;
     }
-    match current_block {
-        15619007995458559411 => {
-            if document.nodes.is_empty() {
-                if let Ok(()) = yaml_emitter_close(emitter) {
-                    yaml_emitter_delete_document_and_anchors(emitter, document);
-                    return Ok(());
-                }
-            } else {
-                __assert!(emitter.opened);
-                emitter.anchors = vec![yaml_anchors_t::default(); (*document).nodes.len()];
-                let event = yaml_event_t {
-                    data: YamlEventData::DocumentStart {
-                        version_directive: (*document).version_directive,
-                        tag_directives: core::mem::take(&mut (*document).tag_directives),
-                        implicit: (*document).start_implicit,
-                    },
-                    ..Default::default()
-                };
-                if let Ok(()) = yaml_emitter_emit(emitter, event) {
-                    yaml_emitter_anchor_node(emitter, document, 1);
-                    if let Ok(()) = yaml_emitter_dump_node(emitter, document, 1) {
-                        let event = yaml_event_t {
-                            data: YamlEventData::DocumentEnd {
-                                implicit: document.end_implicit,
-                            },
-                            ..Default::default()
-                        };
-                        if let Ok(()) = yaml_emitter_emit(emitter, event) {
-                            yaml_emitter_delete_document_and_anchors(emitter, document);
-                            return Ok(());
-                        }
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
+
     yaml_emitter_delete_document_and_anchors(emitter, document);
-    Err(())
+    Ok(())
 }
 
 unsafe fn yaml_emitter_delete_document_and_anchors(
