@@ -14,8 +14,7 @@ use core::ptr::{self, addr_of_mut};
 
 const INPUT_RAW_BUFFER_SIZE: usize = 16384;
 const INPUT_BUFFER_SIZE: usize = INPUT_RAW_BUFFER_SIZE * 3;
-const OUTPUT_BUFFER_SIZE: usize = 16384;
-const OUTPUT_RAW_BUFFER_SIZE: usize = OUTPUT_BUFFER_SIZE * 2 + 2;
+pub(crate) const OUTPUT_BUFFER_SIZE: usize = 16384;
 
 pub(crate) unsafe fn yaml_malloc(size: size_t) -> *mut libc::c_void {
     malloc(size)
@@ -129,8 +128,7 @@ pub unsafe fn yaml_emitter_initialize(emitter: *mut yaml_emitter_t) -> Result<()
     __assert!(!emitter.is_null());
     core::ptr::write(emitter, yaml_emitter_t::default());
     let emitter = &mut *emitter;
-    BUFFER_INIT!(emitter.buffer, OUTPUT_BUFFER_SIZE);
-    BUFFER_INIT!(emitter.raw_buffer, OUTPUT_RAW_BUFFER_SIZE);
+    emitter.buffer.reserve(OUTPUT_BUFFER_SIZE);
     emitter.states.reserve(16);
     emitter.events.reserve(16);
     emitter.indents.reserve(16);
@@ -140,8 +138,8 @@ pub unsafe fn yaml_emitter_initialize(emitter: *mut yaml_emitter_t) -> Result<()
 
 /// Destroy an emitter.
 pub unsafe fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
-    BUFFER_DEL!(emitter.buffer);
-    BUFFER_DEL!(emitter.raw_buffer);
+    emitter.buffer.clear();
+    emitter.raw_buffer.clear();
     emitter.states.clear();
     while let Some(mut event) = emitter.events.pop_front() {
         yaml_event_delete(&mut event);
@@ -153,7 +151,7 @@ pub unsafe fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
 
 unsafe fn yaml_string_write_handler(
     data: *mut libc::c_void,
-    buffer: *mut libc::c_uchar,
+    buffer: *const libc::c_uchar,
     size: size_t,
 ) -> libc::c_int {
     let emitter = &mut *(data as *mut yaml_emitter_t);

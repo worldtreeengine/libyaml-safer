@@ -47,7 +47,7 @@ pub(crate) unsafe fn unsafe_main(
     }
     let mut emitter = emitter.assume_init();
 
-    unsafe fn write_to_stdio(data: *mut c_void, buffer: *mut u8, size: u64) -> i32 {
+    unsafe fn write_to_stdio(data: *mut c_void, buffer: *const u8, size: u64) -> i32 {
         let stdout: *mut &mut dyn Write = data.cast();
         let bytes = slice::from_raw_parts(buffer.cast(), size as usize);
         match (*stdout).write(bytes) {

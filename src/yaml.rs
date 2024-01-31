@@ -715,10 +715,15 @@ pub struct yaml_parser_t {
     /// EOF flag
     pub(crate) eof: bool,
     /// The working buffer.
+    ///
+    /// This always contains valid UTF-8.
     pub(crate) buffer: yaml_buffer_t<yaml_char_t>,
     /// The number of unread characters in the buffer.
     pub(crate) unread: size_t,
     /// The raw buffer.
+    ///
+    /// This is the raw unchecked input from the read handler (for example, it
+    /// may be UTF-16 encoded).
     pub(crate) raw_buffer: yaml_buffer_t<libc::c_uchar>,
     /// The input encoding.
     pub(crate) encoding: yaml_encoding_t,
@@ -856,7 +861,7 @@ impl Default for unnamed_yaml_parser_t_input_string {
 /// On success, the handler should return 1. If the handler failed, the returned
 /// value should be 0.
 pub type yaml_write_handler_t =
-    unsafe fn(data: *mut libc::c_void, buffer: *mut libc::c_uchar, size: size_t) -> libc::c_int;
+    unsafe fn(data: *mut libc::c_void, buffer: *const libc::c_uchar, size: size_t) -> libc::c_int;
 
 /// The emitter states.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -931,9 +936,14 @@ pub struct yaml_emitter_t {
     /// Standard (string or file) output data.
     pub(crate) output: unnamed_yaml_emitter_t_output_string,
     /// The working buffer.
-    pub(crate) buffer: yaml_buffer_t<yaml_char_t>,
+    ///
+    /// This always contains valid UTF-8.
+    pub(crate) buffer: String,
     /// The raw buffer.
-    pub(crate) raw_buffer: yaml_buffer_t<libc::c_uchar>,
+    ///
+    /// This contains the output in the encoded format, so for example it may be
+    /// UTF-16 encoded.
+    pub(crate) raw_buffer: Vec<u8>,
     /// The stream encoding.
     pub(crate) encoding: yaml_encoding_t,
     /// If the output is in the canonical style?

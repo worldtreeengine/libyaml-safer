@@ -1,13 +1,14 @@
 use alloc::string::String;
 
+use crate::api::OUTPUT_BUFFER_SIZE;
 use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_printable, is_space,
 };
 use crate::ops::{ForceAdd as _, ForceMul as _};
-use crate::yaml::{size_t, yaml_buffer_t, yaml_char_t, YamlEventData};
+use crate::yaml::{size_t, yaml_char_t, YamlEventData};
 use crate::{
     libc, yaml_emitter_flush, yaml_emitter_t, yaml_event_delete, yaml_event_t, yaml_scalar_style_t,
-    yaml_tag_directive_t, yaml_version_directive_t, PointerExt, YAML_ANY_BREAK, YAML_ANY_ENCODING,
+    yaml_tag_directive_t, yaml_version_directive_t, YAML_ANY_BREAK, YAML_ANY_ENCODING,
     YAML_ANY_SCALAR_STYLE, YAML_CRLN_BREAK, YAML_CR_BREAK, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
     YAML_EMITTER_ERROR, YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE, YAML_EMIT_BLOCK_MAPPING_KEY_STATE,
     YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE, YAML_EMIT_BLOCK_MAPPING_VALUE_STATE,
@@ -24,7 +25,7 @@ use crate::{
 use core::ptr::{self};
 
 unsafe fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
-    if emitter.buffer.pointer.wrapping_offset(5_isize) < emitter.buffer.end {
+    if emitter.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
         Ok(())
     } else {
         yaml_emitter_flush(emitter)
@@ -33,10 +34,8 @@ unsafe fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
 
 unsafe fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
     FLUSH(emitter)?;
-    let p = &mut emitter.buffer.pointer;
-    let old_p = *p;
-    *p = (*p).wrapping_offset(1);
-    *old_p = value;
+    let ch = char::try_from(value).expect("invalid char");
+    emitter.buffer.push(ch);
     emitter.column += 1;
     Ok(())
 }
@@ -44,24 +43,11 @@ unsafe fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
 unsafe fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     FLUSH(emitter)?;
     if emitter.line_break == YAML_CR_BREAK {
-        let p = &mut emitter.buffer.pointer;
-        let old_p = *p;
-        *p = (*p).wrapping_offset(1);
-        *old_p = b'\r';
+        emitter.buffer.push('\r');
     } else if emitter.line_break == YAML_LN_BREAK {
-        let p = &mut emitter.buffer.pointer;
-        let old_p = *p;
-        *p = (*p).wrapping_offset(1);
-        *old_p = b'\n';
+        emitter.buffer.push('\n');
     } else if emitter.line_break == YAML_CRLN_BREAK {
-        let p = &mut emitter.buffer.pointer;
-        let old_p = *p;
-        *p = (*p).wrapping_offset(1);
-        *old_p = b'\r';
-        let p = &mut emitter.buffer.pointer;
-        let old_p = *p;
-        *p = (*p).wrapping_offset(1);
-        *old_p = b'\n';
+        emitter.buffer.push_str("\r\n");
     };
     emitter.column = 0;
     emitter.line += 1;
@@ -77,17 +63,9 @@ unsafe fn WRITE_STR(emitter: &mut yaml_emitter_t, string: &str) -> Result<(), ()
     Ok(())
 }
 
-unsafe fn append_to_buffer(buffer: &mut yaml_buffer_t<u8>, to_append: &[u8]) {
-    debug_assert!(buffer.end.c_offset_from(buffer.pointer) >= to_append.len() as isize);
-    core::slice::from_raw_parts_mut(buffer.pointer, to_append.len()).copy_from_slice(to_append);
-    buffer.pointer = buffer.pointer.wrapping_add(to_append.len());
-}
-
 unsafe fn WRITE_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), ()> {
-    FLUSH(emitter)?; // Note: this ensures at least 5 bytes can be written, and we write at most 4.
-    let mut encoded = [0u8; 4];
-    let encoded = ch.encode_utf8(&mut encoded);
-    append_to_buffer(&mut emitter.buffer, encoded.as_bytes());
+    FLUSH(emitter)?;
+    emitter.buffer.push(ch);
     emitter.column += 1;
     Ok(())
 }
@@ -1252,18 +1230,7 @@ unsafe fn yaml_emitter_analyze_event(
 
 unsafe fn yaml_emitter_write_bom(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     FLUSH(emitter)?;
-    let p = &mut emitter.buffer.pointer;
-    let old_pointer = *p;
-    *p = (*p).wrapping_offset(1);
-    *old_pointer = b'\xEF';
-    let p = &mut emitter.buffer.pointer;
-    let old_pointer = *p;
-    *p = (*p).wrapping_offset(1);
-    *old_pointer = b'\xBB';
-    let p = &mut emitter.buffer.pointer;
-    let old_pointer = *p;
-    *p = (*p).wrapping_offset(1);
-    *old_pointer = b'\xBF';
+    emitter.buffer.push('\u{feff}');
     Ok(())
 }
 
