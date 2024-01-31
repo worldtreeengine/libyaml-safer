@@ -29,17 +29,24 @@ use libyaml_safer::{
 };
 use std::env;
 use std::error::Error;
-use std::ffi::c_void;
 use std::fs::File;
 use std::io::{self, BufRead, Read, Write};
 use std::mem::MaybeUninit;
 use std::process::ExitCode;
-use std::ptr::addr_of_mut;
-use std::slice;
+
+struct WrapWrite<'w>(&'w mut dyn Write);
+impl<'w> libyaml_safer::Write for WrapWrite<'w> {
+    fn write(&mut self, buffer: &[u8]) -> bool {
+        match Write::write(self.0, buffer) {
+            Ok(n) => n != 0,
+            Err(_) => false,
+        }
+    }
+}
 
 pub(crate) unsafe fn unsafe_main(
     stdin: &mut dyn Read,
-    mut stdout: &mut dyn Write,
+    stdout: &mut dyn Write,
 ) -> Result<(), Box<dyn Error>> {
     let mut emitter = MaybeUninit::<yaml_emitter_t>::uninit();
     if yaml_emitter_initialize(emitter.as_mut_ptr()).is_err() {
@@ -47,16 +54,9 @@ pub(crate) unsafe fn unsafe_main(
     }
     let mut emitter = emitter.assume_init();
 
-    unsafe fn write_to_stdio(data: *mut c_void, buffer: *const u8, size: u64) -> i32 {
-        let stdout: *mut &mut dyn Write = data.cast();
-        let bytes = slice::from_raw_parts(buffer.cast(), size as usize);
-        match (*stdout).write(bytes) {
-            Ok(n) => n as i32,
-            Err(_) => 0,
-        }
-    }
+    let mut stdout = WrapWrite(stdout);
 
-    yaml_emitter_set_output(&mut emitter, write_to_stdio, addr_of_mut!(stdout).cast());
+    yaml_emitter_set_output(&mut emitter, &mut stdout);
     yaml_emitter_set_canonical(&mut emitter, false);
     yaml_emitter_set_unicode(&mut emitter, false);
 

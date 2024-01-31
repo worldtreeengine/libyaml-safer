@@ -2,13 +2,12 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::externs::memcpy;
-use crate::ops::ForceAdd as _;
-use crate::yaml::{size_t, YamlEventData, YamlNodeData};
+use crate::yaml::{size_t, Write, YamlEventData, YamlNodeData};
 use crate::{
     libc, yaml_break_t, yaml_document_t, yaml_emitter_t, yaml_encoding_t, yaml_event_t,
     yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t, yaml_parser_t,
     yaml_read_handler_t, yaml_scalar_style_t, yaml_sequence_style_t, yaml_tag_directive_t,
-    yaml_token_t, yaml_version_directive_t, yaml_write_handler_t, PointerExt, YAML_ANY_ENCODING,
+    yaml_token_t, yaml_version_directive_t, PointerExt, YAML_ANY_ENCODING, YAML_UTF8_ENCODING,
 };
 use core::ptr;
 
@@ -139,43 +138,26 @@ pub unsafe fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
     *emitter = yaml_emitter_t::default();
 }
 
-unsafe fn yaml_string_write_handler(
-    data: *mut libc::c_void,
-    buffer: *const libc::c_uchar,
-    size: size_t,
-) -> libc::c_int {
+unsafe fn yaml_string_write_handler(data: *mut libc::c_void, buffer: &[u8]) -> libc::c_int {
     let emitter = &mut *(data as *mut yaml_emitter_t);
-    if emitter
-        .output
-        .size
-        .wrapping_sub(*emitter.output.size_written)
-        < size
-    {
-        memcpy(
-            (*emitter)
-                .output
-                .buffer
-                .wrapping_offset(*emitter.output.size_written as isize)
-                as *mut libc::c_void,
-            buffer as *const libc::c_void,
-            (*emitter)
-                .output
-                .size
-                .wrapping_sub(*emitter.output.size_written),
+    let size_written = &mut *emitter.output.size_written;
+    let available = (emitter.output.size - *size_written) as usize;
+    if available < buffer.len() {
+        let write_to = core::slice::from_raw_parts_mut(
+            emitter.output.buffer.add(*size_written as _),
+            available,
         );
+        write_to.copy_from_slice(&buffer[..available]);
         *emitter.output.size_written = emitter.output.size;
         return 0;
     }
-    memcpy(
-        (*emitter)
-            .output
-            .buffer
-            .wrapping_offset(*emitter.output.size_written as isize) as *mut libc::c_void,
-        buffer as *const libc::c_void,
-        size,
+
+    let write_to = core::slice::from_raw_parts_mut(
+        emitter.output.buffer.add(*size_written as _),
+        buffer.len(),
     );
-    let fresh153 = &mut (*emitter.output.size_written);
-    *fresh153 = (*fresh153 as libc::c_ulong).force_add(size) as size_t;
+    write_to.copy_from_slice(buffer);
+    *size_written += buffer.len() as u64;
     1
 }
 
@@ -185,31 +167,27 @@ unsafe fn yaml_string_write_handler(
 /// size `size`. The emitter will set `size_written` to the number of written
 /// bytes. If the buffer is smaller than required, the emitter produces the
 /// YAML_WRITE_ERROR error.
-pub unsafe fn yaml_emitter_set_output_string(
-    emitter: &mut yaml_emitter_t,
-    output: *mut libc::c_uchar,
-    size: size_t,
-    size_written: *mut size_t,
+pub unsafe fn yaml_emitter_set_output_string<'w>(
+    emitter: &mut yaml_emitter_t<'w>,
+    output: &'w mut String,
 ) {
-    __assert!((emitter.write_handler).is_none());
-    __assert!(!output.is_null());
-    emitter.write_handler = Some(yaml_string_write_handler);
-    emitter.write_handler_data = emitter as *mut _ as *mut libc::c_void;
-    emitter.output.buffer = output;
-    emitter.output.size = size;
-    emitter.output.size_written = size_written;
-    *size_written = 0_u64;
+    __assert!(emitter.write_handler.is_none());
+    if emitter.encoding == YAML_ANY_ENCODING {
+        yaml_emitter_set_encoding(emitter, YAML_UTF8_ENCODING);
+    } else if emitter.encoding != YAML_UTF8_ENCODING {
+        panic!("cannot output UTF-16 to String")
+    }
+    output.clear();
+    emitter.write_handler = Some(output);
 }
 
 /// Set a generic output handler.
-pub unsafe fn yaml_emitter_set_output(
-    emitter: &mut yaml_emitter_t,
-    handler: yaml_write_handler_t,
-    data: *mut libc::c_void,
+pub unsafe fn yaml_emitter_set_output<'w>(
+    emitter: &mut yaml_emitter_t<'w>,
+    handler: &'w mut dyn Write,
 ) {
     __assert!(emitter.write_handler.is_none());
     emitter.write_handler = Some(handler);
-    emitter.write_handler_data = data;
 }
 
 /// Set the output encoding.

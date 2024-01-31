@@ -23,7 +23,7 @@ use crate::{
     YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
 };
 
-unsafe fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     if emitter.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
         Ok(())
     } else {
@@ -31,7 +31,7 @@ unsafe fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     }
 }
 
-unsafe fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
+fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
     FLUSH(emitter)?;
     let ch = char::try_from(value).expect("invalid char");
     emitter.buffer.push(ch);
@@ -39,7 +39,7 @@ unsafe fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), ()> {
     Ok(())
 }
 
-unsafe fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     FLUSH(emitter)?;
     if emitter.line_break == YAML_CR_BREAK {
         emitter.buffer.push('\r');
@@ -55,14 +55,14 @@ unsafe fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
 
 /// Write UTF-8 charanters from `string` to `emitter` and increment
 /// `emitter.column` the appropriate number of times.
-unsafe fn WRITE_STR(emitter: &mut yaml_emitter_t, string: &str) -> Result<(), ()> {
+fn WRITE_STR(emitter: &mut yaml_emitter_t, string: &str) -> Result<(), ()> {
     for ch in string.chars() {
         WRITE_CHAR(emitter, ch)?;
     }
     Ok(())
 }
 
-unsafe fn WRITE_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), ()> {
+fn WRITE_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), ()> {
     FLUSH(emitter)?;
     emitter.buffer.push(ch);
     emitter.column += 1;

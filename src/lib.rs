@@ -150,7 +150,7 @@ pub use crate::yaml::{
     yaml_node_item_t, yaml_node_pair_t, yaml_node_t, yaml_parser_state_t, yaml_parser_t,
     yaml_read_handler_t, yaml_scalar_style_t, yaml_sequence_style_t, yaml_simple_key_t,
     yaml_tag_directive_t, yaml_token_t, yaml_token_type_t, yaml_version_directive_t,
-    yaml_write_handler_t, YamlEventData,
+    yaml_write_handler_t, Read, Write, YamlEventData,
 };
 #[doc(hidden)]
 pub use crate::yaml::{
@@ -161,8 +161,6 @@ pub use crate::yaml::{
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec;
-
     use super::*;
 
     #[test]
@@ -271,14 +269,8 @@ tie-fighter: '|\-*-/|'
     fn integration_hs5t() {
         unsafe {
             let mut emitter = emitter_new();
-            let mut output = vec![0u8; 1024];
-            let mut size_written = 0;
-            yaml_emitter_set_output_string(
-                &mut emitter,
-                output.as_mut_ptr(),
-                1024,
-                &mut size_written,
-            );
+            let mut output = alloc::string::String::new();
+            yaml_emitter_set_output_string(&mut emitter, &mut output);
 
             let mut event = yaml_event_t::default();
             yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING).unwrap();
@@ -301,14 +293,11 @@ tie-fighter: '|\-*-/|'
             yaml_stream_end_event_initialize(&mut event).unwrap();
             yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
 
-            assert_eq!(
-                core::str::from_utf8(&output[0..size_written as usize]).unwrap(),
-                "'1st non-empty\n\n  2nd non-empty 3rd non-empty'\n"
-            );
+            assert_eq!(output, "'1st non-empty\n\n  2nd non-empty 3rd non-empty'\n");
         }
     }
 
-    fn emitter_new() -> yaml_emitter_t {
+    fn emitter_new<'w>() -> yaml_emitter_t<'w> {
         unsafe {
             let mut emitter = core::mem::MaybeUninit::uninit();
             yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();

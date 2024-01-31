@@ -808,8 +808,7 @@ impl Default for unnamed_yaml_parser_t_input_string {
 ///
 /// On success, the handler should return 1. If the handler failed, the returned
 /// value should be 0.
-pub type yaml_write_handler_t =
-    unsafe fn(data: *mut libc::c_void, buffer: *const libc::c_uchar, size: size_t) -> libc::c_int;
+pub type yaml_write_handler_t = fn(data: *mut libc::c_void, buffer: &[u8]) -> libc::c_int;
 
 /// The emitter states.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -872,15 +871,13 @@ pub(crate) struct yaml_anchors_t {
 /// family of functions.
 #[repr(C)]
 #[non_exhaustive]
-pub struct yaml_emitter_t {
+pub struct yaml_emitter_t<'w> {
     /// Error type.
     pub error: yaml_error_type_t,
     /// Error description.
     pub problem: Option<&'static str>,
     /// Write handler.
-    pub(crate) write_handler: Option<yaml_write_handler_t>,
-    /// A pointer for passing to the write handler.
-    pub(crate) write_handler_data: *mut libc::c_void,
+    pub(crate) write_handler: Option<&'w mut dyn Write>,
     /// Standard (string or file) output data.
     pub(crate) output: unnamed_yaml_emitter_t_output_string,
     /// The working buffer.
@@ -947,13 +944,12 @@ pub struct yaml_emitter_t {
     pub(crate) last_anchor_id: libc::c_int,
 }
 
-impl Default for yaml_emitter_t {
+impl<'a> Default for yaml_emitter_t<'a> {
     fn default() -> Self {
         Self {
             error: Default::default(),
             problem: Default::default(),
-            write_handler: Default::default(),
-            write_handler_data: ptr::null_mut(),
+            write_handler: None,
             output: Default::default(),
             buffer: Default::default(),
             raw_buffer: Default::default(),
@@ -1004,5 +1000,33 @@ impl Default for unnamed_yaml_emitter_t_output_string {
             size: 0,
             size_written: ptr::null_mut(),
         }
+    }
+}
+
+pub trait Write {
+    fn write(&mut self, buffer: &[u8]) -> bool;
+}
+
+pub trait Read {
+    fn read(&mut self, buffer: &mut [u8]) -> usize;
+}
+
+impl Write for Vec<u8> {
+    fn write(&mut self, buffer: &[u8]) -> bool {
+        self.extend(buffer);
+        true
+    }
+}
+
+impl Write for String {
+    fn write(&mut self, buffer: &[u8]) -> bool {
+        self.push_str(core::str::from_utf8(buffer).expect("invalid UTF-8"));
+        true
+    }
+}
+
+impl Write for &mut &mut [u8] {
+    fn write(&mut self, buffer: &[u8]) -> bool {
+        todo!()
     }
 }

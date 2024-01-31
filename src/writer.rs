@@ -1,10 +1,9 @@
-use crate::yaml::size_t;
 use crate::yaml_encoding_t::YAML_UTF16BE_ENCODING;
 use crate::{
     yaml_emitter_t, YAML_ANY_ENCODING, YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING, YAML_WRITER_ERROR,
 };
 
-unsafe fn yaml_emitter_set_writer_error(
+fn yaml_emitter_set_writer_error(
     emitter: &mut yaml_emitter_t,
     problem: &'static str,
 ) -> Result<(), ()> {
@@ -14,7 +13,7 @@ unsafe fn yaml_emitter_set_writer_error(
 }
 
 /// Flush the accumulated characters to the output.
-pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
+pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()> {
     __assert!((emitter.write_handler).is_some());
     __assert!(emitter.encoding != YAML_ANY_ENCODING);
 
@@ -23,11 +22,11 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
     }
     if emitter.encoding == YAML_UTF8_ENCODING {
         let to_emit = emitter.buffer.as_bytes();
-        if emitter.write_handler.expect("non-null function pointer")(
-            emitter.write_handler_data,
-            to_emit.as_ptr(),
-            to_emit.len() as size_t,
-        ) != 0
+        if emitter
+            .write_handler
+            .as_mut()
+            .expect("non-null function pointer")
+            .write(to_emit)
         {
             emitter.buffer.clear();
             return Ok(());
@@ -53,11 +52,11 @@ pub unsafe fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), ()>
 
     let to_emit = emitter.raw_buffer.as_slice();
 
-    if emitter.write_handler.expect("non-null function pointer")(
-        emitter.write_handler_data,
-        to_emit.as_ptr(),
-        to_emit.len() as size_t,
-    ) != 0
+    if emitter
+        .write_handler
+        .as_mut()
+        .expect("non-null function pointer")
+        .write(to_emit)
     {
         emitter.buffer.clear();
         emitter.raw_buffer.clear();
