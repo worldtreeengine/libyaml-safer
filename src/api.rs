@@ -1,30 +1,20 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::externs::{free, malloc, memcpy};
+use crate::externs::memcpy;
 use crate::ops::ForceAdd as _;
-use crate::yaml::{size_t, yaml_char_t, YamlEventData, YamlNodeData};
+use crate::yaml::{size_t, YamlEventData, YamlNodeData};
 use crate::{
     libc, yaml_break_t, yaml_document_t, yaml_emitter_t, yaml_encoding_t, yaml_event_t,
     yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t, yaml_parser_t,
     yaml_read_handler_t, yaml_scalar_style_t, yaml_sequence_style_t, yaml_tag_directive_t,
     yaml_token_t, yaml_version_directive_t, yaml_write_handler_t, PointerExt, YAML_ANY_ENCODING,
 };
-use core::ptr::{self, addr_of_mut};
+use core::ptr;
 
-const INPUT_RAW_BUFFER_SIZE: usize = 16384;
-const INPUT_BUFFER_SIZE: usize = INPUT_RAW_BUFFER_SIZE * 3;
+pub(crate) const INPUT_RAW_BUFFER_SIZE: usize = 16384;
+pub(crate) const INPUT_BUFFER_SIZE: usize = INPUT_RAW_BUFFER_SIZE;
 pub(crate) const OUTPUT_BUFFER_SIZE: usize = 16384;
-
-pub(crate) unsafe fn yaml_malloc(size: size_t) -> *mut libc::c_void {
-    malloc(size)
-}
-
-pub(crate) unsafe fn yaml_free(ptr: *mut libc::c_void) {
-    if !ptr.is_null() {
-        free(ptr);
-    }
-}
 
 /// Initialize a parser.
 ///
@@ -34,8 +24,8 @@ pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), (
     __assert!(!parser.is_null());
     core::ptr::write(parser, yaml_parser_t::default());
     let parser = &mut *parser;
-    BUFFER_INIT!(parser.raw_buffer, INPUT_RAW_BUFFER_SIZE);
-    BUFFER_INIT!(parser.buffer, INPUT_BUFFER_SIZE);
+    parser.raw_buffer.reserve(INPUT_RAW_BUFFER_SIZE);
+    parser.buffer.reserve(INPUT_BUFFER_SIZE);
     parser.tokens.reserve(16);
     parser.indents.reserve(16);
     parser.simple_keys.reserve(16);
@@ -47,8 +37,8 @@ pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), (
 
 /// Destroy a parser.
 pub unsafe fn yaml_parser_delete(parser: &mut yaml_parser_t) {
-    BUFFER_DEL!(parser.raw_buffer);
-    BUFFER_DEL!(parser.buffer);
+    parser.raw_buffer.clear();
+    parser.buffer.clear();
     for mut token in parser.tokens.drain(..) {
         yaml_token_delete(&mut token);
     }

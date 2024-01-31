@@ -1,6 +1,6 @@
 use alloc::string::String;
 
-use crate::macros::COPY_CHAR_BUFFER_TO_STRING;
+use crate::macros::{is_blankz, is_break, vecdeque_starts_with};
 use crate::ops::{ForceAdd as _, ForceMul as _};
 use crate::reader::yaml_parser_update_buffer;
 use crate::yaml::{ptrdiff_t, size_t, YamlTokenData};
@@ -20,127 +20,72 @@ unsafe fn CACHE(parser: &mut yaml_parser_t, length: size_t) -> Result<(), ()> {
 }
 
 unsafe fn SKIP(parser: &mut yaml_parser_t) {
-    let width = WIDTH!(parser.buffer);
-    parser.mark.index = parser.mark.index.force_add(width as u64);
-    parser.mark.column = parser.mark.column.force_add(1);
-    parser.unread = parser.unread.wrapping_sub(1);
-    parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(width as isize);
+    let popped = parser.buffer.pop_front().expect("unexpected end of tokens");
+    let width = popped.len_utf8();
+    parser.mark.index += width as u64;
+    parser.mark.column += 1;
+    parser.unread -= 1;
 }
 
 unsafe fn SKIP_LINE(parser: &mut yaml_parser_t) {
-    if IS_CRLF!(parser.buffer) {
-        parser.mark.index = parser.mark.index.force_add(2);
+    if vecdeque_starts_with(&parser.buffer, &['\r', '\n']) {
+        parser.mark.index += 2;
         parser.mark.column = 0;
-        parser.mark.line = parser.mark.line.force_add(1);
-        parser.unread = parser.unread.wrapping_sub(2);
-        parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(2);
-    } else if IS_BREAK!(parser.buffer) {
-        let width = WIDTH!(parser.buffer);
-        parser.mark.index = parser.mark.index.force_add(width as u64);
-        parser.mark.column = 0;
-        parser.mark.line = parser.mark.line.force_add(1);
-        parser.unread = parser.unread.wrapping_sub(1);
-        parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(width as isize);
-    };
+        parser.mark.line += 1;
+        parser.unread -= 2;
+        parser.buffer.drain(0..2);
+    } else {
+        if let Some(front) = parser.buffer.front().copied() {
+            if is_break(front) {
+                let width = front.len_utf8();
+                parser.mark.index += width as u64;
+                parser.mark.column = 0;
+                parser.mark.line += 1;
+                parser.unread -= 1;
+                parser.buffer.pop_front();
+            }
+        }
+    }
 }
-
-// unsafe fn READ(parser: &mut yaml_parser_t, string: &mut yaml_string_t) {
-//     STRING_EXTEND!(*string);
-//     let width = WIDTH!(parser.buffer);
-//     COPY!(string, parser.buffer);
-//     parser.mark.index = parser.mark.index.force_add(width as u64);
-//     parser.mark.column = parser.mark.column.force_add(1);
-//     parser.unread = parser.unread.wrapping_sub(1);
-// }
 
 unsafe fn READ_STRING(parser: &mut yaml_parser_t, string: &mut String) {
-    let width = WIDTH!(parser.buffer);
-    COPY_CHAR_BUFFER_TO_STRING(string, &mut parser.buffer);
-    parser.mark.index = parser.mark.index.force_add(width as u64);
-    parser.mark.column = parser.mark.column.force_add(1);
-    parser.unread = parser.unread.wrapping_sub(1);
+    if let Some(popped) = parser.buffer.pop_front() {
+        string.push(popped);
+        parser.mark.index = popped.len_utf8() as u64;
+        parser.mark.column += 1;
+        parser.unread -= 1;
+    } else {
+        panic!("unexpected end of input")
+    }
 }
 
-// unsafe fn READ_LINE(parser: &mut yaml_parser_t, string: &mut yaml_string_t) {
-//     STRING_EXTEND!(*string);
-//     if CHECK_AT!(parser.buffer, b'\r', 0) && CHECK_AT!(parser.buffer, b'\n', 1) {
-//         *(*string).pointer = b'\n';
-//         (*string).pointer = (*string).pointer.wrapping_offset(1);
-//         parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(2);
-//         parser.mark.index = parser.mark.index.force_add(2);
-//         parser.mark.column = 0;
-//         parser.mark.line = parser.mark.line.force_add(1);
-//         parser.unread = parser.unread.wrapping_sub(2);
-//     } else if CHECK_AT!(parser.buffer, b'\r', 0) || CHECK_AT!(parser.buffer, b'\n', 0) {
-//         *(*string).pointer = b'\n';
-//         (*string).pointer = (*string).pointer.wrapping_offset(1);
-//         parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(1);
-//         parser.mark.index = parser.mark.index.force_add(1);
-//         parser.mark.column = 0;
-//         parser.mark.line = parser.mark.line.force_add(1);
-//         parser.unread = parser.unread.wrapping_sub(1);
-//     } else if CHECK_AT!(parser.buffer, b'\xC2', 0) && CHECK_AT!(parser.buffer, b'\x85', 1) {
-//         *(*string).pointer = b'\n';
-//         (*string).pointer = (*string).pointer.wrapping_offset(1);
-//         parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(2);
-//         parser.mark.index = parser.mark.index.force_add(2);
-//         parser.mark.column = 0;
-//         parser.mark.line = parser.mark.line.force_add(1);
-//         parser.unread = parser.unread.wrapping_sub(1);
-//     } else if CHECK_AT!(parser.buffer, b'\xE2', 0)
-//         && CHECK_AT!(parser.buffer, b'\x80', 1)
-//         && (CHECK_AT!(parser.buffer, b'\xA8', 2) || CHECK_AT!(parser.buffer, b'\xA9', 2))
-//     {
-//         *(*string).pointer = *parser.buffer.pointer;
-//         (*string).pointer = (*string).pointer.wrapping_offset(1);
-//         parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(1);
-//         *(*string).pointer = *parser.buffer.pointer;
-//         (*string).pointer = (*string).pointer.wrapping_offset(1);
-//         parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(1);
-//         *(*string).pointer = *parser.buffer.pointer;
-//         (*string).pointer = (*string).pointer.wrapping_offset(1);
-//         parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(1);
-//         parser.mark.index = parser.mark.index.force_add(3);
-//         parser.mark.column = 0;
-//         parser.mark.line = parser.mark.line.force_add(1);
-//         parser.unread = parser.unread.wrapping_sub(1);
-//     };
-// }
-
 unsafe fn READ_LINE_STRING(parser: &mut yaml_parser_t, string: &mut String) {
-    if CHECK_AT!(parser.buffer, b'\r', 0) && CHECK_AT!(parser.buffer, b'\n', 1) {
+    if vecdeque_starts_with(&parser.buffer, &['\r', '\n']) {
         string.push('\n');
-        parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(2);
-        parser.mark.index = parser.mark.index.force_add(2);
+        parser.buffer.drain(0..2);
+        parser.mark.index += 2;
         parser.mark.column = 0;
-        parser.mark.line = parser.mark.line.force_add(1);
-        parser.unread = parser.unread.wrapping_sub(2);
-    } else if CHECK_AT!(parser.buffer, b'\r', 0) || CHECK_AT!(parser.buffer, b'\n', 0) {
-        string.push('\n');
-        parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(1);
-        parser.mark.index = parser.mark.index.force_add(1);
-        parser.mark.column = 0;
-        parser.mark.line = parser.mark.line.force_add(1);
-        parser.unread = parser.unread.wrapping_sub(1);
-    } else if CHECK_AT!(parser.buffer, b'\xC2', 0) && CHECK_AT!(parser.buffer, b'\x85', 1) {
-        string.push('\n');
-        parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(2);
-        parser.mark.index = parser.mark.index.force_add(2);
-        parser.mark.column = 0;
-        parser.mark.line = parser.mark.line.force_add(1);
-        parser.unread = parser.unread.wrapping_sub(1);
-    } else if CHECK_AT!(parser.buffer, b'\xE2', 0)
-        && CHECK_AT!(parser.buffer, b'\x80', 1)
-        && (CHECK_AT!(parser.buffer, b'\xA8', 2) || CHECK_AT!(parser.buffer, b'\xA9', 2))
-    {
-        let to_append = core::slice::from_raw_parts(parser.buffer.pointer, 3);
-        string.push_str(core::str::from_utf8_unchecked(to_append));
-        parser.buffer.pointer = parser.buffer.pointer.wrapping_offset(3);
-        parser.mark.index = parser.mark.index.force_add(3);
-        parser.mark.column = 0;
-        parser.mark.line = parser.mark.line.force_add(1);
-        parser.unread = parser.unread.wrapping_sub(1);
-    };
+        parser.mark.line += 1;
+        parser.unread -= 2;
+    } else {
+        let Some(front) = parser.buffer.front().copied() else {
+            panic!("unexpected end of input");
+        };
+        if is_break(front) {
+            parser.buffer.pop_front();
+            let char_len = front.len_utf8();
+            if char_len == 3 {
+                // libyaml preserves Unicode breaks in this case.
+                string.push(front);
+            } else {
+                string.push('\n');
+            }
+            parser.mark.index += char_len as u64;
+            parser.mark.column = 0;
+            parser.mark.line += 1;
+            parser.unread -= 1;
+        }
+    }
 }
 
 /// Scan the input stream and produce the next token.
@@ -230,93 +175,93 @@ unsafe fn yaml_parser_fetch_next_token(parser: &mut yaml_parser_t) -> Result<(),
     if IS_Z!(parser.buffer) {
         return yaml_parser_fetch_stream_end(parser);
     }
-    if parser.mark.column == 0_u64 && CHECK!(parser.buffer, b'%') {
+    if parser.mark.column == 0_u64 && parser.buffer[0] == '%' {
         return yaml_parser_fetch_directive(parser);
     }
     if parser.mark.column == 0_u64
-        && CHECK_AT!(parser.buffer, b'-', 0)
-        && CHECK_AT!(parser.buffer, b'-', 1)
-        && CHECK_AT!(parser.buffer, b'-', 2)
-        && IS_BLANKZ_AT!(parser.buffer, 3)
+        && CHECK_AT!(parser.buffer, '-', 0)
+        && CHECK_AT!(parser.buffer, '-', 1)
+        && CHECK_AT!(parser.buffer, '-', 2)
+        && is_blankz(parser.buffer.get(3).copied())
     {
         return yaml_parser_fetch_document_indicator(parser, YamlTokenData::DocumentStart);
     }
     if parser.mark.column == 0_u64
-        && CHECK_AT!(parser.buffer, b'.', 0)
-        && CHECK_AT!(parser.buffer, b'.', 1)
-        && CHECK_AT!(parser.buffer, b'.', 2)
-        && IS_BLANKZ_AT!(parser.buffer, 3)
+        && CHECK_AT!(parser.buffer, '.', 0)
+        && CHECK_AT!(parser.buffer, '.', 1)
+        && CHECK_AT!(parser.buffer, '.', 2)
+        && is_blankz(parser.buffer.get(3).copied())
     {
         return yaml_parser_fetch_document_indicator(parser, YamlTokenData::DocumentEnd);
     }
-    if CHECK!(parser.buffer, b'[') {
+    if CHECK!(parser.buffer, '[') {
         return yaml_parser_fetch_flow_collection_start(parser, YamlTokenData::FlowSequenceStart);
     }
-    if CHECK!(parser.buffer, b'{') {
+    if CHECK!(parser.buffer, '{') {
         return yaml_parser_fetch_flow_collection_start(parser, YamlTokenData::FlowMappingStart);
     }
-    if CHECK!(parser.buffer, b']') {
+    if CHECK!(parser.buffer, ']') {
         return yaml_parser_fetch_flow_collection_end(parser, YamlTokenData::FlowSequenceEnd);
     }
-    if CHECK!(parser.buffer, b'}') {
+    if CHECK!(parser.buffer, '}') {
         return yaml_parser_fetch_flow_collection_end(parser, YamlTokenData::FlowMappingEnd);
     }
-    if CHECK!(parser.buffer, b',') {
+    if CHECK!(parser.buffer, ',') {
         return yaml_parser_fetch_flow_entry(parser);
     }
-    if CHECK!(parser.buffer, b'-') && IS_BLANKZ_AT!(parser.buffer, 1) {
+    if CHECK!(parser.buffer, '-') && IS_BLANKZ_AT!(parser.buffer, 1) {
         return yaml_parser_fetch_block_entry(parser);
     }
-    if CHECK!(parser.buffer, b'?') && (parser.flow_level != 0 || IS_BLANKZ_AT!(parser.buffer, 1)) {
+    if CHECK!(parser.buffer, '?') && (parser.flow_level != 0 || IS_BLANKZ_AT!(parser.buffer, 1)) {
         return yaml_parser_fetch_key(parser);
     }
-    if CHECK!(parser.buffer, b':') && (parser.flow_level != 0 || IS_BLANKZ_AT!(parser.buffer, 1)) {
+    if CHECK!(parser.buffer, ':') && (parser.flow_level != 0 || IS_BLANKZ_AT!(parser.buffer, 1)) {
         return yaml_parser_fetch_value(parser);
     }
-    if CHECK!(parser.buffer, b'*') {
+    if CHECK!(parser.buffer, '*') {
         return yaml_parser_fetch_anchor(parser, true);
     }
-    if CHECK!(parser.buffer, b'&') {
+    if CHECK!(parser.buffer, '&') {
         return yaml_parser_fetch_anchor(parser, false);
     }
-    if CHECK!(parser.buffer, b'!') {
+    if CHECK!(parser.buffer, '!') {
         return yaml_parser_fetch_tag(parser);
     }
-    if CHECK!(parser.buffer, b'|') && parser.flow_level == 0 {
+    if CHECK!(parser.buffer, '|') && parser.flow_level == 0 {
         return yaml_parser_fetch_block_scalar(parser, true);
     }
-    if CHECK!(parser.buffer, b'>') && parser.flow_level == 0 {
+    if CHECK!(parser.buffer, '>') && parser.flow_level == 0 {
         return yaml_parser_fetch_block_scalar(parser, false);
     }
-    if CHECK!(parser.buffer, b'\'') {
+    if CHECK!(parser.buffer, '\'') {
         return yaml_parser_fetch_flow_scalar(parser, true);
     }
-    if CHECK!(parser.buffer, b'"') {
+    if CHECK!(parser.buffer, '"') {
         return yaml_parser_fetch_flow_scalar(parser, false);
     }
     if !(IS_BLANKZ!(parser.buffer)
-        || CHECK!(parser.buffer, b'-')
-        || CHECK!(parser.buffer, b'?')
-        || CHECK!(parser.buffer, b':')
-        || CHECK!(parser.buffer, b',')
-        || CHECK!(parser.buffer, b'[')
-        || CHECK!(parser.buffer, b']')
-        || CHECK!(parser.buffer, b'{')
-        || CHECK!(parser.buffer, b'}')
-        || CHECK!(parser.buffer, b'#')
-        || CHECK!(parser.buffer, b'&')
-        || CHECK!(parser.buffer, b'*')
-        || CHECK!(parser.buffer, b'!')
-        || CHECK!(parser.buffer, b'|')
-        || CHECK!(parser.buffer, b'>')
-        || CHECK!(parser.buffer, b'\'')
-        || CHECK!(parser.buffer, b'"')
-        || CHECK!(parser.buffer, b'%')
-        || CHECK!(parser.buffer, b'@')
-        || CHECK!(parser.buffer, b'`'))
-        || CHECK!(parser.buffer, b'-') && !IS_BLANK_AT!(parser.buffer, 1)
+        || CHECK!(parser.buffer, '-')
+        || CHECK!(parser.buffer, '?')
+        || CHECK!(parser.buffer, ':')
+        || CHECK!(parser.buffer, ',')
+        || CHECK!(parser.buffer, '[')
+        || CHECK!(parser.buffer, ']')
+        || CHECK!(parser.buffer, '{')
+        || CHECK!(parser.buffer, '}')
+        || CHECK!(parser.buffer, '#')
+        || CHECK!(parser.buffer, '&')
+        || CHECK!(parser.buffer, '*')
+        || CHECK!(parser.buffer, '!')
+        || CHECK!(parser.buffer, '|')
+        || CHECK!(parser.buffer, '>')
+        || CHECK!(parser.buffer, '\'')
+        || CHECK!(parser.buffer, '"')
+        || CHECK!(parser.buffer, '%')
+        || CHECK!(parser.buffer, '@')
+        || CHECK!(parser.buffer, '`'))
+        || CHECK!(parser.buffer, '-') && !IS_BLANK_AT!(parser.buffer, 1)
         || parser.flow_level == 0
-            && (CHECK!(parser.buffer, b'?') || CHECK!(parser.buffer, b':'))
+            && (CHECK!(parser.buffer, '?') || CHECK!(parser.buffer, ':'))
             && !IS_BLANKZ_AT!(parser.buffer, 1)
     {
         return yaml_parser_fetch_plain_scalar(parser);
@@ -809,14 +754,13 @@ unsafe fn yaml_parser_scan_to_next_token(parser: &mut yaml_parser_t) -> Result<(
             SKIP(parser);
         }
         CACHE(parser, 1_u64)?;
-        while CHECK!(parser.buffer, b' ')
-            || (parser.flow_level != 0 || !parser.simple_key_allowed)
-                && CHECK!(parser.buffer, b'\t')
+        while CHECK!(parser.buffer, ' ')
+            || (parser.flow_level != 0 || !parser.simple_key_allowed) && CHECK!(parser.buffer, '\t')
         {
             SKIP(parser);
             CACHE(parser, 1_u64)?;
         }
-        if CHECK!(parser.buffer, b'#') {
+        if CHECK!(parser.buffer, '#') {
             while !IS_BREAKZ!(parser.buffer) {
                 SKIP(parser);
                 CACHE(parser, 1_u64)?;
@@ -879,7 +823,7 @@ unsafe fn yaml_parser_scan_directive(
             CACHE(parser, 1_u64)?;
         }
 
-        if CHECK!(parser.buffer, b'#') {
+        if CHECK!(parser.buffer, '#') {
             loop {
                 if IS_BREAKZ!(parser.buffer) {
                     break;
@@ -956,7 +900,7 @@ unsafe fn yaml_parser_scan_version_directive_value(
         CACHE(parser, 1_u64)?;
     }
     yaml_parser_scan_version_directive_number(parser, start_mark, major)?;
-    if !CHECK!(parser.buffer, b'.') {
+    if !CHECK!(parser.buffer, '.') {
         yaml_parser_set_scanner_error(
             parser,
             "while scanning a %YAML directive",
@@ -990,7 +934,9 @@ unsafe fn yaml_parser_scan_version_directive_number(
             );
             return Err(());
         }
-        value = value.force_mul(10).force_add(AS_DIGIT!(parser.buffer));
+        value = value
+            .force_mul(10)
+            .force_add(AS_DIGIT!(parser.buffer) as i32);
         SKIP(parser);
         CACHE(parser, 1_u64)?;
     }
@@ -1079,14 +1025,14 @@ unsafe fn yaml_parser_scan_anchor(
     end_mark = parser.mark;
     if length == 0
         || !(IS_BLANKZ!(parser.buffer)
-            || CHECK!(parser.buffer, b'?')
-            || CHECK!(parser.buffer, b':')
-            || CHECK!(parser.buffer, b',')
-            || CHECK!(parser.buffer, b']')
-            || CHECK!(parser.buffer, b'}')
-            || CHECK!(parser.buffer, b'%')
-            || CHECK!(parser.buffer, b'@')
-            || CHECK!(parser.buffer, b'`'))
+            || CHECK!(parser.buffer, '?')
+            || CHECK!(parser.buffer, ':')
+            || CHECK!(parser.buffer, ',')
+            || CHECK!(parser.buffer, ']')
+            || CHECK!(parser.buffer, '}')
+            || CHECK!(parser.buffer, '%')
+            || CHECK!(parser.buffer, '@')
+            || CHECK!(parser.buffer, '`'))
     {
         yaml_parser_set_scanner_error(
             parser,
@@ -1124,13 +1070,13 @@ unsafe fn yaml_parser_scan_tag(
 
     CACHE(parser, 2_u64)?;
 
-    if CHECK_AT!(parser.buffer, b'<', 1) {
+    if CHECK_AT!(parser.buffer, '<', 1) {
         handle = String::new();
         SKIP(parser);
         SKIP(parser);
         suffix = yaml_parser_scan_tag_uri(parser, true, false, None, start_mark)?;
 
-        if !CHECK!(parser.buffer, b'>') {
+        if !CHECK!(parser.buffer, '>') {
             yaml_parser_set_scanner_error(
                 parser,
                 "while scanning a tag",
@@ -1156,7 +1102,7 @@ unsafe fn yaml_parser_scan_tag(
 
     CACHE(parser, 1_u64)?;
     if !IS_BLANKZ!(parser.buffer) {
-        if parser.flow_level == 0 || !CHECK!(parser.buffer, b',') {
+        if parser.flow_level == 0 || !CHECK!(parser.buffer, ',') {
             yaml_parser_set_scanner_error(
                 parser,
                 "while scanning a tag",
@@ -1187,7 +1133,7 @@ unsafe fn yaml_parser_scan_tag_handle(
     let mut string = String::new();
     CACHE(parser, 1_u64)?;
 
-    if !CHECK!(parser.buffer, b'!') {
+    if !CHECK!(parser.buffer, '!') {
         yaml_parser_set_scanner_error(
             parser,
             if directive {
@@ -1210,7 +1156,7 @@ unsafe fn yaml_parser_scan_tag_handle(
         READ_STRING(parser, &mut string);
         CACHE(parser, 1_u64)?;
     }
-    if CHECK!(parser.buffer, b'!') {
+    if CHECK!(parser.buffer, '!') {
         READ_STRING(parser, &mut string);
     } else if directive && string != "!" {
         yaml_parser_set_scanner_error(
@@ -1242,29 +1188,29 @@ unsafe fn yaml_parser_scan_tag_uri(
         CACHE(parser, 1_u64)?;
 
         while IS_ALPHA!(parser.buffer)
-            || CHECK!(parser.buffer, b';')
-            || CHECK!(parser.buffer, b'/')
-            || CHECK!(parser.buffer, b'?')
-            || CHECK!(parser.buffer, b':')
-            || CHECK!(parser.buffer, b'@')
-            || CHECK!(parser.buffer, b'&')
-            || CHECK!(parser.buffer, b'=')
-            || CHECK!(parser.buffer, b'+')
-            || CHECK!(parser.buffer, b'$')
-            || CHECK!(parser.buffer, b'.')
-            || CHECK!(parser.buffer, b'%')
-            || CHECK!(parser.buffer, b'!')
-            || CHECK!(parser.buffer, b'~')
-            || CHECK!(parser.buffer, b'*')
-            || CHECK!(parser.buffer, b'\'')
-            || CHECK!(parser.buffer, b'(')
-            || CHECK!(parser.buffer, b')')
+            || CHECK!(parser.buffer, ';')
+            || CHECK!(parser.buffer, '/')
+            || CHECK!(parser.buffer, '?')
+            || CHECK!(parser.buffer, ':')
+            || CHECK!(parser.buffer, '@')
+            || CHECK!(parser.buffer, '&')
+            || CHECK!(parser.buffer, '=')
+            || CHECK!(parser.buffer, '+')
+            || CHECK!(parser.buffer, '$')
+            || CHECK!(parser.buffer, '.')
+            || CHECK!(parser.buffer, '%')
+            || CHECK!(parser.buffer, '!')
+            || CHECK!(parser.buffer, '~')
+            || CHECK!(parser.buffer, '*')
+            || CHECK!(parser.buffer, '\'')
+            || CHECK!(parser.buffer, '(')
+            || CHECK!(parser.buffer, ')')
             || uri_char
-                && (CHECK!(parser.buffer, b',')
-                    || CHECK!(parser.buffer, b'[')
-                    || CHECK!(parser.buffer, b']'))
+                && (CHECK!(parser.buffer, ',')
+                    || CHECK!(parser.buffer, '[')
+                    || CHECK!(parser.buffer, ']'))
         {
-            if CHECK!(parser.buffer, b'%') {
+            if CHECK!(parser.buffer, '%') {
                 yaml_parser_scan_uri_escapes(parser, directive, start_mark, &mut string)?;
             } else {
                 READ_STRING(parser, &mut string);
@@ -1299,7 +1245,7 @@ unsafe fn yaml_parser_scan_uri_escapes(
     let mut width: libc::c_int = 0;
     loop {
         CACHE(parser, 3_u64)?;
-        if !(CHECK!(parser.buffer, b'%')
+        if !(CHECK!(parser.buffer, '%')
             && IS_HEX_AT!(parser.buffer, 1)
             && IS_HEX_AT!(parser.buffer, 2))
         {
@@ -1385,12 +1331,12 @@ unsafe fn yaml_parser_scan_block_scalar(
     SKIP(parser);
     CACHE(parser, 1_u64)?;
 
-    if CHECK!(parser.buffer, b'+') || CHECK!(parser.buffer, b'-') {
-        chomping = if CHECK!(parser.buffer, b'+') { 1 } else { -1 };
+    if CHECK!(parser.buffer, '+') || CHECK!(parser.buffer, '-') {
+        chomping = if CHECK!(parser.buffer, '+') { 1 } else { -1 };
         SKIP(parser);
         CACHE(parser, 1_u64)?;
         if IS_DIGIT!(parser.buffer) {
-            if CHECK!(parser.buffer, b'0') {
+            if CHECK!(parser.buffer, '0') {
                 yaml_parser_set_scanner_error(
                     parser,
                     "while scanning a block scalar",
@@ -1399,12 +1345,12 @@ unsafe fn yaml_parser_scan_block_scalar(
                 );
                 return Err(());
             } else {
-                increment = AS_DIGIT!(parser.buffer);
+                increment = AS_DIGIT!(parser.buffer) as i32;
                 SKIP(parser);
             }
         }
     } else if IS_DIGIT!(parser.buffer) {
-        if CHECK!(parser.buffer, b'0') {
+        if CHECK!(parser.buffer, '0') {
             yaml_parser_set_scanner_error(
                 parser,
                 "while scanning a block scalar",
@@ -1413,11 +1359,11 @@ unsafe fn yaml_parser_scan_block_scalar(
             );
             return Err(());
         } else {
-            increment = AS_DIGIT!(parser.buffer);
+            increment = AS_DIGIT!(parser.buffer) as i32;
             SKIP(parser);
             CACHE(parser, 1_u64)?;
-            if CHECK!(parser.buffer, b'+') || CHECK!(parser.buffer, b'-') {
-                chomping = if CHECK!(parser.buffer, b'+') { 1 } else { -1 };
+            if CHECK!(parser.buffer, '+') || CHECK!(parser.buffer, '-') {
+                chomping = if CHECK!(parser.buffer, '+') { 1 } else { -1 };
                 SKIP(parser);
             }
         }
@@ -1432,7 +1378,7 @@ unsafe fn yaml_parser_scan_block_scalar(
         CACHE(parser, 1_u64)?;
     }
 
-    if CHECK!(parser.buffer, b'#') {
+    if CHECK!(parser.buffer, '#') {
         loop {
             if IS_BREAKZ!(parser.buffer) {
                 break;
@@ -1599,12 +1545,12 @@ unsafe fn yaml_parser_scan_flow_scalar(
         CACHE(parser, 4_u64)?;
 
         if parser.mark.column == 0_u64
-            && (CHECK_AT!(parser.buffer, b'-', 0)
-                && CHECK_AT!(parser.buffer, b'-', 1)
-                && CHECK_AT!(parser.buffer, b'-', 2)
-                || CHECK_AT!(parser.buffer, b'.', 0)
-                    && CHECK_AT!(parser.buffer, b'.', 1)
-                    && CHECK_AT!(parser.buffer, b'.', 2))
+            && (CHECK_AT!(parser.buffer, '-', 0)
+                && CHECK_AT!(parser.buffer, '-', 1)
+                && CHECK_AT!(parser.buffer, '-', 2)
+                || CHECK_AT!(parser.buffer, '.', 0)
+                    && CHECK_AT!(parser.buffer, '.', 1)
+                    && CHECK_AT!(parser.buffer, '.', 2))
             && IS_BLANKZ_AT!(parser.buffer, 3)
         {
             yaml_parser_set_scanner_error(
@@ -1626,96 +1572,94 @@ unsafe fn yaml_parser_scan_flow_scalar(
             CACHE(parser, 2_u64)?;
             leading_blanks = false;
             while !IS_BLANKZ!(parser.buffer) {
-                if single
-                    && CHECK_AT!(parser.buffer, b'\'', 0)
-                    && CHECK_AT!(parser.buffer, b'\'', 1)
+                if single && CHECK_AT!(parser.buffer, '\'', 0) && CHECK_AT!(parser.buffer, '\'', 1)
                 {
                     string.push('\'');
                     SKIP(parser);
                     SKIP(parser);
                 } else {
-                    if CHECK!(parser.buffer, if single { b'\'' } else { b'"' }) {
+                    if CHECK!(parser.buffer, if single { '\'' } else { '"' }) {
                         break;
                     }
-                    if !single && CHECK!(parser.buffer, b'\\') && IS_BREAK_AT!(parser.buffer, 1) {
+                    if !single && CHECK!(parser.buffer, '\\') && IS_BREAK_AT!(parser.buffer, 1) {
                         CACHE(parser, 3_u64)?;
                         SKIP(parser);
                         SKIP_LINE(parser);
                         leading_blanks = true;
                         break;
-                    } else if !single && CHECK!(parser.buffer, b'\\') {
+                    } else if !single && CHECK!(parser.buffer, '\\') {
                         let mut code_length: size_t = 0_u64;
-                        match *parser.buffer.pointer.wrapping_offset(1_isize) {
-                            b'0' => {
+                        match parser.buffer.get(1).copied().unwrap() {
+                            '0' => {
                                 string.push('\0');
                             }
-                            b'a' => {
+                            'a' => {
                                 string.push('\x07');
                             }
-                            b'b' => {
+                            'b' => {
                                 string.push('\x08');
                             }
-                            b't' | b'\t' => {
+                            't' | '\t' => {
                                 string.push('\t');
                             }
-                            b'n' => {
+                            'n' => {
                                 string.push('\n');
                             }
-                            b'v' => {
+                            'v' => {
                                 string.push('\x0B');
                             }
-                            b'f' => {
+                            'f' => {
                                 string.push('\x0C');
                             }
-                            b'r' => {
+                            'r' => {
                                 string.push('\r');
                             }
-                            b'e' => {
+                            'e' => {
                                 string.push('\x1B');
                             }
-                            b' ' => {
+                            ' ' => {
                                 string.push(' ');
                             }
-                            b'"' => {
+                            '"' => {
                                 string.push('"');
                             }
-                            b'/' => {
+                            '/' => {
                                 string.push('/');
                             }
-                            b'\\' => {
+                            '\\' => {
                                 string.push('\\');
                             }
                             // NEL (#x85)
-                            b'N' => {
+                            'N' => {
                                 string.push_str("\u{0085}");
                             }
                             // #xA0
-                            b'_' => {
+                            '_' => {
                                 string.push_str("\u{00a0}");
                                 // string.push('\xC2');
                                 // string.push('\xA0');
                             }
                             // LS (#x2028)
-                            b'L' => {
+                            'L' => {
                                 string.push_str("\u{2028}");
                                 // string.push('\xE2');
                                 // string.push('\x80');
                                 // string.push('\xA8');
                             }
                             // PS (#x2029)
-                            b'P' => {
+                            'P' => {
                                 string.push_str("\u{2029}");
                                 // string.push('\xE2');
                                 // string.push('\x80');
                                 // string.push('\xA9');
                             }
-                            b'x' => {
+                            'x' => {
                                 code_length = 2_u64;
                             }
-                            b'u' => {
+                            'u' => {
                                 code_length = 4_u64;
                             }
-                            b'U' => {
+                            'U' => {
                                 code_length = 8_u64;
                             }
                             _ => {
@@ -1736,7 +1680,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
                             CACHE(parser, code_length)?;
                             k = 0_u64;
                             while k < code_length {
-                                if !IS_HEX_AT!(parser.buffer, k as isize) {
+                                if !IS_HEX_AT!(parser.buffer, k as usize) {
                                     yaml_parser_set_scanner_error(
                                         parser,
                                         "while parsing a quoted scalar",
@@ -1747,7 +1691,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
                                 } else {
                                     value =
                                         (value << 4)
-                                            .force_add(AS_HEX_AT!(parser.buffer, k as isize)
+                                            .force_add(AS_HEX_AT!(parser.buffer, k as usize)
                                                 as libc::c_uint);
                                     k = k.force_add(1);
                                 }
@@ -1777,7 +1721,7 @@ unsafe fn yaml_parser_scan_flow_scalar(
                 CACHE(parser, 2_u64)?;
             }
             CACHE(parser, 1_u64)?;
-            if CHECK!(parser.buffer, if single { b'\'' } else { b'"' }) {
+            if CHECK!(parser.buffer, if single { '\'' } else { '"' }) {
                 break;
             }
             CACHE(parser, 1_u64)?;
@@ -1855,28 +1799,28 @@ unsafe fn yaml_parser_scan_plain_scalar(
     loop {
         CACHE(parser, 4_u64)?;
         if parser.mark.column == 0_u64
-            && (CHECK_AT!(parser.buffer, b'-', 0)
-                && CHECK_AT!(parser.buffer, b'-', 1)
-                && CHECK_AT!(parser.buffer, b'-', 2)
-                || CHECK_AT!(parser.buffer, b'.', 0)
-                    && CHECK_AT!(parser.buffer, b'.', 1)
-                    && CHECK_AT!(parser.buffer, b'.', 2))
+            && (CHECK_AT!(parser.buffer, '-', 0)
+                && CHECK_AT!(parser.buffer, '-', 1)
+                && CHECK_AT!(parser.buffer, '-', 2)
+                || CHECK_AT!(parser.buffer, '.', 0)
+                    && CHECK_AT!(parser.buffer, '.', 1)
+                    && CHECK_AT!(parser.buffer, '.', 2))
             && IS_BLANKZ_AT!(parser.buffer, 3)
         {
             break;
         }
-        if CHECK!(parser.buffer, b'#') {
+        if CHECK!(parser.buffer, '#') {
             break;
         }
         while !IS_BLANKZ!(parser.buffer) {
             if parser.flow_level != 0
-                && CHECK!(parser.buffer, b':')
-                && (CHECK_AT!(parser.buffer, b',', 1)
-                    || CHECK_AT!(parser.buffer, b'?', 1)
-                    || CHECK_AT!(parser.buffer, b'[', 1)
-                    || CHECK_AT!(parser.buffer, b']', 1)
-                    || CHECK_AT!(parser.buffer, b'{', 1)
-                    || CHECK_AT!(parser.buffer, b'}', 1))
+                && CHECK!(parser.buffer, ':')
+                && (CHECK_AT!(parser.buffer, ',', 1)
+                    || CHECK_AT!(parser.buffer, '?', 1)
+                    || CHECK_AT!(parser.buffer, '[', 1)
+                    || CHECK_AT!(parser.buffer, ']', 1)
+                    || CHECK_AT!(parser.buffer, '{', 1)
+                    || CHECK_AT!(parser.buffer, '}', 1))
             {
                 yaml_parser_set_scanner_error(
                     parser,
@@ -1886,13 +1830,13 @@ unsafe fn yaml_parser_scan_plain_scalar(
                 );
                 return Err(());
             } else {
-                if CHECK!(parser.buffer, b':') && IS_BLANKZ_AT!(parser.buffer, 1)
+                if CHECK!(parser.buffer, ':') && IS_BLANKZ_AT!(parser.buffer, 1)
                     || parser.flow_level != 0
-                        && (CHECK!(parser.buffer, b',')
-                            || CHECK!(parser.buffer, b'[')
-                            || CHECK!(parser.buffer, b']')
-                            || CHECK!(parser.buffer, b'{')
-                            || CHECK!(parser.buffer, b'}'))
+                        && (CHECK!(parser.buffer, ',')
+                            || CHECK!(parser.buffer, '[')
+                            || CHECK!(parser.buffer, ']')
+                            || CHECK!(parser.buffer, '{')
+                            || CHECK!(parser.buffer, '}'))
                 {
                     break;
                 }

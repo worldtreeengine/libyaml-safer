@@ -717,14 +717,14 @@ pub struct yaml_parser_t {
     /// The working buffer.
     ///
     /// This always contains valid UTF-8.
-    pub(crate) buffer: yaml_buffer_t<yaml_char_t>,
+    pub(crate) buffer: VecDeque<char>,
     /// The number of unread characters in the buffer.
     pub(crate) unread: size_t,
     /// The raw buffer.
     ///
     /// This is the raw unchecked input from the read handler (for example, it
     /// may be UTF-16 encoded).
-    pub(crate) raw_buffer: yaml_buffer_t<libc::c_uchar>,
+    pub(crate) raw_buffer: VecDeque<u8>,
     /// The input encoding.
     pub(crate) encoding: yaml_encoding_t,
     /// The offset of the current position (in bytes).
@@ -1159,29 +1159,6 @@ impl Default for unnamed_yaml_emitter_t_scalar_data {
             single_quoted_allowed: false,
             block_allowed: false,
             style: Default::default(),
-        }
-    }
-}
-
-#[repr(C)]
-pub(crate) struct yaml_buffer_t<T> {
-    /// The beginning of the buffer.
-    pub start: *mut T,
-    /// The end of the buffer.
-    pub end: *mut T,
-    /// The current position of the buffer.
-    pub pointer: *mut T,
-    /// The last filled position of the buffer.
-    pub last: *mut T,
-}
-
-impl<T> Default for yaml_buffer_t<T> {
-    fn default() -> Self {
-        Self {
-            start: ptr::null_mut(),
-            end: ptr::null_mut(),
-            pointer: ptr::null_mut(),
-            last: ptr::null_mut(),
         }
     }
 }

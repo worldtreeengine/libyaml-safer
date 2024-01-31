@@ -1,63 +1,32 @@
-use alloc::string::String;
-
-use crate::yaml::yaml_buffer_t;
-
-macro_rules! BUFFER_INIT {
-    ($buffer:expr, $size:expr) => {{
-        let start = addr_of_mut!($buffer.start);
-        *start = yaml_malloc($size as size_t) as *mut yaml_char_t;
-        let pointer = addr_of_mut!($buffer.pointer);
-        *pointer = $buffer.start;
-        let last = addr_of_mut!($buffer.last);
-        *last = *pointer;
-        let end = addr_of_mut!($buffer.end);
-        *end = $buffer.start.wrapping_add($size as usize);
-    }};
-}
-
-macro_rules! BUFFER_DEL {
-    ($buffer:expr) => {{
-        yaml_free($buffer.start as *mut libc::c_void);
-        let end = addr_of_mut!($buffer.end);
-        *end = ptr::null_mut::<yaml_char_t>();
-        let pointer = addr_of_mut!($buffer.pointer);
-        *pointer = *end;
-        let start = addr_of_mut!($buffer.start);
-        *start = *pointer;
-    }};
-}
-
 macro_rules! CHECK_AT {
-    ($string:expr, $octet:expr, $offset:expr) => {
-        CHECK_AT_PTR!($string.pointer, $octet, $offset)
-    };
-}
-
-macro_rules! CHECK_AT_PTR {
-    ($pointer:expr, $octet:expr, $offset:expr) => {
-        *$pointer.offset($offset as isize) == $octet
+    ($buffer:expr, $octet:expr, $offset:expr) => {
+        $buffer.get($offset).copied() == Some($octet)
     };
 }
 
 macro_rules! CHECK {
-    ($string:expr, $octet:expr) => {
-        *$string.pointer == $octet
+    ($buffer:expr, $octet:expr) => {
+        $buffer.get(0).copied() == Some($octet)
     };
 }
 
 macro_rules! IS_ALPHA {
-    ($string:expr) => {
-        IS_ALPHA_CHAR!(*$string.pointer)
+    ($buffer:expr) => {
+        if let Some(ch) = $buffer.get(0).copied() {
+            IS_ALPHA_CHAR!(ch)
+        } else {
+            false
+        }
     };
 }
 
 macro_rules! IS_ALPHA_CHAR {
     ($ch:expr) => {
-        $ch >= b'0' && $ch <= b'9'
-            || $ch >= b'A' && $ch <= b'Z'
-            || $ch >= b'a' && $ch <= b'z'
-            || $ch == b'_'
-            || $ch == b'-'
+        $ch >= '0' && $ch <= '9'
+            || $ch >= 'A' && $ch <= 'Z'
+            || $ch >= 'a' && $ch <= 'z'
+            || $ch == '_'
+            || $ch == '-'
     };
 }
 
@@ -70,41 +39,44 @@ pub(crate) fn is_alpha(ch: char) -> bool {
 }
 
 macro_rules! IS_DIGIT {
-    ($string:expr) => {
-        *$string.pointer >= b'0' && *$string.pointer <= b'9'
+    ($buffer:expr) => {
+        $buffer
+            .get(0)
+            .copied()
+            .map(|ch| ch.is_digit(10))
+            .unwrap_or(false)
     };
 }
 
 macro_rules! AS_DIGIT {
-    ($string:expr) => {
-        (*$string.pointer - b'0') as libc::c_int
+    ($buffer:expr) => {
+        $buffer
+            .get(0)
+            .copied()
+            .expect("out of bounds buffer access")
+            .to_digit(10)
+            .expect("not in digit range")
     };
 }
 
 macro_rules! IS_HEX_AT {
-    ($string:expr, $offset:expr) => {
-        *$string.pointer.wrapping_offset($offset) >= b'0'
-            && *$string.pointer.wrapping_offset($offset) <= b'9'
-            || *$string.pointer.wrapping_offset($offset) >= b'A'
-                && *$string.pointer.wrapping_offset($offset) <= b'F'
-            || *$string.pointer.wrapping_offset($offset) >= b'a'
-                && *$string.pointer.wrapping_offset($offset) <= b'f'
+    ($buffer:expr, $offset:expr) => {
+        if let Some(ch) = $buffer.get($offset).copied() {
+            ch.is_digit(16)
+        } else {
+            false
+        }
     };
 }
 
 macro_rules! AS_HEX_AT {
-    ($string:expr, $offset:expr) => {
-        if *$string.pointer.wrapping_offset($offset) >= b'A'
-            && *$string.pointer.wrapping_offset($offset) <= b'F'
-        {
-            *$string.pointer.wrapping_offset($offset) - b'A' + 10
-        } else if *$string.pointer.wrapping_offset($offset) >= b'a'
-            && *$string.pointer.wrapping_offset($offset) <= b'f'
-        {
-            *$string.pointer.wrapping_offset($offset) - b'a' + 10
-        } else {
-            *$string.pointer.wrapping_offset($offset) - b'0'
-        } as libc::c_int
+    ($buffer:expr, $offset:expr) => {
+        $buffer
+            .get($offset)
+            .copied()
+            .expect("out of range buffer access")
+            .to_digit(16)
+            .expect("not in digit range (hex)")
     };
 }
 
@@ -170,8 +142,8 @@ pub(crate) fn is_printable(ch: char) -> bool {
 }
 
 macro_rules! IS_Z_AT {
-    ($string:expr, $offset:expr) => {
-        CHECK_AT!($string, b'\0', $offset)
+    ($buffer:expr, $offset:expr) => {
+        $buffer.get($offset).is_none()
     };
 }
 
@@ -182,10 +154,8 @@ macro_rules! IS_Z {
 }
 
 macro_rules! IS_BOM {
-    ($string:expr) => {
-        CHECK_AT!($string, b'\xEF', 0)
-            && CHECK_AT!($string, b'\xBB', 1)
-            && CHECK_AT!($string, b'\xBF', 2)
+    ($buffer:expr) => {
+        CHECK!($buffer, '\u{feff}')
     };
 }
 
@@ -195,7 +165,7 @@ pub(crate) fn is_bom(ch: char) -> bool {
 
 macro_rules! IS_SPACE_AT {
     ($string:expr, $offset:expr) => {
-        CHECK_AT!($string, b' ', $offset)
+        CHECK_AT!($string, ' ', $offset)
     };
 }
 
@@ -210,8 +180,8 @@ pub(crate) fn is_space(ch: impl Into<Option<char>>) -> bool {
 }
 
 macro_rules! IS_TAB_AT {
-    ($string:expr, $offset:expr) => {
-        CHECK_AT!($string, b'\t', $offset)
+    ($buffer:expr, $offset:expr) => {
+        CHECK_AT!($buffer, '\t', $offset)
     };
 }
 
@@ -226,9 +196,10 @@ pub(crate) fn is_tab(ch: impl Into<Option<char>>) -> bool {
 }
 
 macro_rules! IS_BLANK_AT {
-    ($string:expr, $offset:expr) => {
-        IS_SPACE_AT!($string, $offset) || IS_TAB_AT!($string, $offset)
-    };
+    ($buffer:expr, $offset:expr) => {{
+        let ch = $buffer.get($offset).copied();
+        $crate::macros::is_space(ch) || crate::macros::is_tab(ch)
+    }};
 }
 
 macro_rules! IS_BLANK {
@@ -248,23 +219,8 @@ pub(crate) fn is_blankz(ch: impl Into<Option<char>>) -> bool {
 }
 
 macro_rules! IS_BREAK_AT {
-    ($string:expr, $offset:expr) => {
-        IS_BREAK_AT_PTR!($string.pointer, $offset)
-    };
-}
-
-macro_rules! IS_BREAK_AT_PTR {
-    ($pointer:expr, $offset:expr) => {
-        CHECK_AT_PTR!($pointer, b'\r', $offset)
-            || CHECK_AT_PTR!($pointer, b'\n', $offset)
-            || CHECK_AT_PTR!($pointer, b'\xC2', $offset)
-                && CHECK_AT_PTR!($pointer, b'\x85', $offset + 1)
-            || CHECK_AT_PTR!($pointer, b'\xE2', $offset)
-                && CHECK_AT_PTR!($pointer, b'\x80', $offset + 1)
-                && CHECK_AT_PTR!($pointer, b'\xA8', $offset + 2)
-            || CHECK_AT_PTR!($pointer, b'\xE2', $offset)
-                && CHECK_AT_PTR!($pointer, b'\x80', $offset + 1)
-                && CHECK_AT_PTR!($pointer, b'\xA9', $offset + 2)
+    ($buffer:expr, $offset:expr) => {
+        $crate::macros::is_break($buffer.get($offset).copied())
     };
 }
 
@@ -277,7 +233,7 @@ pub(crate) fn is_break(ch: impl Into<Option<char>>) -> bool {
 
 pub(crate) fn is_breakz(ch: impl Into<Option<char>>) -> bool {
     let ch = ch.into();
-    is_break(ch) || ch.is_none()
+    ch.is_none() || is_break(ch)
 }
 
 macro_rules! IS_BREAK {
@@ -286,16 +242,11 @@ macro_rules! IS_BREAK {
     };
 }
 
-macro_rules! IS_CRLF {
-    ($string:expr) => {
-        CHECK_AT!($string, b'\r', 0) && CHECK_AT!($string, b'\n', 1)
-    };
-}
-
 macro_rules! IS_BREAKZ_AT {
-    ($string:expr, $offset:expr) => {
-        IS_BREAK_AT!($string, $offset) || IS_Z_AT!($string, $offset)
-    };
+    ($buffer:expr, $offset:expr) => {{
+        let ch = $buffer.get($offset).copied();
+        crate::macros::is_breakz(ch)
+    }};
 }
 
 macro_rules! IS_BREAKZ {
@@ -305,61 +256,16 @@ macro_rules! IS_BREAKZ {
 }
 
 macro_rules! IS_BLANKZ_AT {
-    ($string:expr, $offset:expr) => {
-        IS_BLANK_AT!($string, $offset) || IS_BREAKZ_AT!($string, $offset)
-    };
+    ($buffer:expr, $offset:expr) => {{
+        let ch = $buffer.get($offset).copied();
+        $crate::macros::is_blank(ch) || $crate::macros::is_breakz(ch)
+    }};
 }
 
 macro_rules! IS_BLANKZ {
     ($string:expr) => {
         IS_BLANKZ_AT!($string, 0)
     };
-}
-
-/// Get the number of bytes for the UTF-8 character at `$offset` from the
-/// string's cursor position.
-macro_rules! WIDTH_AT {
-    ($string:expr, $offset:expr) => {
-        if *$string.pointer.wrapping_offset($offset as isize) & 0x80 == 0x00 {
-            1
-        } else if *$string.pointer.wrapping_offset($offset as isize) & 0xE0 == 0xC0 {
-            2
-        } else if *$string.pointer.wrapping_offset($offset as isize) & 0xF0 == 0xE0 {
-            3
-        } else if *$string.pointer.wrapping_offset($offset as isize) & 0xF8 == 0xF0 {
-            4
-        } else {
-            0
-        }
-    };
-}
-
-/// Get the number of bytes for the UTF-8 character at the string's cursor
-/// position.
-macro_rules! WIDTH {
-    ($string:expr) => {
-        WIDTH_AT!($string, 0)
-    };
-}
-
-pub(crate) unsafe fn COPY_CHAR_BUFFER_TO_STRING(
-    string: &mut String,
-    buffer: &mut yaml_buffer_t<u8>,
-) {
-    let ch = *buffer.pointer;
-    let to_append;
-    if ch & 0x80 == 0x00 {
-        to_append = core::slice::from_raw_parts(buffer.pointer, 1);
-    } else if ch & 0xE0 == 0xC0 {
-        to_append = core::slice::from_raw_parts(buffer.pointer, 2);
-    } else if ch & 0xF0 == 0xE0 {
-        to_append = core::slice::from_raw_parts(buffer.pointer, 3);
-    } else {
-        debug_assert_eq!(ch & 0xF8, 0xF0);
-        to_append = core::slice::from_raw_parts(buffer.pointer, 4);
-    }
-    string.push_str(core::str::from_utf8_unchecked(to_append));
-    buffer.pointer = buffer.pointer.wrapping_offset(to_append.len() as isize);
 }
 
 macro_rules! STACK_LIMIT {
@@ -371,4 +277,20 @@ macro_rules! STACK_LIMIT {
             Err(())
         }
     };
+}
+
+pub(crate) fn vecdeque_starts_with<T: PartialEq + Copy>(
+    vec: &alloc::collections::VecDeque<T>,
+    needle: &[T],
+) -> bool {
+    let (head, tail) = vec.as_slices();
+    if head.len() >= needle.len() {
+        head.starts_with(needle)
+    } else {
+        head.iter()
+            .chain(tail.iter())
+            .copied()
+            .take(needle.len())
+            .eq(needle.iter().copied())
+    }
 }

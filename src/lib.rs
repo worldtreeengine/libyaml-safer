@@ -54,59 +54,8 @@ mod libc {
 #[macro_use]
 mod externs {
     use crate::libc;
-    use crate::ops::{die, ForceAdd as _, ForceInto as _};
-    use alloc::alloc::{self as rust, Layout};
-    use core::mem::{self, MaybeUninit};
+    use core::mem::MaybeUninit;
     use core::ptr;
-    use core::slice;
-
-    const HEADER: usize = {
-        let need_len = mem::size_of::<usize>();
-        // Round up to multiple of MALLOC_ALIGN.
-        (need_len + MALLOC_ALIGN - 1) & !(MALLOC_ALIGN - 1)
-    };
-
-    // `max_align_t` may be bigger than this, but libyaml does not use `long
-    // double` or u128.
-    const MALLOC_ALIGN: usize = {
-        let int_align = mem::align_of::<libc::c_ulong>();
-        let ptr_align = mem::align_of::<usize>();
-        if int_align >= ptr_align {
-            int_align
-        } else {
-            ptr_align
-        }
-    };
-
-    pub unsafe fn malloc(size: libc::c_ulong) -> *mut libc::c_void {
-        let size = HEADER.force_add(size.force_into());
-        let layout = Layout::from_size_align(size, MALLOC_ALIGN)
-            .ok()
-            .unwrap_or_else(die);
-        let memory = rust::alloc(layout);
-        if memory.is_null() {
-            rust::handle_alloc_error(layout);
-        }
-        memory.cast::<usize>().write(size);
-        memory.add(HEADER).cast()
-    }
-
-    pub unsafe fn free(ptr: *mut libc::c_void) {
-        let memory = ptr.cast::<u8>().sub(HEADER);
-        let size = memory.cast::<usize>().read();
-        let layout = Layout::from_size_align_unchecked(size, MALLOC_ALIGN);
-        rust::dealloc(memory, layout);
-    }
-
-    pub unsafe fn memcmp(
-        lhs: *const libc::c_void,
-        rhs: *const libc::c_void,
-        count: libc::c_ulong,
-    ) -> libc::c_int {
-        let lhs = slice::from_raw_parts(lhs.cast::<u8>(), count as usize);
-        let rhs = slice::from_raw_parts(rhs.cast::<u8>(), count as usize);
-        lhs.cmp(rhs) as libc::c_int
-    }
 
     pub unsafe fn memcpy(
         dest: *mut libc::c_void,
@@ -114,19 +63,6 @@ mod externs {
         count: libc::c_ulong,
     ) -> *mut libc::c_void {
         ptr::copy_nonoverlapping(
-            src.cast::<MaybeUninit<u8>>(),
-            dest.cast::<MaybeUninit<u8>>(),
-            count as usize,
-        );
-        dest
-    }
-
-    pub unsafe fn memmove(
-        dest: *mut libc::c_void,
-        src: *const libc::c_void,
-        count: libc::c_ulong,
-    ) -> *mut libc::c_void {
-        ptr::copy(
             src.cast::<MaybeUninit<u8>>(),
             dest.cast::<MaybeUninit<u8>>(),
             count as usize,
@@ -238,22 +174,13 @@ mod tests {
             // const SANITY_INPUT: &'static str =
             //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
             const SANITY_INPUT: &'static str = r#"
-a: "double
-  quotes" # lala
-b: plain
- value  # lala
-c  : #lala
-  d
-? # lala
- - seq1
-: # lala
- - #lala
-  seq2
-e:
- &node # lala
- - x: y
-block: > # lala
-  abcde
+unicode: "Sosa did fine.\u263A"
+control: "\b1998\t1999\t2000\n"
+hex esc: "\x0d\x0a is \r\n"
+
+single: '"Howdy!" he cried.'
+quoted: ' # Not a ''comment''.'
+tie-fighter: '|\-*-/|'
 "#;
             yaml_parser_set_input_string(
                 &mut parser,

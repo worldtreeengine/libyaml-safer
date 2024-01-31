@@ -938,7 +938,7 @@ unsafe fn yaml_emitter_analyze_tag_directive(
     }
     if tag_directive.handle.len() > 2 {
         let tag_content = &tag_directive.handle[1..tag_directive.handle.len() - 1];
-        for ch in tag_content.bytes() {
+        for ch in tag_content.chars() {
             if !IS_ALPHA_CHAR!(ch) {
                 return yaml_emitter_set_emitter_error(
                     emitter,
@@ -971,7 +971,7 @@ unsafe fn yaml_emitter_analyze_anchor(
         );
     }
 
-    for ch in anchor.bytes() {
+    for ch in anchor.chars() {
         if !IS_ALPHA_CHAR!(ch) {
             return yaml_emitter_set_emitter_error(
                 emitter,
