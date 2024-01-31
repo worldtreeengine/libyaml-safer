@@ -11,9 +11,6 @@
     clippy::too_many_lines
 )]
 
-mod cstr;
-
-use self::cstr::CStr;
 use libyaml_safer::{
     yaml_event_delete, yaml_event_t, yaml_parser_delete, yaml_parser_initialize, yaml_parser_parse,
     yaml_parser_set_input, yaml_parser_t, YamlEventData, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
@@ -63,7 +60,7 @@ pub(crate) unsafe fn unsafe_main(
     let mut event = yaml_event_t::default();
     loop {
         if yaml_parser_parse(&mut parser, &mut event).is_err() {
-            let mut error = format!("Parse error: {}", CStr::from_ptr((*parser).problem));
+            let mut error = format!("Parse error: {}", parser.problem.unwrap_or(""));
             if parser.problem_mark.line != 0 || (*parser).problem_mark.column != 0 {
                 let _ = write!(
                     error,
@@ -104,22 +101,21 @@ pub(crate) unsafe fn unsafe_main(
                 _ = writeln!(stdout);
             }
             YamlEventData::Alias { anchor } => {
-                _ = writeln!(stdout, "=ALI *{}", CStr::from_ptr(*anchor as *const i8),);
+                _ = writeln!(stdout, "=ALI *{}", anchor);
             }
             YamlEventData::Scalar {
                 anchor,
                 tag,
                 value,
-                length,
                 style,
                 ..
             } => {
                 let _ = write!(stdout, "=VAL");
-                if !anchor.is_null() {
-                    _ = write!(stdout, " &{}", CStr::from_ptr(*anchor as *const i8),);
+                if let Some(anchor) = anchor {
+                    _ = write!(stdout, " &{}", anchor);
                 }
-                if !tag.is_null() {
-                    _ = write!(stdout, " <{}>", CStr::from_ptr(*tag as *const i8),);
+                if let Some(tag) = tag {
+                    _ = write!(stdout, " <{}>", tag);
                 }
                 _ = stdout.write_all(match *style {
                     YAML_PLAIN_SCALAR_STYLE => b" :",
@@ -129,16 +125,16 @@ pub(crate) unsafe fn unsafe_main(
                     YAML_FOLDED_SCALAR_STYLE => b" >",
                     _ => process::abort(),
                 });
-                print_escaped(stdout, *value, *length);
+                print_escaped(stdout, &value);
                 _ = writeln!(stdout);
             }
             YamlEventData::SequenceStart { anchor, tag, .. } => {
                 let _ = write!(stdout, "+SEQ");
-                if !anchor.is_null() {
-                    _ = write!(stdout, " &{}", CStr::from_ptr(*anchor as *const i8),);
+                if let Some(anchor) = anchor {
+                    _ = write!(stdout, " &{}", anchor);
                 }
-                if !tag.is_null() {
-                    _ = write!(stdout, " <{}>", CStr::from_ptr(*tag as *const i8),);
+                if let Some(tag) = tag {
+                    _ = write!(stdout, " <{}>", tag);
                 }
                 _ = writeln!(stdout);
             }
@@ -147,11 +143,11 @@ pub(crate) unsafe fn unsafe_main(
             }
             YamlEventData::MappingStart { anchor, tag, .. } => {
                 let _ = write!(stdout, "+MAP");
-                if !anchor.is_null() {
-                    _ = write!(stdout, " &{}", CStr::from_ptr(*anchor as *const i8),);
+                if let Some(anchor) = anchor {
+                    _ = write!(stdout, " &{}", anchor);
                 }
-                if !tag.is_null() {
-                    _ = write!(stdout, " <{}>", CStr::from_ptr(*tag as *const i8),);
+                if let Some(tag) = tag {
+                    _ = write!(stdout, " <{}>", tag);
                 }
                 _ = writeln!(stdout);
             }
@@ -169,10 +165,9 @@ pub(crate) unsafe fn unsafe_main(
     Ok(())
 }
 
-unsafe fn print_escaped(stdout: &mut dyn Write, mut str: *mut u8, length: u64) {
-    let end = str.offset(length as isize);
-    while str < end {
-        let repr = match &*str {
+unsafe fn print_escaped(stdout: &mut dyn Write, s: &str) {
+    for ch in s.bytes() {
+        let repr = match &ch {
             b'\\' => b"\\\\",
             b'\0' => b"\\0",
             b'\x08' => b"\\b",
@@ -182,7 +177,6 @@ unsafe fn print_escaped(stdout: &mut dyn Write, mut str: *mut u8, length: u64) {
             c => slice::from_ref(c),
         };
         let _ = stdout.write_all(repr);
-        str = str.offset(1);
     }
 }
 

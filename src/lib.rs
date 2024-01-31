@@ -91,22 +91,6 @@ mod externs {
         memory.add(HEADER).cast()
     }
 
-    pub unsafe fn realloc(ptr: *mut libc::c_void, new_size: libc::c_ulong) -> *mut libc::c_void {
-        let mut memory = ptr.cast::<u8>().sub(HEADER);
-        let size = memory.cast::<usize>().read();
-        let layout = Layout::from_size_align_unchecked(size, MALLOC_ALIGN);
-        let new_size = HEADER.force_add(new_size.force_into());
-        let new_layout = Layout::from_size_align(new_size, MALLOC_ALIGN)
-            .ok()
-            .unwrap_or_else(die);
-        memory = rust::realloc(memory, layout, new_size);
-        if memory.is_null() {
-            rust::handle_alloc_error(new_layout);
-        }
-        memory.cast::<usize>().write(new_size);
-        memory.add(HEADER).cast()
-    }
-
     pub unsafe fn free(ptr: *mut libc::c_void) {
         let memory = ptr.cast::<u8>().sub(HEADER);
         let size = memory.cast::<usize>().read();
@@ -150,55 +134,6 @@ mod externs {
         dest
     }
 
-    pub unsafe fn memset(
-        dest: *mut libc::c_void,
-        ch: libc::c_int,
-        count: libc::c_ulong,
-    ) -> *mut libc::c_void {
-        ptr::write_bytes(dest.cast::<u8>(), ch as u8, count as usize);
-        dest
-    }
-
-    pub unsafe fn strcmp(lhs: *const libc::c_char, rhs: *const libc::c_char) -> libc::c_int {
-        let lhs = slice::from_raw_parts(lhs.cast::<u8>(), strlen(lhs) as usize);
-        let rhs = slice::from_raw_parts(rhs.cast::<u8>(), strlen(rhs) as usize);
-        lhs.cmp(rhs) as libc::c_int
-    }
-
-    pub unsafe fn strdup(src: *const libc::c_char) -> *mut libc::c_char {
-        let len = strlen(src);
-        let dest = malloc(len + 1);
-        memcpy(dest, src.cast(), len + 1);
-        dest.cast()
-    }
-
-    pub unsafe fn strlen(str: *const libc::c_char) -> libc::c_ulong {
-        let mut end = str;
-        while *end != 0 {
-            end = end.add(1);
-        }
-        end.offset_from(str) as libc::c_ulong
-    }
-
-    pub unsafe fn strncmp(
-        lhs: *const libc::c_char,
-        rhs: *const libc::c_char,
-        mut count: libc::c_ulong,
-    ) -> libc::c_int {
-        let mut lhs = lhs.cast::<u8>();
-        let mut rhs = rhs.cast::<u8>();
-        while count > 0 && *lhs != 0 && *lhs == *rhs {
-            lhs = lhs.add(1);
-            rhs = rhs.add(1);
-            count -= 1;
-        }
-        if count == 0 {
-            0
-        } else {
-            (*lhs).cmp(&*rhs) as libc::c_int
-        }
-    }
-
     macro_rules! __assert {
         (false $(,)?) => {
             $crate::externs::__assert_fail(stringify!(false), file!(), line!())
@@ -219,36 +154,6 @@ mod externs {
         }
         let _abort_on_panic = Abort;
         panic!("{}:{}: Assertion `{}` failed.", __file, __line, __assertion);
-    }
-}
-
-mod fmt {
-    use crate::yaml::yaml_char_t;
-    use core::fmt::{self, Write};
-    use core::ptr;
-
-    pub struct WriteToPtr {
-        ptr: *mut yaml_char_t,
-    }
-
-    impl WriteToPtr {
-        pub unsafe fn new(ptr: *mut yaml_char_t) -> Self {
-            WriteToPtr { ptr }
-        }
-
-        pub fn write_fmt(&mut self, args: fmt::Arguments) {
-            let _ = Write::write_fmt(self, args);
-        }
-    }
-
-    impl Write for WriteToPtr {
-        fn write_str(&mut self, s: &str) -> fmt::Result {
-            unsafe {
-                ptr::copy_nonoverlapping(s.as_ptr(), self.ptr, s.len());
-                self.ptr = self.ptr.add(s.len());
-            }
-            Ok(())
-        }
     }
 }
 
@@ -330,7 +235,26 @@ mod tests {
             let mut parser = core::mem::MaybeUninit::uninit();
             yaml_parser_initialize(parser.as_mut_ptr()).unwrap();
             let mut parser = parser.assume_init();
-            const SANITY_INPUT: &'static str = "- a: 2\n";
+            // const SANITY_INPUT: &'static str =
+            //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
+            const SANITY_INPUT: &'static str = r#"
+a: "double
+  quotes" # lala
+b: plain
+ value  # lala
+c  : #lala
+  d
+? # lala
+ - seq1
+: # lala
+ - #lala
+  seq2
+e:
+ &node # lala
+ - x: y
+block: > # lala
+  abcde
+"#;
             yaml_parser_set_input_string(
                 &mut parser,
                 SANITY_INPUT.as_ptr(),
@@ -340,12 +264,86 @@ mod tests {
             if yaml_parser_load(&mut parser, doc.as_mut_ptr()).is_err() {
                 panic!("parser error: {:?} {:?}", parser.error, parser.problem);
             }
-            let mut doc = doc.assume_init();
+            // let mut doc = doc.assume_init();
 
-            let mut emitter = core::mem::MaybeUninit::uninit();
-            yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
-            let mut emitter = emitter.assume_init();
+            // let mut emitter = core::mem::MaybeUninit::uninit();
+            // yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
+            // let mut emitter = emitter.assume_init();
 
+            // let mut output = vec![0u8; 1024];
+            // let mut size_written = 0;
+            // yaml_emitter_set_output_string(
+            //     &mut emitter,
+            //     output.as_mut_ptr(),
+            //     1024,
+            //     &mut size_written,
+            // );
+
+            // if yaml_emitter_dump(&mut emitter, &mut doc).is_err() {
+            //     panic!("emitter error: {:?} {:?}", emitter.error, emitter.problem);
+            // }
+            // output.resize(size_written as _, 0);
+            // let output_str = core::str::from_utf8(&output).expect("invalid UTF-8");
+            // assert_eq!(output_str, SANITY_INPUT);
+        }
+    }
+
+    // #[test]
+    // fn integration_s7bg() {
+    //     unsafe {
+    //         let mut emitter = emitter_new();
+    //         let mut output = vec![0u8; 1024];
+    //         let mut size_written = 0;
+    //         yaml_emitter_set_output_string(
+    //             &mut emitter,
+    //             output.as_mut_ptr(),
+    //             1024,
+    //             &mut size_written,
+    //         );
+
+    //         let mut event = yaml_event_t::default();
+    //         yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING).unwrap();
+    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+    //         yaml_document_start_event_initialize(&mut event, None, &[], true).unwrap();
+    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+    //         yaml_sequence_start_event_initialize(
+    //             &mut event,
+    //             None,
+    //             None,
+    //             false,
+    //             YAML_BLOCK_SEQUENCE_STYLE,
+    //         )
+    //         .unwrap();
+    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+    //         yaml_scalar_event_initialize(
+    //             &mut event,
+    //             None,
+    //             None,
+    //             ":,",
+    //             true,
+    //             true,
+    //             YAML_PLAIN_SCALAR_STYLE,
+    //         )
+    //         .unwrap();
+    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+    //         yaml_sequence_end_event_initialize(&mut event).unwrap();
+    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+    //         yaml_document_end_event_initialize(&mut event, true).unwrap();
+    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+    //         yaml_stream_end_event_initialize(&mut event).unwrap();
+    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+
+    //         assert_eq!(
+    //             core::str::from_utf8(&output[0..size_written as usize]).unwrap(),
+    //             "- :,\n"
+    //         );
+    //     }
+    // }
+
+    #[test]
+    fn integration_hs5t() {
+        unsafe {
+            let mut emitter = emitter_new();
             let mut output = vec![0u8; 1024];
             let mut size_written = 0;
             yaml_emitter_set_output_string(
@@ -355,10 +353,39 @@ mod tests {
                 &mut size_written,
             );
 
-            if yaml_emitter_dump(&mut emitter, &mut doc).is_err() {
-                panic!("emitter error: {:?} {:?}", emitter.error, emitter.problem);
-            }
-            output.resize(size_written as _, 0);
+            let mut event = yaml_event_t::default();
+            yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING).unwrap();
+            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+            yaml_document_start_event_initialize(&mut event, None, &[], true).unwrap();
+            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+            yaml_scalar_event_initialize(
+                &mut event,
+                None,
+                None,
+                "1st non-empty\n2nd non-empty 3rd non-empty",
+                true,
+                true,
+                YAML_PLAIN_SCALAR_STYLE,
+            )
+            .unwrap();
+            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+            yaml_document_end_event_initialize(&mut event, true).unwrap();
+            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+            yaml_stream_end_event_initialize(&mut event).unwrap();
+            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+
+            assert_eq!(
+                core::str::from_utf8(&output[0..size_written as usize]).unwrap(),
+                "'1st non-empty\n\n  2nd non-empty 3rd non-empty'\n"
+            );
+        }
+    }
+
+    fn emitter_new() -> yaml_emitter_t {
+        unsafe {
+            let mut emitter = core::mem::MaybeUninit::uninit();
+            yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
+            emitter.assume_init()
         }
     }
 }

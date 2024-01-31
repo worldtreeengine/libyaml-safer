@@ -1,3 +1,7 @@
+use alloc::string::String;
+
+use crate::yaml::yaml_buffer_t;
+
 macro_rules! BUFFER_INIT {
     ($buffer:expr, $size:expr) => {{
         let start = addr_of_mut!($buffer.start);
@@ -23,67 +27,6 @@ macro_rules! BUFFER_DEL {
     }};
 }
 
-macro_rules! STRING_ASSIGN {
-    ($string:expr, $length:expr) => {
-        yaml_string_t {
-            start: $string,
-            end: $string.wrapping_offset($length as isize),
-            pointer: $string,
-        }
-    };
-}
-
-macro_rules! STRING_INIT {
-    ($string:expr) => {{
-        $string.start = yaml_malloc(16) as *mut yaml_char_t;
-        $string.pointer = $string.start;
-        $string.end = $string.start.wrapping_add(16);
-        memset($string.start as *mut libc::c_void, 0, 16);
-    }};
-}
-
-macro_rules! STRING_DEL {
-    ($string:expr) => {{
-        yaml_free($string.start as *mut libc::c_void);
-        $string.end = ptr::null_mut::<yaml_char_t>();
-        $string.pointer = $string.end;
-        $string.start = $string.pointer;
-    }};
-}
-
-macro_rules! STRING_EXTEND {
-    ($string:expr) => {
-        if $string.pointer.wrapping_add(5) >= $string.end {
-            yaml_string_extend(&mut $string.start, &mut $string.pointer, &mut $string.end);
-        }
-    };
-}
-
-macro_rules! CLEAR {
-    ($string:expr) => {{
-        $string.pointer = $string.start;
-        memset(
-            $string.start as *mut libc::c_void,
-            0,
-            $string.end.c_offset_from($string.start) as libc::c_ulong,
-        );
-    }};
-}
-
-macro_rules! JOIN {
-    ($string_a:expr, $string_b:expr) => {{
-        yaml_string_join(
-            &mut $string_a.start,
-            &mut $string_a.pointer,
-            &mut $string_a.end,
-            &mut $string_b.start,
-            &mut $string_b.pointer,
-            &mut $string_b.end,
-        );
-        $string_b.pointer = $string_b.start;
-    }};
-}
-
 macro_rules! CHECK_AT {
     ($string:expr, $octet:expr, $offset:expr) => {
         CHECK_AT_PTR!($string.pointer, $octet, $offset)
@@ -104,12 +47,26 @@ macro_rules! CHECK {
 
 macro_rules! IS_ALPHA {
     ($string:expr) => {
-        *$string.pointer >= b'0' && *$string.pointer <= b'9'
-            || *$string.pointer >= b'A' && *$string.pointer <= b'Z'
-            || *$string.pointer >= b'a' && *$string.pointer <= b'z'
-            || *$string.pointer == b'_'
-            || *$string.pointer == b'-'
+        IS_ALPHA_CHAR!(*$string.pointer)
     };
+}
+
+macro_rules! IS_ALPHA_CHAR {
+    ($ch:expr) => {
+        $ch >= b'0' && $ch <= b'9'
+            || $ch >= b'A' && $ch <= b'Z'
+            || $ch >= b'a' && $ch <= b'z'
+            || $ch == b'_'
+            || $ch == b'-'
+    };
+}
+
+pub(crate) fn is_alpha(ch: char) -> bool {
+    ch >= '0' && ch <= '9'
+        || ch >= 'A' && ch <= 'Z'
+        || ch >= 'a' && ch <= 'z'
+        || ch == '_'
+        || ch == '-'
 }
 
 macro_rules! IS_DIGIT {
@@ -151,49 +108,65 @@ macro_rules! AS_HEX_AT {
     };
 }
 
-macro_rules! IS_ASCII {
-    ($string:expr) => {
-        *$string.pointer <= b'\x7F'
-    };
+pub(crate) fn is_ascii(ch: char) -> bool {
+    ch.is_ascii()
 }
 
-macro_rules! IS_PRINTABLE {
-    ($string:expr) => {
-        match *$string.pointer {
-            // ASCII
-            0x0A | 0x20..=0x7E => true,
-            // U+A0 ... U+BF
-            0xC2 => match *$string.pointer.wrapping_offset(1) {
-                0xA0..=0xBF => true,
-                _ => false,
-            },
-            // U+C0 ... U+CFFF
-            0xC3..=0xEC => true,
-            // U+D000 ... U+D7FF
-            0xED => match *$string.pointer.wrapping_offset(1) {
-                0x00..=0x9F => true,
-                _ => false,
-            },
-            // U+E000 ... U+EFFF
-            0xEE => true,
-            // U+F000 ... U+FFFD
-            0xEF => match *$string.pointer.wrapping_offset(1) {
-                0xBB => match *$string.pointer.wrapping_offset(2) {
-                    // except U+FEFF
-                    0xBF => false,
-                    _ => true,
-                },
-                0xBF => match *$string.pointer.wrapping_offset(2) {
-                    0xBE | 0xBF => false,
-                    _ => true,
-                },
-                _ => true,
-            },
-            // U+10000 ... U+10FFFF
-            0xF0..=0xF4 => true,
-            _ => false,
-        }
-    };
+// TODO: Keeping this comment around to verify the `is_printable` function.
+// macro_rules! IS_PRINTABLE {
+//     ($string:expr) => {
+//         match *$string.pointer {
+//             // ASCII
+//             0x0A | 0x20..=0x7E => true,
+//             // U+A0 ... U+BF
+//             0xC2 => match *$string.pointer.wrapping_offset(1) {
+//                 0xA0..=0xBF => true,
+//                 _ => false,
+//             },
+//             // U+C0 ... U+CFFF
+//             0xC3..=0xEC => true,
+//             // U+D000 ... U+D7FF
+//             0xED => match *$string.pointer.wrapping_offset(1) {
+//                 0x00..=0x9F => true,
+//                 _ => false,
+//             },
+//             // U+E000 ... U+EFFF
+//             0xEE => true,
+//             // U+F000 ... U+FFFD
+//             0xEF => match *$string.pointer.wrapping_offset(1) {
+//                 0xBB => match *$string.pointer.wrapping_offset(2) {
+//                     // except U+FEFF
+//                     0xBF => false,
+//                     _ => true,
+//                 },
+//                 0xBF => match *$string.pointer.wrapping_offset(2) {
+//                     0xBE | 0xBF => false,
+//                     _ => true,
+//                 },
+//                 _ => true,
+//             },
+//             // U+10000 ... U+10FFFF
+//             0xF0..=0xF4 => true,
+//             _ => false,
+//         }
+//     };
+// }
+
+pub(crate) fn is_printable(ch: char) -> bool {
+    match ch {
+        // ASCII
+        '\x0a' | '\x20'..='\x7e' => true,
+        '\u{00a0}'..='\u{00bf}' => true,
+        '\u{00c0}'..='\u{cfff}' => true,
+        '\u{d000}'..='\u{d7ff}' => true,
+        '\u{e000}'..='\u{efff}' => true,
+        '\u{feff}' => false,
+        '\u{fffe}' => false,
+        '\u{ffff}' => false,
+        '\u{f000}'..='\u{fffd}' => true,
+        '\u{10000}'..='\u{10ffff}' => true,
+        _ => false,
+    }
 }
 
 macro_rules! IS_Z_AT {
@@ -216,6 +189,10 @@ macro_rules! IS_BOM {
     };
 }
 
+pub(crate) fn is_bom(ch: char) -> bool {
+    ch == '\u{7eff}'
+}
+
 macro_rules! IS_SPACE_AT {
     ($string:expr, $offset:expr) => {
         CHECK_AT!($string, b' ', $offset)
@@ -226,6 +203,10 @@ macro_rules! IS_SPACE {
     ($string:expr) => {
         IS_SPACE_AT!($string, 0)
     };
+}
+
+pub(crate) fn is_space(ch: impl Into<Option<char>>) -> bool {
+    ch.into() == Some(' ')
 }
 
 macro_rules! IS_TAB_AT {
@@ -240,6 +221,10 @@ macro_rules! IS_TAB {
     };
 }
 
+pub(crate) fn is_tab(ch: impl Into<Option<char>>) -> bool {
+    ch.into() == Some('\t')
+}
+
 macro_rules! IS_BLANK_AT {
     ($string:expr, $offset:expr) => {
         IS_SPACE_AT!($string, $offset) || IS_TAB_AT!($string, $offset)
@@ -250,6 +235,16 @@ macro_rules! IS_BLANK {
     ($string:expr) => {
         IS_BLANK_AT!($string, 0)
     };
+}
+
+pub(crate) fn is_blank(ch: impl Into<Option<char>>) -> bool {
+    let ch = ch.into();
+    is_space(ch) || is_tab(ch)
+}
+
+pub(crate) fn is_blankz(ch: impl Into<Option<char>>) -> bool {
+    let ch = ch.into();
+    is_blank(ch) || is_breakz(ch)
 }
 
 macro_rules! IS_BREAK_AT {
@@ -273,15 +268,21 @@ macro_rules! IS_BREAK_AT_PTR {
     };
 }
 
+pub(crate) fn is_break(ch: impl Into<Option<char>>) -> bool {
+    match ch.into() {
+        Some('\r' | '\n' | '\u{0085}' | '\u{2028}' | '\u{2029}') => true,
+        _ => false,
+    }
+}
+
+pub(crate) fn is_breakz(ch: impl Into<Option<char>>) -> bool {
+    let ch = ch.into();
+    is_break(ch) || ch.is_none()
+}
+
 macro_rules! IS_BREAK {
     ($string:expr) => {
         IS_BREAK_AT!($string, 0)
-    };
-}
-
-macro_rules! IS_BREAK_PTR {
-    ($pointer:expr) => {
-        IS_BREAK_AT_PTR!($pointer, 0)
     };
 }
 
@@ -341,52 +342,24 @@ macro_rules! WIDTH {
     };
 }
 
-macro_rules! MOVE {
-    ($string:expr) => {
-        $string.pointer = $string.pointer.wrapping_offset(WIDTH!($string) as isize)
-    };
-}
-
-/// Copy one UTF-8 character from `string_b` to `string_a`, and increment the
-/// cursor for both strings.
-macro_rules! COPY {
-    ($string_a:expr, $string_b:expr) => {
-        if *$string_b.pointer & 0x80 == 0x00 {
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-        } else if *$string_b.pointer & 0xE0 == 0xC0 {
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-        } else if *$string_b.pointer & 0xF0 == 0xE0 {
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-        } else if *$string_b.pointer & 0xF8 == 0xF0 {
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-            *$string_a.pointer = *$string_b.pointer;
-            $string_a.pointer = $string_a.pointer.wrapping_offset(1);
-            $string_b.pointer = $string_b.pointer.wrapping_offset(1);
-        }
-    };
+pub(crate) unsafe fn COPY_CHAR_BUFFER_TO_STRING(
+    string: &mut String,
+    buffer: &mut yaml_buffer_t<u8>,
+) {
+    let ch = *buffer.pointer;
+    let to_append;
+    if ch & 0x80 == 0x00 {
+        to_append = core::slice::from_raw_parts(buffer.pointer, 1);
+    } else if ch & 0xE0 == 0xC0 {
+        to_append = core::slice::from_raw_parts(buffer.pointer, 2);
+    } else if ch & 0xF0 == 0xE0 {
+        to_append = core::slice::from_raw_parts(buffer.pointer, 3);
+    } else {
+        debug_assert_eq!(ch & 0xF8, 0xF0);
+        to_append = core::slice::from_raw_parts(buffer.pointer, 4);
+    }
+    string.push_str(core::str::from_utf8_unchecked(to_append));
+    buffer.pointer = buffer.pointer.wrapping_offset(to_append.len() as isize);
 }
 
 macro_rules! STACK_LIMIT {

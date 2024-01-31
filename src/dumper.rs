@@ -1,14 +1,11 @@
+use alloc::string::String;
 use alloc::vec;
 
-use crate::api::{yaml_free, yaml_malloc};
-use crate::externs::strcmp;
-use crate::fmt::WriteToPtr;
 use crate::yaml::{
-    yaml_anchors_t, yaml_char_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t,
-    YamlEventData, YamlNodeData, YAML_ANY_ENCODING,
+    yaml_anchors_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t, YamlEventData,
+    YamlNodeData, YAML_ANY_ENCODING,
 };
 use crate::{libc, yaml_document_delete, yaml_emitter_emit};
-use core::ptr;
 
 /// Start a YAML stream.
 ///
@@ -115,15 +112,13 @@ unsafe fn yaml_emitter_delete_document_and_anchors(
 
     for (index, node) in document.nodes.iter_mut().enumerate() {
         if !emitter.anchors[index].serialized {
-            yaml_free((*node).tag as *mut libc::c_void);
-            if let YamlNodeData::Scalar { value, .. } = &(*node).data {
-                yaml_free(*value as *mut libc::c_void);
-            }
+            // TODO: The `serialized` flag denoted that ownership of scalar and
+            // tag was moved to someone else.
         }
-        if let YamlNodeData::Sequence { ref mut items, .. } = (*node).data {
+        if let YamlNodeData::Sequence { ref mut items, .. } = node.data {
             items.clear();
         }
-        if let YamlNodeData::Mapping { ref mut pairs, .. } = (*node).data {
+        if let YamlNodeData::Mapping { ref mut pairs, .. } = node.data {
             pairs.clear();
         }
     }
@@ -172,10 +167,8 @@ unsafe fn yaml_emitter_anchor_node(
 unsafe fn yaml_emitter_generate_anchor(
     _emitter: &mut yaml_emitter_t,
     anchor_id: libc::c_int,
-) -> *mut yaml_char_t {
-    let anchor: *mut yaml_char_t = yaml_malloc(16_u64) as *mut yaml_char_t;
-    write!(WriteToPtr::new(anchor), "id{:03}\0", anchor_id);
-    anchor
+) -> String {
+    alloc::format!("id{:03}", anchor_id)
 }
 
 unsafe fn yaml_emitter_dump_node(
@@ -185,12 +178,12 @@ unsafe fn yaml_emitter_dump_node(
 ) -> Result<(), ()> {
     let node = &mut document.nodes[index as usize - 1];
     let anchor_id: libc::c_int = emitter.anchors[index as usize - 1].anchor;
-    let mut anchor: *mut yaml_char_t = ptr::null_mut::<yaml_char_t>();
+    let mut anchor: Option<String> = None;
     if anchor_id != 0 {
-        anchor = yaml_emitter_generate_anchor(emitter, anchor_id);
+        anchor = Some(yaml_emitter_generate_anchor(emitter, anchor_id));
     }
     if emitter.anchors[index as usize - 1].serialized {
-        return yaml_emitter_dump_alias(emitter, anchor);
+        return yaml_emitter_dump_alias(emitter, anchor.unwrap());
     }
     emitter.anchors[index as usize - 1].serialized = true;
 
@@ -205,10 +198,7 @@ unsafe fn yaml_emitter_dump_node(
     }
 }
 
-unsafe fn yaml_emitter_dump_alias(
-    emitter: &mut yaml_emitter_t,
-    anchor: *mut yaml_char_t,
-) -> Result<(), ()> {
+unsafe fn yaml_emitter_dump_alias(emitter: &mut yaml_emitter_t, anchor: String) -> Result<(), ()> {
     let event = yaml_event_t {
         data: YamlEventData::Alias { anchor },
         ..Default::default()
@@ -219,29 +209,18 @@ unsafe fn yaml_emitter_dump_alias(
 unsafe fn yaml_emitter_dump_scalar(
     emitter: &mut yaml_emitter_t,
     node: yaml_node_t,
-    anchor: *mut yaml_char_t,
+    anchor: Option<String>,
 ) -> Result<(), ()> {
-    let plain_implicit = strcmp(
-        node.tag as *mut libc::c_char,
-        b"tag:yaml.org,2002:str\0" as *const u8 as *const libc::c_char,
-    ) == 0;
-    let quoted_implicit = strcmp(
-        node.tag as *mut libc::c_char,
-        b"tag:yaml.org,2002:str\0" as *const u8 as *const libc::c_char,
-    ) == 0;
+    // TODO: Extract this constant as `YAML_DEFAULT_SCALAR_TAG` (source: dumper.c)
+    let plain_implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:str");
+    let quoted_implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:str"); // TODO: Why compare twice?! (even the C code does this)
 
-    if let YamlNodeData::Scalar {
-        value,
-        length,
-        style,
-    } = node.data
-    {
+    if let YamlNodeData::Scalar { value, style } = node.data {
         let event = yaml_event_t {
             data: YamlEventData::Scalar {
                 anchor,
                 tag: node.tag,
                 value,
-                length,
                 plain_implicit,
                 quoted_implicit,
                 style,
@@ -258,12 +237,10 @@ unsafe fn yaml_emitter_dump_sequence(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
     node: yaml_node_t,
-    anchor: *mut yaml_char_t,
+    anchor: Option<String>,
 ) -> Result<(), ()> {
-    let implicit = strcmp(
-        node.tag as *mut libc::c_char,
-        b"tag:yaml.org,2002:seq\0" as *const u8 as *const libc::c_char,
-    ) == 0;
+    // TODO: YAML_DEFAULT_SEQUENCE_TAG
+    let implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:seq");
 
     if let YamlNodeData::Sequence { items, style } = node.data {
         let event = yaml_event_t {
@@ -294,12 +271,10 @@ unsafe fn yaml_emitter_dump_mapping(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
     node: yaml_node_t,
-    anchor: *mut yaml_char_t,
+    anchor: Option<String>,
 ) -> Result<(), ()> {
-    let implicit = strcmp(
-        node.tag as *mut libc::c_char,
-        b"tag:yaml.org,2002:map\0" as *const u8 as *const libc::c_char,
-    ) == 0;
+    // TODO: YAML_DEFAULT_MAPPING_TAG
+    let implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:map");
 
     if let YamlNodeData::Mapping { pairs, style } = node.data {
         let event = yaml_event_t {

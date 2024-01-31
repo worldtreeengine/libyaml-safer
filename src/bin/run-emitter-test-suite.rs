@@ -14,9 +14,6 @@
     clippy::unreadable_literal
 )]
 
-mod cstr;
-
-use self::cstr::CStr;
 use libyaml_safer::{
     yaml_alias_event_initialize, yaml_document_end_event_initialize,
     yaml_document_start_event_initialize, yaml_emitter_delete, yaml_emitter_emit,
@@ -24,10 +21,9 @@ use libyaml_safer::{
     yaml_emitter_set_unicode, yaml_emitter_t, yaml_event_t, yaml_mapping_end_event_initialize,
     yaml_mapping_start_event_initialize, yaml_scalar_event_initialize, yaml_scalar_style_t,
     yaml_sequence_end_event_initialize, yaml_sequence_start_event_initialize,
-    yaml_stream_end_event_initialize, yaml_stream_start_event_initialize, yaml_tag_directive_t,
-    yaml_version_directive_t, YAML_ANY_SCALAR_STYLE, YAML_BLOCK_MAPPING_STYLE,
-    YAML_BLOCK_SEQUENCE_STYLE, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_EMITTER_ERROR,
-    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_MEMORY_ERROR,
+    yaml_stream_end_event_initialize, yaml_stream_start_event_initialize, YAML_ANY_SCALAR_STYLE,
+    YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
+    YAML_EMITTER_ERROR, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_MEMORY_ERROR,
     YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
     YAML_WRITER_ERROR,
 };
@@ -35,10 +31,10 @@ use std::env;
 use std::error::Error;
 use std::ffi::c_void;
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::mem::MaybeUninit;
-use std::process::{self, ExitCode};
-use std::ptr::{self, addr_of_mut};
+use std::process::ExitCode;
+use std::ptr::addr_of_mut;
 use std::slice;
 
 pub(crate) unsafe fn unsafe_main(
@@ -64,74 +60,67 @@ pub(crate) unsafe fn unsafe_main(
     yaml_emitter_set_canonical(&mut emitter, false);
     yaml_emitter_set_unicode(&mut emitter, false);
 
-    let mut buf = ReadBuf::new();
+    let mut buf = std::io::BufReader::new(stdin);
+    let mut line_buffer = String::with_capacity(1024);
+    let mut value_buffer = String::with_capacity(128);
 
     let result = loop {
         let mut event = yaml_event_t::default();
 
-        let line = match buf.get_line(stdin) {
-            Some(line) => line,
-            None => break Ok(()),
-        };
+        line_buffer.clear();
+        let n = buf.read_line(&mut line_buffer)?;
+        if n == 0 {
+            break Ok(());
+        }
+        let line = line_buffer.strip_suffix('\n').unwrap_or(&line_buffer);
 
-        let mut anchor = [0u8; 256];
-        let mut tag = [0u8; 256];
-        let result = if line.starts_with(b"+STR") {
+        let result = if line.starts_with("+STR") {
             yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING)
-        } else if line.starts_with(b"-STR") {
+        } else if line.starts_with("-STR") {
             yaml_stream_end_event_initialize(&mut event)
-        } else if line.starts_with(b"+DOC") {
-            let implicit = !line[4..].starts_with(b" ---");
-            yaml_document_start_event_initialize(
-                &mut event,
-                ptr::null_mut::<yaml_version_directive_t>(),
-                ptr::null_mut::<yaml_tag_directive_t>(),
-                ptr::null_mut::<yaml_tag_directive_t>(),
-                implicit,
-            )
-        } else if line.starts_with(b"-DOC") {
-            let implicit = !line[4..].starts_with(b" ...");
+        } else if line.starts_with("+DOC") {
+            let implicit = !line[4..].starts_with(" ---");
+            yaml_document_start_event_initialize(&mut event, None, &[], implicit)
+        } else if line.starts_with("-DOC") {
+            let implicit = !line[4..].starts_with(" ...");
             yaml_document_end_event_initialize(&mut event, implicit)
-        } else if line.starts_with(b"+MAP") {
+        } else if line.starts_with("+MAP") {
             yaml_mapping_start_event_initialize(
                 &mut event,
-                get_anchor(b'&', line, anchor.as_mut_ptr()),
-                get_tag(line, tag.as_mut_ptr()),
+                get_anchor('&', line),
+                get_tag(line),
                 false,
                 YAML_BLOCK_MAPPING_STYLE,
             )
-        } else if line.starts_with(b"-MAP") {
+        } else if line.starts_with("-MAP") {
             yaml_mapping_end_event_initialize(&mut event)
-        } else if line.starts_with(b"+SEQ") {
+        } else if line.starts_with("+SEQ") {
             yaml_sequence_start_event_initialize(
                 &mut event,
-                get_anchor(b'&', line, anchor.as_mut_ptr()),
-                get_tag(line, tag.as_mut_ptr()),
+                get_anchor('&', line),
+                get_tag(line),
                 false,
                 YAML_BLOCK_SEQUENCE_STYLE,
             )
-        } else if line.starts_with(b"-SEQ") {
+        } else if line.starts_with("-SEQ") {
             yaml_sequence_end_event_initialize(&mut event)
-        } else if line.starts_with(b"=VAL") {
-            let mut value = [0i8; 1024];
+        } else if line.starts_with("=VAL") {
             let mut style = YAML_ANY_SCALAR_STYLE;
-            get_value(line, value.as_mut_ptr(), &mut style);
-            let implicit = get_tag(line, tag.as_mut_ptr()).is_null();
+            let value = get_value(line, &mut value_buffer, &mut style);
+            let implicit = get_tag(line).is_none();
             yaml_scalar_event_initialize(
                 &mut event,
-                get_anchor(b'&', line, anchor.as_mut_ptr()),
-                get_tag(line, tag.as_mut_ptr()),
-                value.as_mut_ptr() as *mut u8,
-                -1,
+                get_anchor('&', line),
+                get_tag(line),
+                value,
                 implicit,
                 implicit,
                 style,
             )
-        } else if line.starts_with(b"=ALI") {
-            yaml_alias_event_initialize(&mut event, get_anchor(b'*', line, anchor.as_mut_ptr()))
+        } else if line.starts_with("=ALI") {
+            yaml_alias_event_initialize(&mut event, get_anchor('*', line).expect("no alias name"))
         } else {
-            let line = line as *mut [u8] as *mut i8;
-            break Err(format!("Unknown event: '{}'", CStr::from_ptr(line)).into());
+            break Err(format!("Unknown event: '{line}'").into());
         };
 
         if result.is_err() {
@@ -140,12 +129,16 @@ pub(crate) unsafe fn unsafe_main(
         if yaml_emitter_emit(&mut emitter, event).is_err() {
             break Err(match (*emitter).error {
                 YAML_MEMORY_ERROR => "Memory error: Not enough memory for emitting".into(),
-                YAML_WRITER_ERROR => {
-                    format!("Writer error: {}", CStr::from_ptr((*emitter).problem)).into()
-                }
-                YAML_EMITTER_ERROR => {
-                    format!("Emitter error: {}", CStr::from_ptr((*emitter).problem)).into()
-                }
+                YAML_WRITER_ERROR => format!(
+                    "Writer error: {}",
+                    emitter.problem.unwrap_or("<NO ERROR MESSAGE>")
+                )
+                .into(),
+                YAML_EMITTER_ERROR => format!(
+                    "Emitter error: {}",
+                    emitter.problem.unwrap_or("<NO ERROR MESSAGE>")
+                )
+                .into(),
                 // Couldn't happen.
                 _ => "Internal error".into(),
             });
@@ -156,134 +149,65 @@ pub(crate) unsafe fn unsafe_main(
     result
 }
 
-struct ReadBuf {
-    buf: [u8; 1024],
-    offset: usize,
-    filled: usize,
-}
-
-impl ReadBuf {
-    fn new() -> Self {
-        ReadBuf {
-            buf: [0; 1024],
-            offset: 0,
-            filled: 0,
-        }
-    }
-
-    fn get_line(&mut self, input: &mut dyn Read) -> Option<&mut [u8]> {
-        loop {
-            for i in self.offset..self.offset + self.filled {
-                if self.buf[i] == b'\n' {
-                    self.buf[i] = b'\0';
-                    let line = &mut self.buf[self.offset..=i];
-                    self.offset = i + 1;
-                    self.filled -= line.len();
-                    return Some(line);
-                }
-            }
-            let mut remainder = &mut self.buf[self.offset + self.filled..];
-            if remainder.is_empty() {
-                if self.offset == 0 {
-                    let _ = writeln!(
-                        io::stderr(),
-                        "Line too long: '{}'",
-                        String::from_utf8_lossy(&self.buf),
-                    );
-                    process::abort();
-                }
-                self.buf.copy_within(self.offset.., 0);
-                self.offset = 0;
-                remainder = &mut self.buf;
-            }
-            let n = input.read(remainder).ok()?;
-            self.filled += n;
-            if n == 0 {
-                return None;
-            }
-        }
+fn get_anchor(sigil: char, line: &str) -> Option<&str> {
+    let (_, from_sigil) = line.split_once(sigil)?;
+    if let Some((until_space, _tail)) = from_sigil.split_once(' ') {
+        Some(until_space)
+    } else if !from_sigil.is_empty() {
+        Some(from_sigil)
+    } else {
+        None
     }
 }
 
-unsafe fn get_anchor(sigil: u8, line: &[u8], anchor: *mut u8) -> *mut u8 {
-    let start = match line.iter().position(|ch| *ch == sigil) {
-        Some(offset) => offset + 1,
-        None => return ptr::null_mut::<u8>(),
-    };
-    let end = match line[start..].iter().position(|ch| *ch == b' ') {
-        Some(offset) => start + offset,
-        None => line.len(),
-    };
-    ptr::copy_nonoverlapping(line[start..end].as_ptr(), anchor, end - start);
-    *anchor.add(end - start) = b'\0';
-    anchor
+fn get_tag(line: &str) -> Option<&str> {
+    let (_, from_angle_open) = line.split_once('<')?;
+    let (until_angle_close, _) = from_angle_open.split_once('>')?;
+    Some(until_angle_close)
 }
 
-unsafe fn get_tag(line: &[u8], tag: *mut u8) -> *mut u8 {
-    let start = match line.iter().position(|ch| *ch == b'<') {
-        Some(offset) => offset + 1,
-        None => return ptr::null_mut::<u8>(),
-    };
-    let end = match line[start..].iter().position(|ch| *ch == b'>') {
-        Some(offset) => start + offset,
-        None => return ptr::null_mut::<u8>(),
-    };
-    ptr::copy_nonoverlapping(line[start..end].as_ptr(), tag, end - start);
-    *tag.add(end - start) = b'\0';
-    tag
-}
-
-unsafe fn get_value(line: &[u8], value: *mut i8, style: *mut yaml_scalar_style_t) {
-    let line_len = line.len();
-    let line = line as *const [u8] as *mut i8;
-    let mut start = ptr::null_mut::<i8>();
-    let end = line.add(line_len);
-    let mut c = line.offset(4);
-    while c < end {
-        if *c as u8 == b' ' {
-            start = c.offset(1);
-            *style = match *start as u8 {
-                b':' => YAML_PLAIN_SCALAR_STYLE,
-                b'\'' => YAML_SINGLE_QUOTED_SCALAR_STYLE,
-                b'"' => YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-                b'|' => YAML_LITERAL_SCALAR_STYLE,
-                b'>' => YAML_FOLDED_SCALAR_STYLE,
-                _ => {
-                    start = ptr::null_mut::<i8>();
-                    c = c.offset(1);
-                    continue;
-                }
-            };
-            start = start.offset(1);
-            break;
-        }
-        c = c.offset(1);
-    }
-    if start.is_null() {
-        process::abort();
-    }
-
-    let mut i = 0;
-    c = start;
-    while c < end {
-        *value.offset(i) = if *c as u8 == b'\\' {
-            c = c.offset(1);
-            match *c as u8 {
-                b'\\' => b'\\' as i8,
-                b'0' => b'\0' as i8,
-                b'b' => b'\x08' as i8,
-                b'n' => b'\n' as i8,
-                b'r' => b'\r' as i8,
-                b't' => b'\t' as i8,
-                _ => process::abort(),
-            }
-        } else {
-            *c
+fn get_value<'a>(line: &str, buffer: &'a mut String, style: &mut yaml_scalar_style_t) -> &'a str {
+    let mut remainder = line;
+    let value = loop {
+        let Some((_before, tail)) = remainder.split_once(' ') else {
+            panic!("invalid line: {line}");
         };
-        i += 1;
-        c = c.offset(1);
+
+        *style = match tail.chars().next().expect("string should not be empty") {
+            ':' => YAML_PLAIN_SCALAR_STYLE,
+            '\'' => YAML_SINGLE_QUOTED_SCALAR_STYLE,
+            '"' => YAML_DOUBLE_QUOTED_SCALAR_STYLE,
+            '|' => YAML_LITERAL_SCALAR_STYLE,
+            '>' => YAML_FOLDED_SCALAR_STYLE,
+            _ => {
+                // This was an anchor, move to the next space.
+                remainder = tail;
+                continue;
+            }
+        };
+        break &tail[1..];
+    };
+
+    buffer.clear();
+    // Unescape the value
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            buffer.push(match chars.next().expect("unterminated escape sequence") {
+                '\\' => '\\',
+                '0' => '\0',
+                'b' => '\x08',
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                otherwise => panic!("invalid escape character: {otherwise:?}"),
+            });
+        } else {
+            buffer.push(ch);
+        }
     }
-    *value.offset(i) = b'\0' as i8;
+
+    &*buffer
 }
 
 fn main() -> ExitCode {

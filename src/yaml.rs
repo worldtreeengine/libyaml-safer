@@ -1,4 +1,5 @@
 use alloc::collections::VecDeque;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::libc;
@@ -9,6 +10,7 @@ pub use self::yaml_encoding_t::*;
 pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t, u8 as yaml_char_t};
 
 /// The version directive data.
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_version_directive_t {
@@ -19,14 +21,14 @@ pub struct yaml_version_directive_t {
 }
 
 /// The tag directive data.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_tag_directive_t {
     /// The tag handle.
-    pub handle: *mut yaml_char_t,
+    pub handle: String,
     /// The tag prefix.
-    pub prefix: *mut yaml_char_t,
+    pub prefix: String,
 }
 
 /// The stream encoding.
@@ -230,9 +232,9 @@ pub enum YamlTokenData {
     /// A TAG-DIRECTIVE token.
     TagDirective {
         /// The tag handle.
-        handle: *mut yaml_char_t,
+        handle: String,
         /// The tag prefix.
-        prefix: *mut yaml_char_t,
+        prefix: String,
     },
     /// A DOCUMENT-START token.
     DocumentStart,
@@ -263,26 +265,24 @@ pub enum YamlTokenData {
     /// An ALIAS token.
     Alias {
         /// The alias value.
-        value: *mut yaml_char_t,
+        value: String,
     },
     /// An ANCHOR token.
     Anchor {
         /// The anchor value.
-        value: *mut yaml_char_t,
+        value: String,
     },
     /// A TAG token.
     Tag {
         /// The tag handle.
-        handle: *mut yaml_char_t,
+        handle: String,
         /// The tag suffix.
-        suffix: *mut yaml_char_t,
+        suffix: String,
     },
     /// A SCALAR token.
     Scalar {
         /// The scalar value.
-        value: *mut yaml_char_t,
-        /// The length of the scalar value.
-        length: size_t,
+        value: String,
         /// The scalar style.
         style: yaml_scalar_style_t,
     },
@@ -420,7 +420,7 @@ pub enum YamlEventData {
     /// The document parameters (for YAML_DOCUMENT_START_EVENT).
     DocumentStart {
         /// The version directive.
-        version_directive: *mut yaml_version_directive_t,
+        version_directive: Option<yaml_version_directive_t>,
         /// The tag directives list.
         tag_directives: Vec<yaml_tag_directive_t>,
         /// Is the document indicator implicit?
@@ -433,18 +433,16 @@ pub enum YamlEventData {
     /// The alias parameters (for YAML_ALIAS_EVENT).
     Alias {
         /// The anchor.
-        anchor: *mut yaml_char_t,
+        anchor: String,
     },
     /// The scalar parameters (for YAML_SCALAR_EVENT).
     Scalar {
         /// The anchor.
-        anchor: *mut yaml_char_t,
+        anchor: Option<String>,
         /// The tag.
-        tag: *mut yaml_char_t,
+        tag: Option<String>,
         /// The scalar value.
-        value: *mut yaml_char_t,
-        /// The length of the scalar value.
-        length: size_t,
+        value: String,
         /// Is the tag optional for the plain style?
         plain_implicit: bool,
         /// Is the tag optional for any non-plain style?
@@ -455,9 +453,9 @@ pub enum YamlEventData {
     /// The sequence parameters (for YAML_SEQUENCE_START_EVENT).
     SequenceStart {
         /// The anchor.
-        anchor: *mut yaml_char_t,
+        anchor: Option<String>,
         /// The tag.
-        tag: *mut yaml_char_t,
+        tag: Option<String>,
         /// Is the tag optional?
         implicit: bool,
         /// The sequence style.
@@ -467,9 +465,9 @@ pub enum YamlEventData {
     /// The mapping parameters (for YAML_MAPPING_START_EVENT).
     MappingStart {
         /// The anchor.
-        anchor: *mut yaml_char_t,
+        anchor: Option<String>,
         /// The tag.
-        tag: *mut yaml_char_t,
+        tag: Option<String>,
         /// Is the tag optional?
         implicit: bool,
         /// The mapping style.
@@ -479,28 +477,18 @@ pub enum YamlEventData {
 }
 
 /// The node structure.
+#[derive(Default)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_node_t {
     /// The node type.
     pub data: YamlNodeData,
     /// The node tag.
-    pub tag: *mut yaml_char_t,
+    pub tag: Option<String>,
     /// The beginning of the node.
     pub start_mark: yaml_mark_t,
     /// The end of the node.
     pub end_mark: yaml_mark_t,
-}
-
-impl Default for yaml_node_t {
-    fn default() -> Self {
-        Self {
-            data: Default::default(),
-            tag: ptr::null_mut(),
-            start_mark: Default::default(),
-            end_mark: Default::default(),
-        }
-    }
 }
 
 /// Node types.
@@ -512,9 +500,7 @@ pub enum YamlNodeData {
     /// A scalar node.
     Scalar {
         /// The scalar value.
-        value: *mut yaml_char_t,
-        /// The length of the scalar value.
-        length: size_t,
+        value: String,
         /// The scalar style.
         style: yaml_scalar_style_t,
     },
@@ -548,13 +534,14 @@ pub struct yaml_node_pair_t {
 }
 
 /// The document structure.
+#[derive(Default)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_document_t {
     /// The document nodes.
     pub nodes: Vec<yaml_node_t>,
     /// The version directive.
-    pub version_directive: *mut yaml_version_directive_t,
+    pub version_directive: Option<yaml_version_directive_t>,
     /// The list of tag directives.
     ///
     /// ```
@@ -576,20 +563,6 @@ pub struct yaml_document_t {
     pub start_mark: yaml_mark_t,
     /// The end of the document.
     pub end_mark: yaml_mark_t,
-}
-
-impl Default for yaml_document_t {
-    fn default() -> Self {
-        Self {
-            nodes: Default::default(),
-            version_directive: ptr::null_mut(),
-            tag_directives: Default::default(),
-            start_implicit: Default::default(),
-            end_implicit: Default::default(),
-            start_mark: Default::default(),
-            end_mark: Default::default(),
-        }
-    }
 }
 
 /// The prototype of a read handler.
@@ -684,7 +657,7 @@ pub enum yaml_parser_state_t {
 #[non_exhaustive]
 pub struct yaml_alias_data_t {
     /// The anchor.
-    pub anchor: *mut yaml_char_t,
+    pub anchor: String,
     /// The node id.
     pub index: libc::c_int,
     /// The anchor mark.
@@ -833,7 +806,7 @@ pub struct yaml_parser_t_prefix {
     /// Error type.
     pub error: yaml_error_type_t,
     /// Error description.
-    pub problem: *const libc::c_char,
+    pub problem: Option<&'static str>,
     /// The byte about which the problem occured.
     pub problem_offset: size_t,
     /// The problematic value (-1 is none).
@@ -841,7 +814,7 @@ pub struct yaml_parser_t_prefix {
     /// The problem position.
     pub problem_mark: yaml_mark_t,
     /// The error context.
-    pub context: *const libc::c_char,
+    pub context: Option<&'static str>,
     /// The context position.
     pub context_mark: yaml_mark_t,
 }
@@ -1071,7 +1044,7 @@ pub struct yaml_emitter_t_prefix {
     /// Error type.
     pub error: yaml_error_type_t,
     /// Error description.
-    pub problem: *const libc::c_char,
+    pub problem: Option<&'static str>,
 }
 
 #[doc(hidden)]
@@ -1105,7 +1078,7 @@ impl Default for unnamed_yaml_emitter_t_output_string {
 #[repr(C)]
 pub(crate) struct unnamed_yaml_emitter_t_anchor_data {
     /// The anchor value.
-    pub anchor: *mut yaml_char_t,
+    pub anchor: *const yaml_char_t,
     /// The anchor length.
     pub anchor_length: size_t,
     /// Is it an alias?
@@ -1125,11 +1098,11 @@ impl Default for unnamed_yaml_emitter_t_anchor_data {
 #[repr(C)]
 pub(crate) struct unnamed_yaml_emitter_t_tag_data {
     /// The tag handle.
-    pub handle: *mut yaml_char_t,
+    pub handle: *const yaml_char_t,
     /// The tag handle length.
     pub handle_length: size_t,
     /// The tag suffix.
-    pub suffix: *mut yaml_char_t,
+    pub suffix: *const yaml_char_t,
     /// The tag suffix length.
     pub suffix_length: size_t,
 }
@@ -1148,7 +1121,7 @@ impl Default for unnamed_yaml_emitter_t_tag_data {
 #[repr(C)]
 pub(crate) struct unnamed_yaml_emitter_t_scalar_data {
     /// The scalar value.
-    pub value: *mut yaml_char_t,
+    pub value: *const yaml_char_t,
     /// The scalar length.
     pub length: size_t,
     /// Does the scalar contain line breaks?
@@ -1179,19 +1152,6 @@ impl Default for unnamed_yaml_emitter_t_scalar_data {
         }
     }
 }
-
-#[repr(C)]
-pub(crate) struct yaml_string_t {
-    pub start: *mut yaml_char_t,
-    pub end: *mut yaml_char_t,
-    pub pointer: *mut yaml_char_t,
-}
-
-pub(crate) const NULL_STRING: yaml_string_t = yaml_string_t {
-    start: ptr::null_mut::<yaml_char_t>(),
-    end: ptr::null_mut::<yaml_char_t>(),
-    pointer: ptr::null_mut::<yaml_char_t>(),
-};
 
 #[repr(C)]
 pub(crate) struct yaml_buffer_t<T> {
