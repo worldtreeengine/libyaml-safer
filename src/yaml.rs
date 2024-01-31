@@ -739,8 +739,6 @@ pub struct yaml_parser_t {
     pub(crate) tag_directives: Vec<yaml_tag_directive_t>,
     /// The alias data.
     pub(crate) aliases: Vec<yaml_alias_data_t>,
-    /// The currently parsed document.
-    pub(crate) document: *mut yaml_document_t,
 }
 
 impl Default for yaml_parser_t {
@@ -778,7 +776,6 @@ impl Default for yaml_parser_t {
             marks: Default::default(),
             tag_directives: Default::default(),
             aliases: Default::default(),
-            document: ptr::null_mut(),
         }
     }
 }

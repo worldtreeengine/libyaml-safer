@@ -187,8 +187,8 @@ tie-fighter: '|\-*-/|'
                 SANITY_INPUT.as_ptr(),
                 SANITY_INPUT.len() as _,
             );
-            let mut doc = core::mem::MaybeUninit::uninit();
-            if yaml_parser_load(&mut parser, doc.as_mut_ptr()).is_err() {
+            let mut doc = yaml_document_t::default();
+            if yaml_parser_load(&mut parser, &mut doc).is_err() {
                 panic!("parser error: {:?} {:?}", parser.error, parser.problem);
             }
             // let mut doc = doc.assume_init();

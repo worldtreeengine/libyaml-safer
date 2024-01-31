@@ -8,7 +8,6 @@ use crate::{
     YAML_MEMORY_ERROR,
 };
 use core::mem::MaybeUninit;
-use core::ptr::{self};
 
 /// Parse the input stream and produce the next YAML document.
 ///
@@ -26,18 +25,16 @@ use core::ptr::{self};
 /// the parser.
 pub unsafe fn yaml_parser_load(
     parser: &mut yaml_parser_t,
-    document: *mut yaml_document_t,
+    document: &mut yaml_document_t,
 ) -> Result<(), ()> {
     let mut event = yaml_event_t::default();
-    core::ptr::write(document, yaml_document_t::default());
-    let document = &mut *document;
+    *document = yaml_document_t::default();
     document.nodes.reserve(16);
 
     if !parser.stream_start_produced {
         if let Err(()) = yaml_parser_parse(parser, &mut event) {
             yaml_parser_delete_aliases(parser);
             yaml_document_delete(document);
-            parser.document = ptr::null_mut::<yaml_document_t>();
             return Err(());
         } else {
             if let YamlEventData::StreamStart { .. } = &event.data {
@@ -54,16 +51,13 @@ pub unsafe fn yaml_parser_load(
             return Ok(());
         }
         parser.aliases.reserve(16);
-        parser.document = document;
-        if let Ok(()) = yaml_parser_load_document(parser, &mut event) {
+        if let Ok(()) = yaml_parser_load_document(parser, &mut event, document) {
             yaml_parser_delete_aliases(parser);
-            parser.document = ptr::null_mut::<yaml_document_t>();
             return Ok(());
         }
     }
     yaml_parser_delete_aliases(parser);
     yaml_document_delete(document);
-    parser.document = ptr::null_mut::<yaml_document_t>();
     Err(())
 }
 
@@ -100,6 +94,7 @@ unsafe fn yaml_parser_delete_aliases(parser: &mut yaml_parser_t) {
 unsafe fn yaml_parser_load_document(
     parser: &mut yaml_parser_t,
     event: &mut yaml_event_t,
+    document: &mut yaml_document_t,
 ) -> Result<(), ()> {
     let mut ctx = vec![];
     if let YamlEventData::DocumentStart {
@@ -108,12 +103,12 @@ unsafe fn yaml_parser_load_document(
         implicit,
     } = &mut event.data
     {
-        (*parser.document).version_directive = *version_directive;
-        (*parser.document).tag_directives = core::mem::take(tag_directives);
-        (*parser.document).start_implicit = *implicit;
-        (*parser.document).start_mark = event.start_mark;
+        document.version_directive = *version_directive;
+        document.tag_directives = core::mem::take(tag_directives);
+        document.start_implicit = *implicit;
+        document.start_mark = event.start_mark;
         ctx.reserve(16);
-        if let Err(()) = yaml_parser_load_nodes(parser, &mut ctx) {
+        if let Err(()) = yaml_parser_load_nodes(parser, document, &mut ctx) {
             ctx.clear();
             return Err(());
         }
@@ -126,6 +121,7 @@ unsafe fn yaml_parser_load_document(
 
 unsafe fn yaml_parser_load_nodes(
     parser: &mut yaml_parser_t,
+    document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
 ) -> Result<(), ()> {
     let mut event = yaml_event_t::default();
@@ -145,32 +141,33 @@ unsafe fn yaml_parser_load_nodes(
                 break;
             }
             YamlEventData::Alias { .. } => {
-                yaml_parser_load_alias(parser, &mut event, ctx)?;
+                yaml_parser_load_alias(parser, &mut event, document, ctx)?;
             }
             YamlEventData::Scalar { .. } => {
-                yaml_parser_load_scalar(parser, &mut event, ctx)?;
+                yaml_parser_load_scalar(parser, &mut event, document, ctx)?;
             }
             YamlEventData::SequenceStart { .. } => {
-                yaml_parser_load_sequence(parser, &mut event, ctx)?;
+                yaml_parser_load_sequence(parser, &mut event, document, ctx)?;
             }
             YamlEventData::SequenceEnd => {
-                yaml_parser_load_sequence_end(parser, &mut event, ctx)?;
+                yaml_parser_load_sequence_end(parser, &mut event, document, ctx)?;
             }
             YamlEventData::MappingStart { .. } => {
-                yaml_parser_load_mapping(parser, &mut event, ctx)?;
+                yaml_parser_load_mapping(parser, &mut event, document, ctx)?;
             }
             YamlEventData::MappingEnd => {
-                yaml_parser_load_mapping_end(parser, &mut event, ctx)?;
+                yaml_parser_load_mapping_end(parser, &mut event, document, ctx)?;
             }
         }
     }
-    (*parser.document).end_implicit = end_implicit;
-    (*parser.document).end_mark = end_mark;
+    document.end_implicit = end_implicit;
+    document.end_mark = end_mark;
     Ok(())
 }
 
 unsafe fn yaml_parser_register_anchor(
     parser: &mut yaml_parser_t,
+    document: &mut yaml_document_t,
     index: libc::c_int,
     anchor: Option<String>,
 ) -> Result<(), ()> {
@@ -180,7 +177,7 @@ unsafe fn yaml_parser_register_anchor(
     let data = yaml_alias_data_t {
         anchor,
         index,
-        mark: (*parser.document).nodes[index as usize - 1].start_mark,
+        mark: document.nodes[index as usize - 1].start_mark,
     };
     for alias_data in parser.aliases.iter() {
         if alias_data.anchor == data.anchor {
@@ -199,6 +196,7 @@ unsafe fn yaml_parser_register_anchor(
 
 unsafe fn yaml_parser_load_node_add(
     parser: &mut yaml_parser_t,
+    document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
     index: libc::c_int,
 ) -> Result<(), ()> {
@@ -206,7 +204,7 @@ unsafe fn yaml_parser_load_node_add(
         return Ok(());
     }
     let parent_index: libc::c_int = *ctx.last().unwrap();
-    let parent = &mut (*parser.document).nodes[parent_index as usize - 1];
+    let parent = &mut document.nodes[parent_index as usize - 1];
     match parent.data {
         YamlNodeData::Sequence { ref mut items, .. } => {
             STACK_LIMIT!(parser, items)?;
@@ -240,6 +238,7 @@ unsafe fn yaml_parser_load_node_add(
 unsafe fn yaml_parser_load_alias(
     parser: &mut yaml_parser_t,
     event: &mut yaml_event_t, // TODO: Take by value
+    document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
 ) -> Result<(), ()> {
     let anchor: &str = if let YamlEventData::Alias { anchor } = &event.data {
@@ -250,7 +249,7 @@ unsafe fn yaml_parser_load_alias(
 
     for alias_data in parser.aliases.iter() {
         if alias_data.anchor == anchor {
-            return yaml_parser_load_node_add(parser, ctx, alias_data.index);
+            return yaml_parser_load_node_add(parser, document, ctx, alias_data.index);
         }
     }
 
@@ -260,6 +259,7 @@ unsafe fn yaml_parser_load_alias(
 unsafe fn yaml_parser_load_scalar(
     parser: &mut yaml_parser_t,
     event: &mut yaml_event_t, // TODO: Take by value
+    document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
 ) -> Result<(), ()> {
     let (mut tag, value, style, anchor) = if let YamlEventData::Scalar {
@@ -276,7 +276,7 @@ unsafe fn yaml_parser_load_scalar(
     };
 
     let index: libc::c_int;
-    if let Ok(()) = STACK_LIMIT!(parser, (*parser.document).nodes) {
+    if let Ok(()) = STACK_LIMIT!(parser, document.nodes) {
         if tag.is_none() || tag.as_deref() == Some("!") {
             tag = Some(String::from("tag:yaml.org,2002:str"));
         }
@@ -289,10 +289,10 @@ unsafe fn yaml_parser_load_scalar(
             start_mark: (*event).start_mark,
             end_mark: (*event).end_mark,
         };
-        (*parser.document).nodes.push(node);
-        index = (*parser.document).nodes.len() as libc::c_int;
-        yaml_parser_register_anchor(parser, index, anchor)?;
-        return yaml_parser_load_node_add(parser, ctx, index);
+        document.nodes.push(node);
+        index = document.nodes.len() as libc::c_int;
+        yaml_parser_register_anchor(parser, document, index, anchor)?;
+        return yaml_parser_load_node_add(parser, document, ctx, index);
     }
     Err(())
 }
@@ -300,6 +300,7 @@ unsafe fn yaml_parser_load_scalar(
 unsafe fn yaml_parser_load_sequence(
     parser: &mut yaml_parser_t,
     event: &mut yaml_event_t, // TODO: Take by value.
+    document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
 ) -> Result<(), ()> {
     let (mut tag, style, anchor) = if let YamlEventData::SequenceStart {
@@ -313,7 +314,7 @@ unsafe fn yaml_parser_load_sequence(
 
     let mut items = Vec::with_capacity(16);
     let index: libc::c_int;
-    STACK_LIMIT!(parser, (*parser.document).nodes)?;
+    STACK_LIMIT!(parser, document.nodes)?;
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:seq"));
     }
@@ -328,27 +329,28 @@ unsafe fn yaml_parser_load_sequence(
         end_mark: event.end_mark,
     };
 
-    (*parser.document).nodes.push(node);
-    index = (*parser.document).nodes.len() as libc::c_int;
-    yaml_parser_register_anchor(parser, index, anchor.clone())?;
-    yaml_parser_load_node_add(parser, ctx, index)?;
+    document.nodes.push(node);
+    index = document.nodes.len() as libc::c_int;
+    yaml_parser_register_anchor(parser, document, index, anchor.clone())?;
+    yaml_parser_load_node_add(parser, document, ctx, index)?;
     STACK_LIMIT!(parser, *ctx)?;
     ctx.push(index);
     Ok(())
 }
 
 unsafe fn yaml_parser_load_sequence_end(
-    parser: &mut yaml_parser_t,
+    _parser: &mut yaml_parser_t,
     event: *mut yaml_event_t,
+    document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
 ) -> Result<(), ()> {
     __assert!(!ctx.is_empty());
     let index: libc::c_int = *ctx.last().unwrap();
     __assert!(matches!(
-        (*parser.document).nodes[index as usize - 1].data,
+        document.nodes[index as usize - 1].data,
         YamlNodeData::Sequence { .. }
     ));
-    (*parser.document).nodes[index as usize - 1].end_mark = (*event).end_mark;
+    document.nodes[index as usize - 1].end_mark = (*event).end_mark;
     _ = ctx.pop();
     Ok(())
 }
@@ -356,6 +358,7 @@ unsafe fn yaml_parser_load_sequence_end(
 unsafe fn yaml_parser_load_mapping(
     parser: &mut yaml_parser_t,
     event: &mut yaml_event_t, // TODO: take by value
+    document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
 ) -> Result<(), ()> {
     let (mut tag, style, anchor) = if let YamlEventData::MappingStart {
@@ -369,7 +372,7 @@ unsafe fn yaml_parser_load_mapping(
 
     let mut pairs = Vec::with_capacity(16);
     let index: libc::c_int;
-    STACK_LIMIT!(parser, (*parser.document).nodes)?;
+    STACK_LIMIT!(parser, document.nodes)?;
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:map"));
     }
@@ -382,27 +385,28 @@ unsafe fn yaml_parser_load_mapping(
         start_mark: event.start_mark,
         end_mark: event.end_mark,
     };
-    (*parser.document).nodes.push(node);
-    index = (*parser.document).nodes.len() as libc::c_int;
-    yaml_parser_register_anchor(parser, index, anchor)?;
-    yaml_parser_load_node_add(parser, ctx, index)?;
+    document.nodes.push(node);
+    index = document.nodes.len() as libc::c_int;
+    yaml_parser_register_anchor(parser, document, index, anchor)?;
+    yaml_parser_load_node_add(parser, document, ctx, index)?;
     STACK_LIMIT!(parser, *ctx)?;
     ctx.push(index);
     Ok(())
 }
 
 unsafe fn yaml_parser_load_mapping_end(
-    parser: &mut yaml_parser_t,
+    _parser: &mut yaml_parser_t,
     event: *mut yaml_event_t,
+    document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
 ) -> Result<(), ()> {
     __assert!(!ctx.is_empty());
     let index: libc::c_int = *ctx.last().unwrap();
     __assert!(matches!(
-        (*parser.document).nodes[index as usize - 1].data,
+        document.nodes[index as usize - 1].data,
         YamlNodeData::Mapping { .. }
     ));
-    (*parser.document).nodes[index as usize - 1].end_mark = (*event).end_mark;
+    document.nodes[index as usize - 1].end_mark = (*event).end_mark;
     _ = ctx.pop();
     Ok(())
 }
