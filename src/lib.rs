@@ -52,23 +52,6 @@ mod libc {
 
 #[macro_use]
 mod externs {
-    use crate::libc;
-    use core::mem::MaybeUninit;
-    use core::ptr;
-
-    pub unsafe fn memcpy(
-        dest: *mut libc::c_void,
-        src: *const libc::c_void,
-        count: libc::c_ulong,
-    ) -> *mut libc::c_void {
-        ptr::copy_nonoverlapping(
-            src.cast::<MaybeUninit<u8>>(),
-            dest.cast::<MaybeUninit<u8>>(),
-            count as usize,
-        );
-        dest
-    }
-
     macro_rules! __assert {
         (false $(,)?) => {
             $crate::externs::__assert_fail(stringify!(false), file!(), line!())
@@ -114,6 +97,7 @@ mod macros;
 mod api;
 mod dumper;
 mod emitter;
+mod error;
 mod loader;
 mod ops;
 mod parser;
@@ -139,6 +123,7 @@ pub use crate::api::{
 };
 pub use crate::dumper::{yaml_emitter_close, yaml_emitter_dump, yaml_emitter_open};
 pub use crate::emitter::yaml_emitter_emit;
+pub use crate::error::*;
 pub use crate::loader::yaml_parser_load;
 pub use crate::parser::yaml_parser_parse;
 pub use crate::scanner::yaml_parser_scan;
@@ -181,11 +166,8 @@ single: '"Howdy!" he cried.'
 quoted: ' # Not a ''comment''.'
 tie-fighter: '|\-*-/|'
 "#;
-            yaml_parser_set_input_string(
-                &mut parser,
-                SANITY_INPUT.as_ptr(),
-                SANITY_INPUT.len() as _,
-            );
+            let mut read_in = SANITY_INPUT.as_bytes();
+            yaml_parser_set_input_string(&mut parser, &mut read_in);
             let mut doc = yaml_document_t::default();
             if yaml_parser_load(&mut parser, &mut doc).is_err() {
                 panic!("parser error: {:?} {:?}", parser.error, parser.problem);
@@ -268,37 +250,35 @@ tie-fighter: '|\-*-/|'
 
     #[test]
     fn integration_hs5t() {
-        unsafe {
-            let mut emitter = emitter_new();
-            let mut output = Vec::new();
-            yaml_emitter_set_output_string(&mut emitter, &mut output);
+        let mut emitter = emitter_new();
+        let mut output = Vec::new();
+        yaml_emitter_set_output_string(&mut emitter, &mut output);
 
-            let mut event = yaml_event_t::default();
-            yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING).unwrap();
-            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-            yaml_document_start_event_initialize(&mut event, None, &[], true).unwrap();
-            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-            yaml_scalar_event_initialize(
-                &mut event,
-                None,
-                None,
-                "1st non-empty\n2nd non-empty 3rd non-empty",
-                true,
-                true,
-                YAML_PLAIN_SCALAR_STYLE,
-            )
-            .unwrap();
-            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-            yaml_document_end_event_initialize(&mut event, true).unwrap();
-            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-            yaml_stream_end_event_initialize(&mut event).unwrap();
-            yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+        let mut event = yaml_event_t::default();
+        yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING).unwrap();
+        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+        yaml_document_start_event_initialize(&mut event, None, &[], true).unwrap();
+        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+        yaml_scalar_event_initialize(
+            &mut event,
+            None,
+            None,
+            "1st non-empty\n2nd non-empty 3rd non-empty",
+            true,
+            true,
+            YAML_PLAIN_SCALAR_STYLE,
+        )
+        .unwrap();
+        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+        yaml_document_end_event_initialize(&mut event, true).unwrap();
+        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+        yaml_stream_end_event_initialize(&mut event).unwrap();
+        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
 
-            assert_eq!(
-                core::str::from_utf8(&output),
-                Ok("'1st non-empty\n\n  2nd non-empty 3rd non-empty'\n")
-            );
-        }
+        assert_eq!(
+            core::str::from_utf8(&output),
+            Ok("'1st non-empty\n\n  2nd non-empty 3rd non-empty'\n")
+        );
     }
 
     fn emitter_new<'w>() -> yaml_emitter_t<'w> {

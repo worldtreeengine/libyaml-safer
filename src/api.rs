@@ -1,13 +1,12 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::externs::memcpy;
-use crate::yaml::{size_t, YamlEventData, YamlNodeData};
+use crate::yaml::{YamlEventData, YamlNodeData};
 use crate::{
     libc, yaml_break_t, yaml_document_t, yaml_emitter_t, yaml_encoding_t, yaml_event_t,
     yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t, yaml_parser_t,
-    yaml_read_handler_t, yaml_scalar_style_t, yaml_sequence_style_t, yaml_tag_directive_t,
-    yaml_token_t, yaml_version_directive_t, PointerExt, YAML_ANY_ENCODING, YAML_UTF8_ENCODING,
+    yaml_scalar_style_t, yaml_sequence_style_t, yaml_tag_directive_t, yaml_token_t,
+    yaml_version_directive_t, YAML_ANY_ENCODING, YAML_UTF8_ENCODING,
 };
 use core::ptr;
 
@@ -35,7 +34,7 @@ pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), (
 }
 
 /// Destroy a parser.
-pub unsafe fn yaml_parser_delete(parser: &mut yaml_parser_t) {
+pub fn yaml_parser_delete(parser: &mut yaml_parser_t) {
     parser.raw_buffer.clear();
     parser.buffer.clear();
     for mut token in parser.tokens.drain(..) {
@@ -48,59 +47,20 @@ pub unsafe fn yaml_parser_delete(parser: &mut yaml_parser_t) {
     parser.tag_directives.clear();
 }
 
-unsafe fn yaml_string_read_handler(
-    data: *mut libc::c_void,
-    buffer: *mut libc::c_uchar,
-    mut size: size_t,
-    size_read: *mut size_t,
-) -> libc::c_int {
-    let parser: &mut yaml_parser_t = &mut *(data as *mut yaml_parser_t);
-    if parser.input.current == parser.input.end {
-        *size_read = 0_u64;
-        return 1;
-    }
-    if size > (*parser).input.end.c_offset_from(parser.input.current) as size_t {
-        size = (*parser).input.end.c_offset_from(parser.input.current) as size_t;
-    }
-    memcpy(
-        buffer as *mut libc::c_void,
-        parser.input.current as *const libc::c_void,
-        size,
-    );
-    parser.input.current = parser.input.current.wrapping_offset(size as isize);
-    *size_read = size;
-    1
-}
-
 /// Set a string input.
 ///
 /// Note that the `input` pointer must be valid while the `parser` object
 /// exists. The application is responsible for destroying `input` after
 /// destroying the `parser`.
-pub unsafe fn yaml_parser_set_input_string(
-    parser: &mut yaml_parser_t,
-    input: *const libc::c_uchar,
-    size: size_t,
-) {
+pub fn yaml_parser_set_input_string<'r>(parser: &mut yaml_parser_t<'r>, input: &'r mut &[u8]) {
     __assert!((parser.read_handler).is_none());
-    __assert!(!input.is_null());
-    parser.read_handler = Some(yaml_string_read_handler);
-    let parser_ptr = parser as *mut _ as *mut libc::c_void;
-    parser.read_handler_data = parser_ptr;
-    parser.input.start = input;
-    parser.input.current = input;
-    parser.input.end = input.wrapping_offset(size as isize);
+    parser.read_handler = Some(input);
 }
 
 /// Set a generic input handler.
-pub unsafe fn yaml_parser_set_input(
-    parser: &mut yaml_parser_t,
-    handler: yaml_read_handler_t,
-    data: *mut libc::c_void,
-) {
+pub fn yaml_parser_set_input<'r>(parser: &mut yaml_parser_t<'r>, input: &'r mut dyn std::io::Read) {
     __assert!((parser.read_handler).is_none());
-    parser.read_handler = Some(handler);
-    parser.read_handler_data = data;
+    parser.read_handler = Some(input);
 }
 
 /// Set the source encoding.
@@ -144,7 +104,7 @@ pub fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
 /// size `size`. The emitter will set `size_written` to the number of written
 /// bytes. If the buffer is smaller than required, the emitter produces the
 /// YAML_WRITE_ERROR error.
-pub unsafe fn yaml_emitter_set_output_string<'w>(
+pub fn yaml_emitter_set_output_string<'w>(
     emitter: &mut yaml_emitter_t<'w>,
     output: &'w mut Vec<u8>,
 ) {
@@ -159,7 +119,7 @@ pub unsafe fn yaml_emitter_set_output_string<'w>(
 }
 
 /// Set a generic output handler.
-pub unsafe fn yaml_emitter_set_output<'w>(
+pub fn yaml_emitter_set_output<'w>(
     emitter: &mut yaml_emitter_t<'w>,
     handler: &'w mut dyn std::io::Write,
 ) {
@@ -200,7 +160,7 @@ pub fn yaml_emitter_set_break(emitter: &mut yaml_emitter_t, line_break: yaml_bre
 }
 
 /// Free any memory allocated for a token object.
-pub unsafe fn yaml_token_delete(token: &mut yaml_token_t) {
+pub fn yaml_token_delete(token: &mut yaml_token_t) {
     *token = yaml_token_t::default();
 }
 
@@ -229,7 +189,7 @@ pub fn yaml_stream_end_event_initialize(event: &mut yaml_event_t) -> Result<(), 
 ///
 /// The `implicit` argument is considered as a stylistic parameter and may be
 /// ignored by the emitter.
-pub unsafe fn yaml_document_start_event_initialize(
+pub fn yaml_document_start_event_initialize(
     event: &mut yaml_event_t,
     version_directive: Option<yaml_version_directive_t>,
     tag_directives_in: &[yaml_tag_directive_t],

@@ -86,22 +86,6 @@ pub enum yaml_error_type_t {
     YAML_EMITTER_ERROR = 7,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum EmitterError {
-    #[error("{0}")]
-    Problem(&'static str),
-    #[error(transparent)]
-    Writer(#[from] WriterError),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum WriterError {
-    #[error("writer could not flush the entire buffer")]
-    Incomplete,
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-}
-
 /// The pointer position.
 #[derive(Copy, Clone, Default, Debug)]
 #[repr(C)]
@@ -685,7 +669,7 @@ pub struct yaml_alias_data_t {
 /// family of functions.
 #[repr(C)]
 #[non_exhaustive]
-pub struct yaml_parser_t {
+pub struct yaml_parser_t<'r> {
     /// Error type.
     pub error: yaml_error_type_t,
     /// Error description.
@@ -701,9 +685,7 @@ pub struct yaml_parser_t {
     /// The context position.
     pub context_mark: yaml_mark_t,
     /// Read handler.
-    pub(crate) read_handler: Option<yaml_read_handler_t>,
-    /// A pointer for passing to the read handler.
-    pub(crate) read_handler_data: *mut libc::c_void,
+    pub(crate) read_handler: Option<&'r mut dyn std::io::Read>,
     /// Standard (string or file) input data.
     pub(crate) input: unnamed_yaml_parser_t_input_string,
     /// EOF flag
@@ -718,6 +700,7 @@ pub struct yaml_parser_t {
     ///
     /// This is the raw unchecked input from the read handler (for example, it
     /// may be UTF-16 encoded).
+    // TODO: Get rid of this and ask users to provide something implementing `BufRead` instead of `Read`.
     pub(crate) raw_buffer: VecDeque<u8>,
     /// The input encoding.
     pub(crate) encoding: yaml_encoding_t,
@@ -757,7 +740,7 @@ pub struct yaml_parser_t {
     pub(crate) aliases: Vec<yaml_alias_data_t>,
 }
 
-impl Default for yaml_parser_t {
+impl<'r> Default for yaml_parser_t<'r> {
     fn default() -> Self {
         Self {
             error: Default::default(),
@@ -767,8 +750,7 @@ impl Default for yaml_parser_t {
             problem_mark: Default::default(),
             context: Default::default(),
             context_mark: Default::default(),
-            read_handler: Default::default(),
-            read_handler_data: ptr::null_mut(),
+            read_handler: None,
             input: Default::default(),
             eof: Default::default(),
             buffer: Default::default(),

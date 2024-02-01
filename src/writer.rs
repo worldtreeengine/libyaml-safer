@@ -1,6 +1,7 @@
-use crate::yaml::WriterError;
 use crate::yaml_encoding_t::YAML_UTF16BE_ENCODING;
-use crate::{yaml_emitter_t, YAML_ANY_ENCODING, YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING};
+use crate::{
+    yaml_emitter_t, WriterError, YAML_ANY_ENCODING, YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING,
+};
 
 /// Flush the accumulated characters to the output.
 pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {

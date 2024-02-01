@@ -4,28 +4,28 @@ use crate::api::INPUT_RAW_BUFFER_SIZE;
 use crate::macros::vecdeque_starts_with;
 use crate::yaml::size_t;
 use crate::{
-    libc, yaml_parser_t, YAML_ANY_ENCODING, YAML_READER_ERROR, YAML_UTF16BE_ENCODING,
+    libc, yaml_parser_t, ReaderError, YAML_ANY_ENCODING, YAML_UTF16BE_ENCODING,
     YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING,
 };
 
-unsafe fn yaml_parser_set_reader_error(
-    parser: &mut yaml_parser_t,
+fn yaml_parser_set_reader_error<T>(
+    _parser: &mut yaml_parser_t,
     problem: &'static str,
-    offset: size_t,
-    value: libc::c_int,
-) -> Result<(), ()> {
-    parser.error = YAML_READER_ERROR;
-    parser.problem = Some(problem);
-    parser.problem_offset = offset;
-    parser.problem_value = value;
-    Err(())
+    offset: u64,
+    value: i32,
+) -> Result<T, ReaderError> {
+    Err(ReaderError::Problem {
+        problem,
+        offset,
+        value,
+    })
 }
 
 const BOM_UTF8: &[u8] = b"\xEF\xBB\xBF";
 const BOM_UTF16LE: &[u8] = b"\xFF\xFE";
 const BOM_UTF16BE: &[u8] = b"\xFE\xFF";
 
-unsafe fn yaml_parser_determine_encoding(parser: &mut yaml_parser_t) -> Result<(), ()> {
+fn yaml_parser_determine_encoding(parser: &mut yaml_parser_t) -> Result<(), ReaderError> {
     while !parser.eof && parser.raw_buffer.len() < 3 {
         yaml_parser_update_raw_buffer(parser)?;
     }
@@ -47,8 +47,7 @@ unsafe fn yaml_parser_determine_encoding(parser: &mut yaml_parser_t) -> Result<(
     Ok(())
 }
 
-unsafe fn yaml_parser_update_raw_buffer(parser: &mut yaml_parser_t) -> Result<(), ()> {
-    let mut size_read: size_t = 0_u64;
+fn yaml_parser_update_raw_buffer(parser: &mut yaml_parser_t) -> Result<(), ReaderError> {
     if parser.raw_buffer.len() >= INPUT_RAW_BUFFER_SIZE {
         return Ok(());
     }
@@ -62,15 +61,11 @@ unsafe fn yaml_parser_update_raw_buffer(parser: &mut yaml_parser_t) -> Result<()
     let contiguous = parser.raw_buffer.make_contiguous();
     let write_to = &mut contiguous[len_before..];
 
-    if parser.read_handler.expect("non-null function pointer")(
-        parser.read_handler_data,
-        write_to.as_mut_ptr(),
-        write_to.len() as size_t,
-        &mut size_read,
-    ) == 0
-    {
-        return yaml_parser_set_reader_error(parser, "input error", parser.offset, -1);
-    }
+    let size_read = parser
+        .read_handler
+        .as_mut()
+        .expect("non-null read handler")
+        .read(write_to)?;
 
     let valid_size = len_before + size_read as usize;
     parser.raw_buffer.truncate(valid_size);
@@ -188,7 +183,7 @@ fn read_char_utf16<const BIG_ENDIAN: bool>(
     }
 }
 
-unsafe fn push_char(parser: &mut yaml_parser_t, ch: char) -> Result<(), ()> {
+fn push_char(parser: &mut yaml_parser_t, ch: char) -> Result<(), ReaderError> {
     if !(ch == '\x09'
         || ch == '\x0A'
         || ch == '\x0D'
@@ -202,7 +197,7 @@ unsafe fn push_char(parser: &mut yaml_parser_t, ch: char) -> Result<(), ()> {
             parser,
             "control characters are not allowed",
             parser.offset,
-            ch as libc::c_int,
+            ch as _,
         );
     }
     parser.buffer.push_back(ch);
@@ -211,10 +206,10 @@ unsafe fn push_char(parser: &mut yaml_parser_t, ch: char) -> Result<(), ()> {
     Ok(())
 }
 
-pub(crate) unsafe fn yaml_parser_update_buffer(
+pub(crate) fn yaml_parser_update_buffer(
     parser: &mut yaml_parser_t,
     length: size_t,
-) -> Result<(), ()> {
+) -> Result<(), ReaderError> {
     let mut first = true;
     __assert!((parser.read_handler).is_some());
     if parser.eof && parser.raw_buffer.is_empty() {

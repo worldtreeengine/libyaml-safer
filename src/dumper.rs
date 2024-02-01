@@ -2,10 +2,10 @@ use alloc::string::String;
 use alloc::vec;
 
 use crate::yaml::{
-    yaml_anchors_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t, EmitterError,
-    YamlEventData, YamlNodeData, YAML_ANY_ENCODING,
+    yaml_anchors_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t, YamlEventData,
+    YamlNodeData, YAML_ANY_ENCODING,
 };
-use crate::{libc, yaml_document_delete, yaml_emitter_emit};
+use crate::{libc, yaml_document_delete, yaml_emitter_emit, EmitterError};
 
 /// Start a YAML stream.
 ///

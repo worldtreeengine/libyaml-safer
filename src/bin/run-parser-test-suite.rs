@@ -19,17 +19,15 @@ use libyaml_safer::{
 };
 use std::env;
 use std::error::Error;
-use std::ffi::c_void;
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::mem::MaybeUninit;
 use std::process::{self, ExitCode};
-use std::ptr::addr_of_mut;
 use std::slice;
 
 pub(crate) unsafe fn unsafe_main(
-    mut stdin: &mut dyn Read,
+    stdin: &mut dyn Read,
     stdout: &mut dyn Write,
 ) -> Result<(), Box<dyn Error>> {
     let mut parser = MaybeUninit::<yaml_parser_t>::uninit();
@@ -38,24 +36,7 @@ pub(crate) unsafe fn unsafe_main(
     }
     let mut parser = parser.assume_init();
 
-    unsafe fn read_from_stdio(
-        data: *mut c_void,
-        buffer: *mut u8,
-        size: u64,
-        size_read: *mut u64,
-    ) -> i32 {
-        let stdin: *mut &mut dyn Read = data.cast();
-        let slice = slice::from_raw_parts_mut(buffer.cast(), size as usize);
-        match (*stdin).read(slice) {
-            Ok(n) => {
-                *size_read = n as u64;
-                1
-            }
-            Err(_) => 0,
-        }
-    }
-
-    yaml_parser_set_input(&mut parser, read_from_stdio, addr_of_mut!(stdin).cast());
+    yaml_parser_set_input(&mut parser, stdin);
 
     let mut event = yaml_event_t::default();
     loop {
