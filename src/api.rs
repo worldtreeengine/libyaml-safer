@@ -4,11 +4,12 @@ use alloc::vec::Vec;
 use crate::yaml::{YamlEventData, YamlNodeData};
 use crate::{
     libc, yaml_break_t, yaml_document_t, yaml_emitter_t, yaml_encoding_t, yaml_event_t,
-    yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t, yaml_parser_t,
-    yaml_scalar_style_t, yaml_sequence_style_t, yaml_tag_directive_t, yaml_token_t,
+    yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t, yaml_parser_state_t,
+    yaml_parser_t, yaml_scalar_style_t, yaml_sequence_style_t, yaml_tag_directive_t, yaml_token_t,
     yaml_version_directive_t, YAML_ANY_ENCODING, YAML_UTF8_ENCODING,
 };
 use core::ptr;
+use std::collections::VecDeque;
 
 pub(crate) const INPUT_RAW_BUFFER_SIZE: usize = 16384;
 pub(crate) const INPUT_BUFFER_SIZE: usize = INPUT_RAW_BUFFER_SIZE;
@@ -18,19 +19,33 @@ pub(crate) const OUTPUT_BUFFER_SIZE: usize = 16384;
 ///
 /// This function creates a new parser object. An application is responsible
 /// for destroying the object using the yaml_parser_delete() function.
-pub unsafe fn yaml_parser_initialize(parser: *mut yaml_parser_t) -> Result<(), ()> {
-    __assert!(!parser.is_null());
-    core::ptr::write(parser, yaml_parser_t::default());
-    let parser = &mut *parser;
-    parser.raw_buffer.reserve(INPUT_RAW_BUFFER_SIZE);
-    parser.buffer.reserve(INPUT_BUFFER_SIZE);
-    parser.tokens.reserve(16);
-    parser.indents.reserve(16);
-    parser.simple_keys.reserve(16);
-    parser.states.reserve(16);
-    parser.marks.reserve(16);
-    parser.tag_directives.reserve(16);
-    Ok(())
+pub fn yaml_parser_new<'r>() -> yaml_parser_t<'r> {
+    yaml_parser_t {
+        read_handler: None,
+        input: Default::default(),
+        eof: false,
+        buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
+        unread: 0,
+        raw_buffer: VecDeque::with_capacity(INPUT_RAW_BUFFER_SIZE),
+        encoding: YAML_ANY_ENCODING,
+        offset: 0,
+        mark: yaml_mark_t::default(),
+        stream_start_produced: false,
+        stream_end_produced: false,
+        flow_level: 0,
+        tokens: VecDeque::with_capacity(16),
+        tokens_parsed: 0,
+        token_available: false,
+        indents: Vec::with_capacity(16),
+        indent: 0,
+        simple_key_allowed: false,
+        simple_keys: Vec::with_capacity(16),
+        states: Vec::with_capacity(16),
+        state: yaml_parser_state_t::default(),
+        marks: Vec::with_capacity(16),
+        tag_directives: Vec::with_capacity(16),
+        aliases: Vec::new(),
+    }
 }
 
 /// Destroy a parser.

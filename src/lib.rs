@@ -116,8 +116,8 @@ pub use crate::api::{
     yaml_emitter_set_indent, yaml_emitter_set_output, yaml_emitter_set_output_string,
     yaml_emitter_set_unicode, yaml_emitter_set_width, yaml_event_delete,
     yaml_mapping_end_event_initialize, yaml_mapping_start_event_initialize, yaml_parser_delete,
-    yaml_parser_initialize, yaml_parser_set_encoding, yaml_parser_set_input,
-    yaml_parser_set_input_string, yaml_scalar_event_initialize, yaml_sequence_end_event_initialize,
+    yaml_parser_new, yaml_parser_set_encoding, yaml_parser_set_input, yaml_parser_set_input_string,
+    yaml_scalar_event_initialize, yaml_sequence_end_event_initialize,
     yaml_sequence_start_event_initialize, yaml_stream_end_event_initialize,
     yaml_stream_start_event_initialize, yaml_token_delete,
 };
@@ -150,9 +150,7 @@ mod tests {
     #[test]
     fn sanity() {
         unsafe {
-            let mut parser = core::mem::MaybeUninit::uninit();
-            yaml_parser_initialize(parser.as_mut_ptr()).unwrap();
-            let mut parser = parser.assume_init();
+            let mut parser = yaml_parser_new();
             // const SANITY_INPUT: &'static str =
             //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
             const SANITY_INPUT: &'static str = r#"
@@ -199,7 +197,7 @@ foo: bar
 
     #[test]
     fn test_case() {
-        let mut parser = parser_new();
+        let mut parser = yaml_parser_new();
         let mut input = TEST_CASE_QF4Y.as_bytes();
         yaml_parser_set_input_string(&mut parser, &mut input);
         let mut doc = yaml_document_t::default();
@@ -295,14 +293,6 @@ foo: bar
         unsafe {
             let mut emitter = core::mem::MaybeUninit::uninit();
             yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
-            emitter.assume_init()
-        }
-    }
-
-    fn parser_new<'w>() -> yaml_parser_t<'w> {
-        unsafe {
-            let mut emitter = core::mem::MaybeUninit::uninit();
-            yaml_parser_initialize(emitter.as_mut_ptr()).unwrap();
             emitter.assume_init()
         }
     }

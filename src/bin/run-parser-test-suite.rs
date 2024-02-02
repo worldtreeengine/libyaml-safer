@@ -12,27 +12,22 @@
 )]
 
 use libyaml_safer::{
-    yaml_parser_delete, yaml_parser_initialize, yaml_parser_parse, yaml_parser_set_input,
-    yaml_parser_t, YamlEventData, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE,
-    YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
+    yaml_parser_delete, yaml_parser_new, yaml_parser_parse, yaml_parser_set_input, YamlEventData,
+    YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE,
+    YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
 };
 use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::mem::MaybeUninit;
 use std::process::{self, ExitCode};
 use std::slice;
 
-pub(crate) unsafe fn unsafe_main(
+pub(crate) fn test_main(
     stdin: &mut dyn Read,
     stdout: &mut dyn Write,
 ) -> Result<(), Box<dyn Error>> {
-    let mut parser = MaybeUninit::<yaml_parser_t>::uninit();
-    if yaml_parser_initialize(parser.as_mut_ptr()).is_err() {
-        return Err("Could not initialize the parser object".into());
-    }
-    let mut parser = parser.assume_init();
+    let mut parser = yaml_parser_new();
 
     yaml_parser_set_input(&mut parser, stdin);
 
@@ -137,7 +132,7 @@ pub(crate) unsafe fn unsafe_main(
     Ok(())
 }
 
-unsafe fn print_escaped(stdout: &mut dyn Write, s: &str) {
+fn print_escaped(stdout: &mut dyn Write, s: &str) {
     for ch in s.bytes() {
         let repr = match &ch {
             b'\\' => b"\\\\",
@@ -161,7 +156,7 @@ fn main() -> ExitCode {
     for arg in args {
         let mut stdin = File::open(arg).unwrap();
         let mut stdout = io::stdout();
-        let result = unsafe { unsafe_main(&mut stdin, &mut stdout) };
+        let result = test_main(&mut stdin, &mut stdout);
         if let Err(err) = result {
             let _ = writeln!(io::stderr(), "{}", err);
             return ExitCode::FAILURE;

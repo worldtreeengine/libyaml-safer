@@ -2,7 +2,7 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::libc;
+use crate::{api::yaml_parser_new, libc};
 use core::ptr;
 
 pub use self::yaml_encoding_t::*;
@@ -688,32 +688,7 @@ pub struct yaml_parser_t<'r> {
 
 impl<'r> Default for yaml_parser_t<'r> {
     fn default() -> Self {
-        Self {
-            read_handler: None,
-            input: Default::default(),
-            eof: Default::default(),
-            buffer: Default::default(),
-            unread: Default::default(),
-            raw_buffer: Default::default(),
-            encoding: Default::default(),
-            offset: Default::default(),
-            mark: Default::default(),
-            stream_start_produced: Default::default(),
-            stream_end_produced: Default::default(),
-            flow_level: Default::default(),
-            tokens: Default::default(),
-            tokens_parsed: Default::default(),
-            token_available: Default::default(),
-            indents: Default::default(),
-            indent: Default::default(),
-            simple_key_allowed: Default::default(),
-            simple_keys: Default::default(),
-            states: Default::default(),
-            state: Default::default(),
-            marks: Default::default(),
-            tag_directives: Default::default(),
-            aliases: Default::default(),
-        }
+        yaml_parser_new()
     }
 }
 
