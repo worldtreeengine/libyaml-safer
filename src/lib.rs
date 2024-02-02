@@ -131,9 +131,9 @@ pub use crate::writer::yaml_emitter_flush;
 pub use crate::yaml::{
     yaml_alias_data_t, yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t,
     yaml_encoding_t, yaml_event_t, yaml_mapping_style_t, yaml_mark_t, yaml_node_item_t,
-    yaml_node_pair_t, yaml_node_t, yaml_parser_state_t, yaml_parser_t, yaml_read_handler_t,
-    yaml_scalar_style_t, yaml_sequence_style_t, yaml_simple_key_t, yaml_tag_directive_t,
-    yaml_token_t, yaml_token_type_t, yaml_version_directive_t, yaml_write_handler_t, YamlEventData,
+    yaml_node_pair_t, yaml_node_t, yaml_parser_state_t, yaml_parser_t, yaml_scalar_style_t,
+    yaml_sequence_style_t, yaml_simple_key_t, yaml_tag_directive_t, yaml_token_t,
+    yaml_token_type_t, yaml_version_directive_t, yaml_write_handler_t, YamlEventData,
 };
 #[doc(hidden)]
 pub use crate::yaml::{
@@ -203,9 +203,7 @@ foo: bar
         let mut input = TEST_CASE_QF4Y.as_bytes();
         yaml_parser_set_input_string(&mut parser, &mut input);
         let mut doc = yaml_document_t::default();
-        unsafe {
-            yaml_parser_load(&mut parser, &mut doc).unwrap();
-        }
+        yaml_parser_load(&mut parser, &mut doc).unwrap();
     }
 
     // #[test]

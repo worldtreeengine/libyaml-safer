@@ -22,7 +22,7 @@ use crate::{
     YAML_PLAIN_SCALAR_STYLE,
 };
 
-unsafe fn PEEK_TOKEN<'a>(parser: &'a mut yaml_parser_t) -> Result<&'a yaml_token_t, ParserError> {
+fn PEEK_TOKEN<'a>(parser: &'a mut yaml_parser_t) -> Result<&'a yaml_token_t, ParserError> {
     if parser.token_available {
         return Ok(parser
             .tokens
@@ -39,9 +39,7 @@ unsafe fn PEEK_TOKEN<'a>(parser: &'a mut yaml_parser_t) -> Result<&'a yaml_token
         .expect("token_available is true, but token queue is empty"))
 }
 
-unsafe fn PEEK_TOKEN_MUT<'a>(
-    parser: &'a mut yaml_parser_t,
-) -> Result<&'a mut yaml_token_t, ParserError> {
+fn PEEK_TOKEN_MUT<'a>(parser: &'a mut yaml_parser_t) -> Result<&'a mut yaml_token_t, ParserError> {
     if parser.token_available {
         return Ok(parser
             .tokens
@@ -58,7 +56,7 @@ unsafe fn PEEK_TOKEN_MUT<'a>(
         .expect("token_available is true, but token queue is empty"))
 }
 
-unsafe fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
+fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
     parser.token_available = false;
     parser.tokens_parsed = parser.tokens_parsed.wrapping_add(1);
     let skipped = parser.tokens.pop_front().expect("SKIP_TOKEN but EOF");
@@ -83,7 +81,7 @@ unsafe fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
 /// An application must not alternate the calls of yaml_parser_parse() with the
 /// calls of yaml_parser_scan() or yaml_parser_load(). Doing this will break the
 /// parser.
-pub unsafe fn yaml_parser_parse(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
+pub fn yaml_parser_parse(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
     if parser.stream_end_produced || parser.state == YAML_PARSE_END_STATE {
         return Ok(yaml_event_t {
             data: YamlEventData::StreamEnd,
@@ -117,9 +115,7 @@ fn yaml_parser_set_parser_error_context<T>(
     })
 }
 
-unsafe fn yaml_parser_state_machine(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_state_machine(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
     match parser.state {
         YAML_PARSE_STREAM_START_STATE => yaml_parser_parse_stream_start(parser),
         YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE => yaml_parser_parse_document_start(parser, true),
@@ -170,9 +166,7 @@ unsafe fn yaml_parser_state_machine(
     }
 }
 
-unsafe fn yaml_parser_parse_stream_start(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_parse_stream_start(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
     let token = PEEK_TOKEN(parser)?;
 
     if let YamlTokenData::StreamStart { encoding } = &token.data {
@@ -192,7 +186,7 @@ unsafe fn yaml_parser_parse_stream_start(
     }
 }
 
-unsafe fn yaml_parser_parse_document_start(
+fn yaml_parser_parse_document_start(
     parser: &mut yaml_parser_t,
     implicit: bool,
 ) -> Result<yaml_event_t, ParserError> {
@@ -267,7 +261,7 @@ unsafe fn yaml_parser_parse_document_start(
     }
 }
 
-unsafe fn yaml_parser_parse_document_content(
+fn yaml_parser_parse_document_content(
     parser: &mut yaml_parser_t,
 ) -> Result<yaml_event_t, ParserError> {
     let token = PEEK_TOKEN(parser)?;
@@ -285,9 +279,7 @@ unsafe fn yaml_parser_parse_document_content(
     }
 }
 
-unsafe fn yaml_parser_parse_document_end(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_parse_document_end(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
     let mut end_mark: yaml_mark_t;
     let mut implicit = true;
     let token = PEEK_TOKEN(parser)?;
@@ -307,7 +299,7 @@ unsafe fn yaml_parser_parse_document_end(
     })
 }
 
-unsafe fn yaml_parser_parse_node(
+fn yaml_parser_parse_node(
     parser: &mut yaml_parser_t,
     block: bool,
     indentless_sequence: bool,
@@ -519,7 +511,7 @@ unsafe fn yaml_parser_parse_node(
     }
 }
 
-unsafe fn yaml_parser_parse_block_sequence_entry(
+fn yaml_parser_parse_block_sequence_entry(
     parser: &mut yaml_parser_t,
     first: bool,
 ) -> Result<yaml_event_t, ParserError> {
@@ -565,7 +557,7 @@ unsafe fn yaml_parser_parse_block_sequence_entry(
     }
 }
 
-unsafe fn yaml_parser_parse_indentless_sequence_entry(
+fn yaml_parser_parse_indentless_sequence_entry(
     parser: &mut yaml_parser_t,
 ) -> Result<yaml_event_t, ParserError> {
     let mut token = PEEK_TOKEN(parser)?;
@@ -597,7 +589,7 @@ unsafe fn yaml_parser_parse_indentless_sequence_entry(
     }
 }
 
-unsafe fn yaml_parser_parse_block_mapping_key(
+fn yaml_parser_parse_block_mapping_key(
     parser: &mut yaml_parser_t,
     first: bool,
 ) -> Result<yaml_event_t, ParserError> {
@@ -642,7 +634,7 @@ unsafe fn yaml_parser_parse_block_mapping_key(
     }
 }
 
-unsafe fn yaml_parser_parse_block_mapping_value(
+fn yaml_parser_parse_block_mapping_value(
     parser: &mut yaml_parser_t,
 ) -> Result<yaml_event_t, ParserError> {
     let mut token = PEEK_TOKEN(parser)?;
@@ -664,7 +656,7 @@ unsafe fn yaml_parser_parse_block_mapping_value(
     }
 }
 
-unsafe fn yaml_parser_parse_flow_sequence_entry(
+fn yaml_parser_parse_flow_sequence_entry(
     parser: &mut yaml_parser_t,
     first: bool,
 ) -> Result<yaml_event_t, ParserError> {
@@ -722,7 +714,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry(
     Ok(event)
 }
 
-unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_key(
+fn yaml_parser_parse_flow_sequence_entry_mapping_key(
     parser: &mut yaml_parser_t,
 ) -> Result<yaml_event_t, ParserError> {
     let token = PEEK_TOKEN(parser)?;
@@ -739,7 +731,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_key(
     }
 }
 
-unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_value(
+fn yaml_parser_parse_flow_sequence_entry_mapping_value(
     parser: &mut yaml_parser_t,
 ) -> Result<yaml_event_t, ParserError> {
     let mut token = PEEK_TOKEN(parser)?;
@@ -758,7 +750,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_value(
     yaml_parser_process_empty_scalar(mark)
 }
 
-unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_end(
+fn yaml_parser_parse_flow_sequence_entry_mapping_end(
     parser: &mut yaml_parser_t,
 ) -> Result<yaml_event_t, ParserError> {
     let token = PEEK_TOKEN(parser)?;
@@ -772,7 +764,7 @@ unsafe fn yaml_parser_parse_flow_sequence_entry_mapping_end(
     })
 }
 
-unsafe fn yaml_parser_parse_flow_mapping_key(
+fn yaml_parser_parse_flow_mapping_key(
     parser: &mut yaml_parser_t,
     first: bool,
 ) -> Result<yaml_event_t, ParserError> {
@@ -832,7 +824,7 @@ unsafe fn yaml_parser_parse_flow_mapping_key(
     Ok(event)
 }
 
-unsafe fn yaml_parser_parse_flow_mapping_value(
+fn yaml_parser_parse_flow_mapping_value(
     parser: &mut yaml_parser_t,
     empty: bool,
 ) -> Result<yaml_event_t, ParserError> {
@@ -855,7 +847,7 @@ unsafe fn yaml_parser_parse_flow_mapping_value(
     yaml_parser_process_empty_scalar(mark)
 }
 
-unsafe fn yaml_parser_process_empty_scalar(mark: yaml_mark_t) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_process_empty_scalar(mark: yaml_mark_t) -> Result<yaml_event_t, ParserError> {
     Ok(yaml_event_t {
         data: YamlEventData::Scalar {
             anchor: None,
@@ -870,7 +862,7 @@ unsafe fn yaml_parser_process_empty_scalar(mark: yaml_mark_t) -> Result<yaml_eve
     })
 }
 
-unsafe fn yaml_parser_process_directives(
+fn yaml_parser_process_directives(
     parser: &mut yaml_parser_t,
     version_directive_ref: Option<&mut Option<yaml_version_directive_t>>,
     tag_directives_ref: Option<&mut Vec<yaml_tag_directive_t>>,
@@ -947,7 +939,7 @@ unsafe fn yaml_parser_process_directives(
     Ok(())
 }
 
-unsafe fn yaml_parser_append_tag_directive(
+fn yaml_parser_append_tag_directive(
     parser: &mut yaml_parser_t,
     value: &yaml_tag_directive_t,
     allow_duplicates: bool,

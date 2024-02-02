@@ -498,7 +498,7 @@ pub enum YamlNodeData {
 /// An element of a sequence node.
 pub type yaml_node_item_t = libc::c_int;
 /// An element of a mapping node.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_node_pair_t {
@@ -539,22 +539,6 @@ pub struct yaml_document_t {
     /// The end of the document.
     pub end_mark: yaml_mark_t,
 }
-
-/// The prototype of a read handler.
-///
-/// The read handler is called when the parser needs to read more bytes from the
-/// source. The handler should write not more than `size` bytes to the `buffer`.
-/// The number of written bytes should be set to the `length` variable.
-///
-/// On success, the handler should return 1. If the handler failed, the returned
-/// value should be 0. On EOF, the handler should set the `size_read` to 0 and
-/// return 1.
-pub type yaml_read_handler_t = unsafe fn(
-    data: *mut libc::c_void,
-    buffer: *mut libc::c_uchar,
-    size: size_t,
-    size_read: *mut size_t,
-) -> libc::c_int;
 
 /// This structure holds information about a potential simple key.
 #[derive(Copy, Clone)]

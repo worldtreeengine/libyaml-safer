@@ -6,7 +6,6 @@ use crate::{
     libc, yaml_alias_data_t, yaml_document_delete, yaml_document_t, yaml_event_t, yaml_mark_t,
     yaml_node_pair_t, yaml_node_t, yaml_parser_parse, yaml_parser_t, ComposerError,
 };
-use core::mem::MaybeUninit;
 
 /// Parse the input stream and produce the next YAML document.
 ///
@@ -22,7 +21,7 @@ use core::mem::MaybeUninit;
 /// An application must not alternate the calls of yaml_parser_load() with the
 /// calls of yaml_parser_scan() or yaml_parser_parse(). Doing this will break
 /// the parser.
-pub unsafe fn yaml_parser_load(
+pub fn yaml_parser_load(
     parser: &mut yaml_parser_t,
     document: &mut yaml_document_t,
 ) -> Result<(), ComposerError> {
@@ -92,11 +91,11 @@ fn yaml_parser_set_composer_error_context<T>(
     })
 }
 
-unsafe fn yaml_parser_delete_aliases(parser: &mut yaml_parser_t) {
+fn yaml_parser_delete_aliases(parser: &mut yaml_parser_t) {
     parser.aliases.clear();
 }
 
-unsafe fn yaml_parser_load_document(
+fn yaml_parser_load_document(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
@@ -124,7 +123,7 @@ unsafe fn yaml_parser_load_document(
     }
 }
 
-unsafe fn yaml_parser_load_nodes(
+fn yaml_parser_load_nodes(
     parser: &mut yaml_parser_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
@@ -169,7 +168,7 @@ unsafe fn yaml_parser_load_nodes(
     Ok(())
 }
 
-unsafe fn yaml_parser_register_anchor(
+fn yaml_parser_register_anchor(
     parser: &mut yaml_parser_t,
     document: &mut yaml_document_t,
     index: libc::c_int,
@@ -197,7 +196,7 @@ unsafe fn yaml_parser_register_anchor(
     Ok(())
 }
 
-unsafe fn yaml_parser_load_node_add(
+fn yaml_parser_load_node_add(
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
     index: libc::c_int,
@@ -212,8 +211,7 @@ unsafe fn yaml_parser_load_node_add(
             items.push(index);
         }
         YamlNodeData::Mapping { ref mut pairs, .. } => {
-            let mut pair = MaybeUninit::<yaml_node_pair_t>::uninit();
-            let pair = pair.as_mut_ptr();
+            let mut pair = yaml_node_pair_t::default();
             let mut do_push = true;
             if !pairs.is_empty() {
                 let p: &mut yaml_node_pair_t = pairs.last_mut().unwrap();
@@ -223,9 +221,9 @@ unsafe fn yaml_parser_load_node_add(
                 }
             }
             if do_push {
-                (*pair).key = index;
-                (*pair).value = 0;
-                pairs.push(*pair);
+                pair.key = index;
+                pair.value = 0;
+                pairs.push(pair);
             }
         }
         _ => {
@@ -235,7 +233,7 @@ unsafe fn yaml_parser_load_node_add(
     Ok(())
 }
 
-unsafe fn yaml_parser_load_alias(
+fn yaml_parser_load_alias(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
@@ -256,7 +254,7 @@ unsafe fn yaml_parser_load_alias(
     yaml_parser_set_composer_error("found undefined alias", event.start_mark)
 }
 
-unsafe fn yaml_parser_load_scalar(
+fn yaml_parser_load_scalar(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
@@ -289,7 +287,7 @@ unsafe fn yaml_parser_load_scalar(
     yaml_parser_load_node_add(document, ctx, index)
 }
 
-unsafe fn yaml_parser_load_sequence(
+fn yaml_parser_load_sequence(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
@@ -329,7 +327,7 @@ unsafe fn yaml_parser_load_sequence(
     Ok(())
 }
 
-unsafe fn yaml_parser_load_sequence_end(
+fn yaml_parser_load_sequence_end(
     _parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
@@ -346,7 +344,7 @@ unsafe fn yaml_parser_load_sequence_end(
     Ok(())
 }
 
-unsafe fn yaml_parser_load_mapping(
+fn yaml_parser_load_mapping(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
@@ -384,7 +382,7 @@ unsafe fn yaml_parser_load_mapping(
     Ok(())
 }
 
-unsafe fn yaml_parser_load_mapping_end(
+fn yaml_parser_load_mapping_end(
     _parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
