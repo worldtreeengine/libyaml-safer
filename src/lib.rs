@@ -111,7 +111,7 @@ pub use crate::api::{
     yaml_document_add_sequence, yaml_document_append_mapping_pair,
     yaml_document_append_sequence_item, yaml_document_delete, yaml_document_end_event_initialize,
     yaml_document_get_node, yaml_document_get_root_node, yaml_document_initialize,
-    yaml_document_start_event_initialize, yaml_emitter_delete, yaml_emitter_initialize,
+    yaml_document_start_event_initialize, yaml_emitter_delete, yaml_emitter_new,
     yaml_emitter_set_break, yaml_emitter_set_canonical, yaml_emitter_set_encoding,
     yaml_emitter_set_indent, yaml_emitter_set_output, yaml_emitter_set_output_string,
     yaml_emitter_set_unicode, yaml_emitter_set_width, yaml_event_delete,
@@ -149,11 +149,10 @@ mod tests {
 
     #[test]
     fn sanity() {
-        unsafe {
-            let mut parser = yaml_parser_new();
-            // const SANITY_INPUT: &'static str =
-            //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
-            const SANITY_INPUT: &'static str = r#"
+        let mut parser = yaml_parser_new();
+        // const SANITY_INPUT: &'static str =
+        //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
+        const SANITY_INPUT: &'static str = r#"
 unicode: "Sosa did fine.\u263A"
 control: "\b1998\t1999\t2000\n"
 hex esc: "\x0d\x0a is \r\n"
@@ -162,32 +161,31 @@ single: '"Howdy!" he cried.'
 quoted: ' # Not a ''comment''.'
 tie-fighter: '|\-*-/|'
 "#;
-            let mut read_in = SANITY_INPUT.as_bytes();
-            yaml_parser_set_input_string(&mut parser, &mut read_in);
-            let mut doc = yaml_document_t::default();
-            yaml_parser_load(&mut parser, &mut doc).unwrap();
-            // let mut doc = doc.assume_init();
+        let mut read_in = SANITY_INPUT.as_bytes();
+        yaml_parser_set_input_string(&mut parser, &mut read_in);
+        let mut doc = yaml_document_t::default();
+        yaml_parser_load(&mut parser, &mut doc).unwrap();
+        // let mut doc = doc.assume_init();
 
-            // let mut emitter = core::mem::MaybeUninit::uninit();
-            // yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
-            // let mut emitter = emitter.assume_init();
+        // let mut emitter = core::mem::MaybeUninit::uninit();
+        // yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
+        // let mut emitter = emitter.assume_init();
 
-            // let mut output = vec![0u8; 1024];
-            // let mut size_written = 0;
-            // yaml_emitter_set_output_string(
-            //     &mut emitter,
-            //     output.as_mut_ptr(),
-            //     1024,
-            //     &mut size_written,
-            // );
+        // let mut output = vec![0u8; 1024];
+        // let mut size_written = 0;
+        // yaml_emitter_set_output_string(
+        //     &mut emitter,
+        //     output.as_mut_ptr(),
+        //     1024,
+        //     &mut size_written,
+        // );
 
-            // if yaml_emitter_dump(&mut emitter, &mut doc).is_err() {
-            //     panic!("emitter error: {:?} {:?}", emitter.error, emitter.problem);
-            // }
-            // output.resize(size_written as _, 0);
-            // let output_str = core::str::from_utf8(&output).expect("invalid UTF-8");
-            // assert_eq!(output_str, SANITY_INPUT);
-        }
+        // if yaml_emitter_dump(&mut emitter, &mut doc).is_err() {
+        //     panic!("emitter error: {:?} {:?}", emitter.error, emitter.problem);
+        // }
+        // output.resize(size_written as _, 0);
+        // let output_str = core::str::from_utf8(&output).expect("invalid UTF-8");
+        // assert_eq!(output_str, SANITY_INPUT);
     }
 
     const TEST_CASE_QF4Y: &str = r#"[
@@ -258,7 +256,7 @@ foo: bar
 
     #[test]
     fn integration_hs5t() {
-        let mut emitter = emitter_new();
+        let mut emitter = yaml_emitter_new();
         let mut output = Vec::new();
         yaml_emitter_set_output_string(&mut emitter, &mut output);
 
@@ -287,13 +285,5 @@ foo: bar
             core::str::from_utf8(&output),
             Ok("'1st non-empty\n\n  2nd non-empty 3rd non-empty'\n")
         );
-    }
-
-    fn emitter_new<'w>() -> yaml_emitter_t<'w> {
-        unsafe {
-            let mut emitter = core::mem::MaybeUninit::uninit();
-            yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
-            emitter.assume_init()
-        }
     }
 }

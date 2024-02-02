@@ -16,7 +16,7 @@ fn test(id: &str) {
 
     let output = bin::run(
         env!("CARGO_BIN_EXE_run-emitter-test-suite"),
-        run_emitter_test_suite::unsafe_main,
+        run_emitter_test_suite::test_main,
         &dir.join("test.event"),
     );
 

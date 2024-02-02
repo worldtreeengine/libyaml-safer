@@ -16,32 +16,27 @@
 
 use libyaml_safer::{
     yaml_alias_event_initialize, yaml_document_end_event_initialize,
-    yaml_document_start_event_initialize, yaml_emitter_delete, yaml_emitter_emit,
-    yaml_emitter_initialize, yaml_emitter_set_canonical, yaml_emitter_set_output,
-    yaml_emitter_set_unicode, yaml_emitter_t, yaml_event_t, yaml_mapping_end_event_initialize,
-    yaml_mapping_start_event_initialize, yaml_scalar_event_initialize, yaml_scalar_style_t,
-    yaml_sequence_end_event_initialize, yaml_sequence_start_event_initialize,
-    yaml_stream_end_event_initialize, yaml_stream_start_event_initialize, YAML_ANY_SCALAR_STYLE,
-    YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE,
-    YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
+    yaml_document_start_event_initialize, yaml_emitter_delete, yaml_emitter_emit, yaml_emitter_new,
+    yaml_emitter_set_canonical, yaml_emitter_set_output, yaml_emitter_set_unicode, yaml_event_t,
+    yaml_mapping_end_event_initialize, yaml_mapping_start_event_initialize,
+    yaml_scalar_event_initialize, yaml_scalar_style_t, yaml_sequence_end_event_initialize,
+    yaml_sequence_start_event_initialize, yaml_stream_end_event_initialize,
+    yaml_stream_start_event_initialize, YAML_ANY_SCALAR_STYLE, YAML_BLOCK_MAPPING_STYLE,
+    YAML_BLOCK_SEQUENCE_STYLE, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE,
+    YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
+    YAML_UTF8_ENCODING,
 };
 use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::{self, BufRead, Read, Write};
-use std::mem::MaybeUninit;
 use std::process::ExitCode;
 
-pub(crate) unsafe fn unsafe_main(
+pub(crate) fn test_main(
     stdin: &mut dyn Read,
     stdout: &mut dyn Write,
 ) -> Result<(), Box<dyn Error>> {
-    let mut emitter = MaybeUninit::<yaml_emitter_t>::uninit();
-    if yaml_emitter_initialize(emitter.as_mut_ptr()).is_err() {
-        return Err("Could not initalize the emitter object".into());
-    }
-    let mut emitter = emitter.assume_init();
+    let mut emitter = yaml_emitter_new();
 
     yaml_emitter_set_output(&mut emitter, stdout);
     yaml_emitter_set_canonical(&mut emitter, false);
@@ -195,7 +190,7 @@ fn main() -> ExitCode {
     for arg in args {
         let mut stdin = File::open(arg).unwrap();
         let mut stdout = io::stdout();
-        let result = unsafe { unsafe_main(&mut stdin, &mut stdout) };
+        let result = test_main(&mut stdin, &mut stdout);
         if let Err(err) = result {
             let _ = writeln!(io::stderr(), "{}", err);
             return ExitCode::FAILURE;

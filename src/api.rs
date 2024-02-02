@@ -3,10 +3,11 @@ use alloc::vec::Vec;
 
 use crate::yaml::{YamlEventData, YamlNodeData};
 use crate::{
-    libc, yaml_break_t, yaml_document_t, yaml_emitter_t, yaml_encoding_t, yaml_event_t,
-    yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t, yaml_parser_state_t,
-    yaml_parser_t, yaml_scalar_style_t, yaml_sequence_style_t, yaml_tag_directive_t, yaml_token_t,
-    yaml_version_directive_t, YAML_ANY_ENCODING, YAML_UTF8_ENCODING,
+    libc, yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t, yaml_encoding_t,
+    yaml_event_t, yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t,
+    yaml_parser_state_t, yaml_parser_t, yaml_scalar_style_t, yaml_sequence_style_t,
+    yaml_tag_directive_t, yaml_token_t, yaml_version_directive_t, YAML_ANY_ENCODING,
+    YAML_UTF8_ENCODING,
 };
 use core::ptr;
 use std::collections::VecDeque;
@@ -88,16 +89,39 @@ pub fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yaml_encod
 ///
 /// This function creates a new emitter object. An application is responsible
 /// for destroying the object using the yaml_emitter_delete() function.
-pub unsafe fn yaml_emitter_initialize(emitter: *mut yaml_emitter_t) -> Result<(), ()> {
-    __assert!(!emitter.is_null());
-    core::ptr::write(emitter, yaml_emitter_t::default());
-    let emitter = &mut *emitter;
-    emitter.buffer.reserve(OUTPUT_BUFFER_SIZE);
-    emitter.states.reserve(16);
-    emitter.events.reserve(16);
-    emitter.indents.reserve(16);
-    emitter.tag_directives.reserve(16);
-    Ok(())
+pub fn yaml_emitter_new<'w>() -> yaml_emitter_t<'w> {
+    yaml_emitter_t {
+        write_handler: None,
+        output: Default::default(),
+        buffer: String::with_capacity(OUTPUT_BUFFER_SIZE),
+        raw_buffer: Vec::with_capacity(OUTPUT_BUFFER_SIZE),
+        encoding: YAML_ANY_ENCODING,
+        canonical: false,
+        best_indent: 0,
+        best_width: 0,
+        unicode: false,
+        line_break: yaml_break_t::default(),
+        states: Vec::with_capacity(16),
+        state: yaml_emitter_state_t::default(),
+        events: VecDeque::with_capacity(16),
+        indents: Vec::with_capacity(16),
+        tag_directives: Vec::with_capacity(16),
+        indent: 0,
+        flow_level: 0,
+        root_context: false,
+        sequence_context: false,
+        mapping_context: false,
+        simple_key_context: false,
+        line: 0,
+        column: 0,
+        whitespace: false,
+        indention: false,
+        open_ended: 0,
+        opened: false,
+        closed: false,
+        anchors: Vec::new(),
+        last_anchor_id: 0,
+    }
 }
 
 /// Destroy an emitter.

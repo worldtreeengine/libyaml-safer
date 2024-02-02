@@ -15,7 +15,7 @@ fn test(id: &str) {
 
     let output = bin::run(
         env!("CARGO_BIN_EXE_run-parser-test-suite"),
-        run_parser_test_suite::unsafe_main,
+        run_parser_test_suite::test_main,
         &dir.join("in.yaml"),
     );
 
