@@ -62,30 +62,6 @@ pub enum yaml_break_t {
     YAML_CRLN_BREAK = 3,
 }
 
-/// Many bad things could happen with the parser and emitter.
-#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
-#[non_exhaustive]
-pub enum yaml_error_type_t {
-    /// No error is produced.
-    #[default]
-    YAML_NO_ERROR = 0,
-    /// Cannot allocate or reallocate a block of memory.
-    YAML_MEMORY_ERROR = 1,
-    /// Cannot read or decode the input stream.
-    YAML_READER_ERROR = 2,
-    /// Cannot scan the input stream.
-    YAML_SCANNER_ERROR = 3,
-    /// Cannot parse the input stream.
-    YAML_PARSER_ERROR = 4,
-    /// Cannot compose a YAML document.
-    YAML_COMPOSER_ERROR = 5,
-    /// Cannot write to the output stream.
-    YAML_WRITER_ERROR = 6,
-    /// Cannot emit a YAML stream.
-    YAML_EMITTER_ERROR = 7,
-}
-
 /// The pointer position.
 #[derive(Copy, Clone, Default, Debug)]
 #[repr(C)]
