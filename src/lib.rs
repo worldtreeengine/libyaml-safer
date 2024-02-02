@@ -11,7 +11,7 @@
     clippy::cast_lossless,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
-    clippy::cast_ptr_alignment,
+    // clippy::cast_ptr_alignment,
     clippy::cast_sign_loss,
     clippy::collapsible_if,
     clippy::doc_markdown,
@@ -20,22 +20,18 @@
     clippy::items_after_statements,
     clippy::let_underscore_untyped,
     clippy::manual_range_contains,
-    clippy::manual_swap,
     clippy::missing_panics_doc,
     clippy::missing_safety_doc,
+    clippy::missing_errors_doc,
     clippy::module_name_repetitions,
     clippy::must_use_candidate,
+    clippy::needless_pass_by_value,
     clippy::nonminimal_bool,
-    clippy::ptr_as_ptr,
-    clippy::redundant_else,
     clippy::similar_names,
-    clippy::single_match,
-    clippy::single_match_else,
+    clippy::struct_excessive_bools,
     clippy::too_many_arguments,
     clippy::too_many_lines,
-    clippy::unnecessary_cast,
-    clippy::unreadable_literal,
-    clippy::while_immutable_condition, // https://github.com/rust-lang/rust-clippy/issues/3548
+    clippy::unnecessary_wraps
 )]
 
 extern crate alloc;
@@ -260,9 +256,9 @@ foo: bar
         yaml_emitter_set_output_string(&mut emitter, &mut output);
 
         let mut event = yaml_event_t::default();
-        yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING).unwrap();
+        yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING);
         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-        yaml_document_start_event_initialize(&mut event, None, &[], true).unwrap();
+        yaml_document_start_event_initialize(&mut event, None, &[], true);
         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
         yaml_scalar_event_initialize(
             &mut event,
@@ -272,12 +268,11 @@ foo: bar
             true,
             true,
             YAML_PLAIN_SCALAR_STYLE,
-        )
-        .unwrap();
+        );
         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-        yaml_document_end_event_initialize(&mut event, true).unwrap();
+        yaml_document_end_event_initialize(&mut event, true);
         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-        yaml_stream_end_event_initialize(&mut event).unwrap();
+        yaml_stream_end_event_initialize(&mut event);
         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
 
         assert_eq!(

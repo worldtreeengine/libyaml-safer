@@ -67,7 +67,7 @@ fn yaml_parser_update_raw_buffer(parser: &mut yaml_parser_t) -> Result<(), Reade
         .expect("non-null read handler")
         .read(write_to)?;
 
-    let valid_size = len_before + size_read as usize;
+    let valid_size = len_before + size_read;
     parser.raw_buffer.truncate(valid_size);
     if size_read == 0 {
         parser.eof = true;
@@ -107,13 +107,12 @@ fn read_char_utf8(raw: &mut VecDeque<u8>) -> Option<Result<char, Utf8Error>> {
     if raw.len() < width {
         return Some(Err(Utf8Error::Incomplete));
     }
-    for i in 1..width {
-        let trailing = raw[i];
+    for (i, trailing) in raw.iter().enumerate().take(width).skip(1) {
         if trailing & 0xc0 != 0x80 {
             return Some(Err(Utf8Error::InvalidTrailingOctet(i)));
         }
         value <<= 6;
-        value += trailing as u32 & 0x3f;
+        value += *trailing as u32 & 0x3f;
     }
     if !(width == 1
         || width == 2 && value >= 0x80
@@ -246,7 +245,6 @@ pub(crate) fn yaml_parser_update_buffer(
                             );
                         } else {
                             // Read more
-                            ();
                         }
                     }
                     Some(Err(Utf8Error::InvalidLeadingOctet)) => {
@@ -305,7 +303,6 @@ pub(crate) fn yaml_parser_update_buffer(
                             );
                         } else {
                             // Read more
-                            ();
                         }
                     }
                     Some(Err(Utf16Error::UnexpectedLowSurrogateArea(value))) => {

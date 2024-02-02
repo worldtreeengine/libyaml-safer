@@ -2,7 +2,7 @@ use alloc::string::String;
 
 use crate::api::OUTPUT_BUFFER_SIZE;
 use crate::macros::{
-    is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_printable, is_space,
+    is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_breakz, is_printable, is_space,
 };
 use crate::ops::ForceMul as _;
 use crate::yaml::YamlEventData;
@@ -338,7 +338,7 @@ fn yaml_emitter_emit_document_start(
         ];
         let mut implicit = implicit;
         if let Some(version_directive) = version_directive {
-            yaml_emitter_analyze_version_directive(emitter, &version_directive)?;
+            yaml_emitter_analyze_version_directive(emitter, version_directive)?;
         }
         for tag_directive in tag_directives {
             yaml_emitter_analyze_tag_directive(emitter, tag_directive)?;
@@ -477,7 +477,10 @@ fn yaml_emitter_emit_flow_mapping_key(
         emitter.flow_level += 1;
     }
     if let YamlEventData::MappingEnd = &event.data {
-        assert!(!emitter.indents.is_empty(), "emitter.indents should not be empty");
+        assert!(
+            !emitter.indents.is_empty(),
+            "emitter.indents should not be empty"
+        );
         emitter.flow_level -= 1;
         emitter.indent = emitter.indents.pop().unwrap();
         if emitter.canonical && !first {
@@ -720,16 +723,8 @@ fn yaml_emitter_check_empty_sequence(emitter: &yaml_emitter_t, event: &yaml_even
     if emitter.events.is_empty() {
         return false;
     }
-    let start = if let YamlEventData::SequenceStart { .. } = event.data {
-        true
-    } else {
-        false
-    };
-    let end = if let YamlEventData::SequenceEnd = emitter.events[0].data {
-        true
-    } else {
-        false
-    };
+    let start = matches!(event.data, YamlEventData::SequenceStart { .. });
+    let end = matches!(emitter.events[0].data, YamlEventData::SequenceEnd);
     start && end
 }
 
@@ -737,16 +732,8 @@ fn yaml_emitter_check_empty_mapping(emitter: &yaml_emitter_t, event: &yaml_event
     if emitter.events.is_empty() {
         return false;
     }
-    let start = if let YamlEventData::MappingStart { .. } = event.data {
-        true
-    } else {
-        false
-    };
-    let end = if let YamlEventData::MappingEnd = emitter.events[0].data {
-        true
-    } else {
-        false
-    };
+    let start = matches!(event.data, YamlEventData::MappingStart { .. });
+    let end = matches!(emitter.events[0].data, YamlEventData::MappingEnd);
     start && end
 }
 
@@ -762,16 +749,11 @@ fn yaml_emitter_check_simple_key(
     } = analysis;
 
     let mut length = anchor.as_ref().map_or(0, |a| a.anchor.len())
-        + tag
-            .as_ref()
-            .map_or(0, |t| t.handle.len() + t.suffix.len());
+        + tag.as_ref().map_or(0, |t| t.handle.len() + t.suffix.len());
 
     match event.data {
         YamlEventData::Alias { .. } => {
-            length = analysis
-                .anchor
-                .as_ref()
-                .map_or(0, |a| a.anchor.len());
+            length = analysis.anchor.as_ref().map_or(0, |a| a.anchor.len());
         }
         YamlEventData::Scalar { .. } => {
             let Some(scalar) = scalar else {
@@ -921,39 +903,27 @@ fn yaml_emitter_process_scalar(
 ) -> Result<(), EmitterError> {
     match analysis.style {
         YAML_PLAIN_SCALAR_STYLE => {
-            yaml_emitter_write_plain_scalar(
-                emitter,
-                analysis.value,
-                !emitter.simple_key_context,
-            )
+            yaml_emitter_write_plain_scalar(emitter, analysis.value, !emitter.simple_key_context)
         }
-        YAML_SINGLE_QUOTED_SCALAR_STYLE => {
-            yaml_emitter_write_single_quoted_scalar(
-                emitter,
-                analysis.value,
-                !emitter.simple_key_context,
-            )
-        }
-        YAML_DOUBLE_QUOTED_SCALAR_STYLE => {
-            yaml_emitter_write_double_quoted_scalar(
-                emitter,
-                analysis.value,
-                !emitter.simple_key_context,
-            )
-        }
-        YAML_LITERAL_SCALAR_STYLE => {
-            yaml_emitter_write_literal_scalar(emitter, analysis.value)
-        }
-        YAML_FOLDED_SCALAR_STYLE => {
-            yaml_emitter_write_folded_scalar(emitter, analysis.value)
-        }
+        YAML_SINGLE_QUOTED_SCALAR_STYLE => yaml_emitter_write_single_quoted_scalar(
+            emitter,
+            analysis.value,
+            !emitter.simple_key_context,
+        ),
+        YAML_DOUBLE_QUOTED_SCALAR_STYLE => yaml_emitter_write_double_quoted_scalar(
+            emitter,
+            analysis.value,
+            !emitter.simple_key_context,
+        ),
+        YAML_LITERAL_SCALAR_STYLE => yaml_emitter_write_literal_scalar(emitter, analysis.value),
+        YAML_FOLDED_SCALAR_STYLE => yaml_emitter_write_folded_scalar(emitter, analysis.value),
         YAML_ANY_SCALAR_STYLE => unreachable!("No scalar style chosen"),
     }
 }
 
 fn yaml_emitter_analyze_version_directive(
     emitter: &mut yaml_emitter_t,
-    version_directive: &yaml_version_directive_t,
+    version_directive: yaml_version_directive_t,
 ) -> Result<(), EmitterError> {
     if version_directive.major != 1 || version_directive.minor != 1 && version_directive.minor != 2
     {
@@ -1570,7 +1540,7 @@ fn yaml_emitter_write_double_quoted_scalar(
                         (b'U', 8)
                     };
                     PUT(emitter, prefix)?;
-                    let mut k = ((width - 1) * 4) as i32;
+                    let mut k = (width - 1) * 4;
                     let value_0 = ch as u32;
                     while k >= 0 {
                         let digit = (value_0 >> k) & 0x0F;
@@ -1640,10 +1610,7 @@ fn yaml_emitter_write_block_scalar_hints(
 
         if !is_break(ch) {
             chomp_hint = Some("-");
-        } else if next.is_none() {
-            chomp_hint = Some("+");
-            emitter.open_ended = 2;
-        } else if is_break(next) {
+        } else if is_breakz(next) {
             chomp_hint = Some("+");
             emitter.open_ended = 2;
         }

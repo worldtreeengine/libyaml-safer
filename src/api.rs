@@ -204,24 +204,19 @@ pub fn yaml_token_delete(token: &mut yaml_token_t) {
 }
 
 /// Create the STREAM-START event.
-pub fn yaml_stream_start_event_initialize(
-    event: &mut yaml_event_t,
-    encoding: yaml_encoding_t,
-) -> Result<(), ()> {
+pub fn yaml_stream_start_event_initialize(event: &mut yaml_event_t, encoding: yaml_encoding_t) {
     *event = yaml_event_t {
         data: YamlEventData::StreamStart { encoding },
         ..Default::default()
     };
-    Ok(())
 }
 
 /// Create the STREAM-END event.
-pub fn yaml_stream_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
+pub fn yaml_stream_end_event_initialize(event: &mut yaml_event_t) {
     *event = yaml_event_t {
         data: YamlEventData::StreamEnd,
         ..Default::default()
     };
-    Ok(())
 }
 
 /// Create the DOCUMENT-START event.
@@ -233,7 +228,7 @@ pub fn yaml_document_start_event_initialize(
     version_directive: Option<yaml_version_directive_t>,
     tag_directives_in: &[yaml_tag_directive_t],
     implicit: bool,
-) -> Result<(), ()> {
+) {
     let tag_directives = Vec::from_iter(tag_directives_in.iter().cloned());
 
     *event = yaml_event_t {
@@ -244,34 +239,27 @@ pub fn yaml_document_start_event_initialize(
         },
         ..Default::default()
     };
-
-    Ok(())
 }
 
 /// Create the DOCUMENT-END event.
 ///
 /// The `implicit` argument is considered as a stylistic parameter and may be
 /// ignored by the emitter.
-pub fn yaml_document_end_event_initialize(
-    event: &mut yaml_event_t,
-    implicit: bool,
-) -> Result<(), ()> {
+pub fn yaml_document_end_event_initialize(event: &mut yaml_event_t, implicit: bool) {
     *event = yaml_event_t {
         data: YamlEventData::DocumentEnd { implicit },
         ..Default::default()
     };
-    Ok(())
 }
 
 /// Create an ALIAS event.
-pub fn yaml_alias_event_initialize(event: &mut yaml_event_t, anchor: &str) -> Result<(), ()> {
+pub fn yaml_alias_event_initialize(event: &mut yaml_event_t, anchor: &str) {
     *event = yaml_event_t {
         data: YamlEventData::Alias {
             anchor: String::from(anchor),
         },
         ..Default::default()
     };
-    Ok(())
 }
 
 /// Create a SCALAR event.
@@ -289,7 +277,7 @@ pub fn yaml_scalar_event_initialize(
     plain_implicit: bool,
     quoted_implicit: bool,
     style: yaml_scalar_style_t,
-) -> Result<(), ()> {
+) {
     let mark = yaml_mark_t {
         index: 0_u64,
         line: 0_u64,
@@ -317,7 +305,6 @@ pub fn yaml_scalar_event_initialize(
         start_mark: mark,
         end_mark: mark,
     };
-    Ok(())
 }
 
 /// Create a SEQUENCE-START event.
@@ -331,7 +318,7 @@ pub fn yaml_sequence_start_event_initialize(
     tag: Option<&str>,
     implicit: bool,
     style: yaml_sequence_style_t,
-) -> Result<(), ()> {
+) {
     let mut anchor_copy: Option<String> = None;
     let mut tag_copy: Option<String> = None;
 
@@ -351,16 +338,14 @@ pub fn yaml_sequence_start_event_initialize(
         },
         ..Default::default()
     };
-    Ok(())
 }
 
 /// Create a SEQUENCE-END event.
-pub fn yaml_sequence_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
+pub fn yaml_sequence_end_event_initialize(event: &mut yaml_event_t) {
     *event = yaml_event_t {
         data: YamlEventData::SequenceEnd,
         ..Default::default()
     };
-    Ok(())
 }
 
 /// Create a MAPPING-START event.
@@ -374,7 +359,7 @@ pub fn yaml_mapping_start_event_initialize(
     tag: Option<&str>,
     implicit: bool,
     style: yaml_mapping_style_t,
-) -> Result<(), ()> {
+) {
     let mut anchor_copy: Option<String> = None;
     let mut tag_copy: Option<String> = None;
 
@@ -395,17 +380,14 @@ pub fn yaml_mapping_start_event_initialize(
         },
         ..Default::default()
     };
-
-    Ok(())
 }
 
 /// Create a MAPPING-END event.
-pub fn yaml_mapping_end_event_initialize(event: &mut yaml_event_t) -> Result<(), ()> {
+pub fn yaml_mapping_end_event_initialize(event: &mut yaml_event_t) {
     *event = yaml_event_t {
         data: YamlEventData::MappingEnd,
         ..Default::default()
     };
-    Ok(())
 }
 
 /// Free any memory allocated for an event object.
@@ -420,7 +402,7 @@ pub fn yaml_document_initialize(
     tag_directives_in: &[yaml_tag_directive_t],
     start_implicit: bool,
     end_implicit: bool,
-) -> Result<(), ()> {
+) {
     let nodes = Vec::with_capacity(16);
     let tag_directives = Vec::from_iter(tag_directives_in.iter().cloned());
 
@@ -432,8 +414,6 @@ pub fn yaml_document_initialize(
         end_implicit,
         ..Default::default()
     };
-
-    Ok(())
 }
 
 /// Delete a YAML document and all its nodes.
@@ -576,7 +556,7 @@ pub fn yaml_document_append_sequence_item(
     document: &mut yaml_document_t,
     sequence: libc::c_int,
     item: libc::c_int,
-) -> Result<(), ()> {
+) {
     __assert!(sequence > 0 && sequence as usize - 1 < document.nodes.len());
     __assert!(matches!(
         &document.nodes[sequence as usize - 1].data,
@@ -588,7 +568,6 @@ pub fn yaml_document_append_sequence_item(
     {
         items.push(item);
     }
-    Ok(())
 }
 
 /// Add a pair of a key and a value to a MAPPING node.
@@ -597,7 +576,7 @@ pub fn yaml_document_append_mapping_pair(
     mapping: libc::c_int,
     key: libc::c_int,
     value: libc::c_int,
-) -> Result<(), ()> {
+) {
     __assert!(mapping > 0 && mapping as usize - 1 < document.nodes.len());
     __assert!(matches!(
         &document.nodes[mapping as usize - 1].data,
@@ -611,5 +590,4 @@ pub fn yaml_document_append_mapping_pair(
     {
         pairs.push(pair);
     }
-    Ok(())
 }

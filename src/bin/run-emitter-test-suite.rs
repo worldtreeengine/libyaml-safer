@@ -56,7 +56,7 @@ pub(crate) fn test_main(
         }
         let line = line_buffer.strip_suffix('\n').unwrap_or(&line_buffer);
 
-        let result = if line.starts_with("+STR") {
+        if line.starts_with("+STR") {
             yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING)
         } else if line.starts_with("-STR") {
             yaml_stream_end_event_initialize(&mut event)
@@ -105,9 +105,6 @@ pub(crate) fn test_main(
             break Err(format!("Unknown event: '{line}'").into());
         };
 
-        if result.is_err() {
-            break Err("Memory error: Not enough memory for creating an event".into());
-        }
         if let Err(err) = yaml_emitter_emit(&mut emitter, event) {
             break Err(err.into());
         }

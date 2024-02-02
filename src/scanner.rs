@@ -339,7 +339,10 @@ fn yaml_parser_increase_flow_level(parser: &mut yaml_parser_t) -> Result<(), Sca
         },
     };
     parser.simple_keys.push(empty_simple_key);
-    assert!(!(parser.flow_level == libc::c_int::MAX), "parser.flow_level integer overflow");
+    assert!(
+        !(parser.flow_level == libc::c_int::MAX),
+        "parser.flow_level integer overflow"
+    );
     parser.flow_level += 1;
     Ok(())
 }
@@ -363,7 +366,10 @@ fn yaml_parser_roll_indent(
     }
     if (parser.indent as libc::c_long) < column {
         parser.indents.push(parser.indent);
-        assert!(!(column > ptrdiff_t::from(libc::c_int::MAX)), "integer overflow");
+        assert!(
+            !(column > ptrdiff_t::from(libc::c_int::MAX)),
+            "integer overflow"
+        );
         parser.indent = column as libc::c_int;
         let token = yaml_token_t {
             data,
@@ -948,7 +954,7 @@ fn yaml_parser_scan_anchor(
     scan_alias_instead_of_anchor: bool,
 ) -> Result<(), ScannerError> {
     let mut length: libc::c_int = 0;
-    
+
     let mut string = String::new();
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
@@ -1004,7 +1010,7 @@ fn yaml_parser_scan_tag(
 ) -> Result<(), ScannerError> {
     let mut handle;
     let mut suffix;
-    
+
     let start_mark: yaml_mark_t = parser.mark;
 
     CACHE(parser, 2_u64)?;
@@ -1116,57 +1122,55 @@ fn yaml_parser_scan_tag_uri(
     let mut length = head.len();
     let mut string = String::new();
 
-    loop {
-        if length > 1 {
-            string = String::from(&head[1..]);
-        }
-        CACHE(parser, 1_u64)?;
+    if length > 1 {
+        string = String::from(&head[1..]);
+    }
+    CACHE(parser, 1_u64)?;
 
-        while IS_ALPHA!(parser.buffer)
-            || CHECK!(parser.buffer, ';')
-            || CHECK!(parser.buffer, '/')
-            || CHECK!(parser.buffer, '?')
-            || CHECK!(parser.buffer, ':')
-            || CHECK!(parser.buffer, '@')
-            || CHECK!(parser.buffer, '&')
-            || CHECK!(parser.buffer, '=')
-            || CHECK!(parser.buffer, '+')
-            || CHECK!(parser.buffer, '$')
-            || CHECK!(parser.buffer, '.')
-            || CHECK!(parser.buffer, '%')
-            || CHECK!(parser.buffer, '!')
-            || CHECK!(parser.buffer, '~')
-            || CHECK!(parser.buffer, '*')
-            || CHECK!(parser.buffer, '\'')
-            || CHECK!(parser.buffer, '(')
-            || CHECK!(parser.buffer, ')')
-            || uri_char
-                && (CHECK!(parser.buffer, ',')
-                    || CHECK!(parser.buffer, '[')
-                    || CHECK!(parser.buffer, ']'))
-        {
-            if CHECK!(parser.buffer, '%') {
-                yaml_parser_scan_uri_escapes(parser, directive, start_mark, &mut string)?;
-            } else {
-                READ_STRING(parser, &mut string);
-            }
-            length = length.force_add(1);
-            CACHE(parser, 1_u64)?;
-        }
-        if length == 0 {
-            return yaml_parser_set_scanner_error(
-                parser,
-                if directive {
-                    "while parsing a %TAG directive"
-                } else {
-                    "while parsing a tag"
-                },
-                start_mark,
-                "did not find expected tag URI",
-            );
+    while IS_ALPHA!(parser.buffer)
+        || CHECK!(parser.buffer, ';')
+        || CHECK!(parser.buffer, '/')
+        || CHECK!(parser.buffer, '?')
+        || CHECK!(parser.buffer, ':')
+        || CHECK!(parser.buffer, '@')
+        || CHECK!(parser.buffer, '&')
+        || CHECK!(parser.buffer, '=')
+        || CHECK!(parser.buffer, '+')
+        || CHECK!(parser.buffer, '$')
+        || CHECK!(parser.buffer, '.')
+        || CHECK!(parser.buffer, '%')
+        || CHECK!(parser.buffer, '!')
+        || CHECK!(parser.buffer, '~')
+        || CHECK!(parser.buffer, '*')
+        || CHECK!(parser.buffer, '\'')
+        || CHECK!(parser.buffer, '(')
+        || CHECK!(parser.buffer, ')')
+        || uri_char
+            && (CHECK!(parser.buffer, ',')
+                || CHECK!(parser.buffer, '[')
+                || CHECK!(parser.buffer, ']'))
+    {
+        if CHECK!(parser.buffer, '%') {
+            yaml_parser_scan_uri_escapes(parser, directive, start_mark, &mut string)?;
         } else {
-            return Ok(string);
+            READ_STRING(parser, &mut string);
         }
+        length = length.force_add(1);
+        CACHE(parser, 1_u64)?;
+    }
+    if length == 0 {
+        yaml_parser_set_scanner_error(
+            parser,
+            if directive {
+                "while parsing a %TAG directive"
+            } else {
+                "while parsing a tag"
+            },
+            start_mark,
+            "did not find expected tag URI",
+        )
+    } else {
+        Ok(string)
     }
 }
 
@@ -1460,7 +1464,6 @@ fn yaml_parser_scan_flow_scalar(
     token: &mut yaml_token_t,
     single: bool,
 ) -> Result<(), ScannerError> {
-    
     let mut string = String::new();
     let mut leading_break = String::new();
     let mut trailing_breaks = String::new();
@@ -1613,10 +1616,8 @@ fn yaml_parser_scan_flow_scalar(
                                         "did not find expected hexdecimal number",
                                     );
                                 } else {
-                                    value =
-                                        (value << 4)
-                                            .force_add(AS_HEX_AT!(parser.buffer, k as usize)
-                                                as libc::c_uint);
+                                    value = (value << 4)
+                                        .force_add(AS_HEX_AT!(parser.buffer, k as usize));
                                     k = k.force_add(1);
                                 }
                             }
