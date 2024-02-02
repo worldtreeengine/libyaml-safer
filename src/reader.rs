@@ -99,7 +99,7 @@ enum Utf8Error {
 }
 
 fn read_char_utf8(raw: &mut VecDeque<u8>) -> Option<Result<char, Utf8Error>> {
-    let first = raw.get(0).copied()?;
+    let first = raw.front().copied()?;
     let (width, mut value) = utf8_char_width_and_initial_value(first);
     if width == 0 {
         return Some(Err(Utf8Error::InvalidLeadingOctet));
@@ -140,7 +140,7 @@ enum Utf16Error {
 fn read_char_utf16<const BIG_ENDIAN: bool>(
     raw: &mut VecDeque<u8>,
 ) -> Option<Result<char, Utf16Error>> {
-    if raw.len() == 0 {
+    if raw.is_empty() {
         return None;
     }
     if raw.len() < 2 {
@@ -170,7 +170,7 @@ fn read_char_utf16<const BIG_ENDIAN: bool>(
         if value2 & 0xfc00 != 0xdc00 {
             return Some(Err(Utf16Error::ExpectedLowSurrogateArea(value2)));
         }
-        value = 0x10000 + (value & 0x3ff) << 10 + (value2 & 0x3ff);
+        value = (0x10000 + (value & 0x3ff)) << (10 + (value2 & 0x3ff));
     } else {
         width = 2;
     }
@@ -246,7 +246,7 @@ pub(crate) fn yaml_parser_update_buffer(
                             );
                         } else {
                             // Read more
-                            ()
+                            ();
                         }
                     }
                     Some(Err(Utf8Error::InvalidLeadingOctet)) => {
@@ -305,7 +305,7 @@ pub(crate) fn yaml_parser_update_buffer(
                             );
                         } else {
                             // Read more
-                            ()
+                            ();
                         }
                     }
                     Some(Err(Utf16Error::UnexpectedLowSurrogateArea(value))) => {

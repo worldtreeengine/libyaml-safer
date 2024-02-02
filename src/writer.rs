@@ -59,6 +59,6 @@ pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), WriterErro
         emitter.raw_buffer.clear();
         Ok(())
     } else {
-        return Err(WriterError::Incomplete);
+        Err(WriterError::Incomplete)
     }
 }

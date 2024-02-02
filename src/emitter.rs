@@ -195,7 +195,7 @@ fn yaml_emitter_append_tag_directive(
     value: &yaml_tag_directive_t,
     allow_duplicates: bool,
 ) -> Result<(), EmitterError> {
-    for tag_directive in emitter.tag_directives.iter() {
+    for tag_directive in &emitter.tag_directives {
         if value.handle == tag_directive.handle {
             if allow_duplicates {
                 return Ok(());
@@ -340,11 +340,11 @@ fn yaml_emitter_emit_document_start(
         if let Some(version_directive) = version_directive {
             yaml_emitter_analyze_version_directive(emitter, &version_directive)?;
         }
-        for tag_directive in tag_directives.iter() {
+        for tag_directive in tag_directives {
             yaml_emitter_analyze_tag_directive(emitter, tag_directive)?;
             yaml_emitter_append_tag_directive(emitter, tag_directive, false)?;
         }
-        for tag_directive in default_tag_directives.iter() {
+        for tag_directive in &default_tag_directives {
             yaml_emitter_append_tag_directive(emitter, tag_directive, true)?;
         }
         if !first || emitter.canonical {
@@ -367,7 +367,7 @@ fn yaml_emitter_emit_document_start(
         }
         if !tag_directives.is_empty() {
             implicit = false;
-            for tag_directive in tag_directives.iter() {
+            for tag_directive in tag_directives {
                 yaml_emitter_write_indicator(emitter, "%TAG", true, false, false)?;
                 yaml_emitter_write_tag_handle(emitter, &tag_directive.handle)?;
                 yaml_emitter_write_tag_content(emitter, &tag_directive.prefix, true)?;
@@ -477,9 +477,7 @@ fn yaml_emitter_emit_flow_mapping_key(
         emitter.flow_level += 1;
     }
     if let YamlEventData::MappingEnd = &event.data {
-        if emitter.indents.is_empty() {
-            panic!("emitter.indents should not be empty");
-        }
+        assert!(!emitter.indents.is_empty(), "emitter.indents should not be empty");
         emitter.flow_level -= 1;
         emitter.indent = emitter.indents.pop().unwrap();
         if emitter.canonical && !first {
@@ -719,7 +717,7 @@ fn yaml_emitter_check_empty_document(_emitter: &yaml_emitter_t) -> bool {
 }
 
 fn yaml_emitter_check_empty_sequence(emitter: &yaml_emitter_t, event: &yaml_event_t) -> bool {
-    if emitter.events.len() < 1 {
+    if emitter.events.is_empty() {
         return false;
     }
     let start = if let YamlEventData::SequenceStart { .. } = event.data {
@@ -736,7 +734,7 @@ fn yaml_emitter_check_empty_sequence(emitter: &yaml_emitter_t, event: &yaml_even
 }
 
 fn yaml_emitter_check_empty_mapping(emitter: &yaml_emitter_t, event: &yaml_event_t) -> bool {
-    if emitter.events.len() < 1 {
+    if emitter.events.is_empty() {
         return false;
     }
     let start = if let YamlEventData::MappingStart { .. } = event.data {
@@ -763,19 +761,17 @@ fn yaml_emitter_check_simple_key(
         scalar,
     } = analysis;
 
-    let mut length = anchor.as_ref().map(|a| a.anchor.len()).unwrap_or(0)
+    let mut length = anchor.as_ref().map_or(0, |a| a.anchor.len())
         + tag
             .as_ref()
-            .map(|t| t.handle.len() + t.suffix.len())
-            .unwrap_or(0);
+            .map_or(0, |t| t.handle.len() + t.suffix.len());
 
     match event.data {
         YamlEventData::Alias { .. } => {
             length = analysis
                 .anchor
                 .as_ref()
-                .map(|a| a.anchor.len())
-                .unwrap_or(0);
+                .map_or(0, |a| a.anchor.len());
         }
         YamlEventData::Scalar { .. } => {
             let Some(scalar) = scalar else {
@@ -925,31 +921,31 @@ fn yaml_emitter_process_scalar(
 ) -> Result<(), EmitterError> {
     match analysis.style {
         YAML_PLAIN_SCALAR_STYLE => {
-            return yaml_emitter_write_plain_scalar(
+            yaml_emitter_write_plain_scalar(
                 emitter,
                 analysis.value,
                 !emitter.simple_key_context,
-            );
+            )
         }
         YAML_SINGLE_QUOTED_SCALAR_STYLE => {
-            return yaml_emitter_write_single_quoted_scalar(
+            yaml_emitter_write_single_quoted_scalar(
                 emitter,
                 analysis.value,
                 !emitter.simple_key_context,
-            );
+            )
         }
         YAML_DOUBLE_QUOTED_SCALAR_STYLE => {
-            return yaml_emitter_write_double_quoted_scalar(
+            yaml_emitter_write_double_quoted_scalar(
                 emitter,
                 analysis.value,
                 !emitter.simple_key_context,
-            );
+            )
         }
         YAML_LITERAL_SCALAR_STYLE => {
-            return yaml_emitter_write_literal_scalar(emitter, analysis.value);
+            yaml_emitter_write_literal_scalar(emitter, analysis.value)
         }
         YAML_FOLDED_SCALAR_STYLE => {
-            return yaml_emitter_write_folded_scalar(emitter, analysis.value);
+            yaml_emitter_write_folded_scalar(emitter, analysis.value)
         }
         YAML_ANY_SCALAR_STYLE => unreachable!("No scalar style chosen"),
     }
@@ -1042,7 +1038,7 @@ fn yaml_emitter_analyze_tag<'a>(
     let mut handle = "";
     let mut suffix = tag;
 
-    for tag_directive in tag_directives.iter() {
+    for tag_directive in tag_directives {
         let prefix_len = tag_directive.prefix.len();
         if prefix_len < tag.len() && tag_directive.prefix == tag[0..prefix_len] {
             handle = &tag_directive.handle;
@@ -1647,11 +1643,9 @@ fn yaml_emitter_write_block_scalar_hints(
         } else if next.is_none() {
             chomp_hint = Some("+");
             emitter.open_ended = 2;
-        } else {
-            if is_break(next) {
-                chomp_hint = Some("+");
-                emitter.open_ended = 2;
-            }
+        } else if is_break(next) {
+            chomp_hint = Some("+");
+            emitter.open_ended = 2;
         }
     }
 
@@ -1671,8 +1665,8 @@ fn yaml_emitter_write_literal_scalar(
     PUT_BREAK(emitter)?;
     emitter.indention = true;
     emitter.whitespace = true;
-    let mut chars = value.chars();
-    while let Some(ch) = chars.next() {
+    let chars = value.chars();
+    for ch in chars {
         if is_break(ch) {
             WRITE_BREAK_CHAR(emitter, ch)?;
             emitter.indention = true;

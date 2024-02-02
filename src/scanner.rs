@@ -33,16 +33,14 @@ fn SKIP_LINE(parser: &mut yaml_parser_t) {
         parser.mark.line += 1;
         parser.unread -= 2;
         parser.buffer.drain(0..2);
-    } else {
-        if let Some(front) = parser.buffer.front().copied() {
-            if is_break(front) {
-                let width = front.len_utf8();
-                parser.mark.index += width as u64;
-                parser.mark.column = 0;
-                parser.mark.line += 1;
-                parser.unread -= 1;
-                parser.buffer.pop_front();
-            }
+    } else if let Some(front) = parser.buffer.front().copied() {
+        if is_break(front) {
+            let width = front.len_utf8();
+            parser.mark.index += width as u64;
+            parser.mark.column = 0;
+            parser.mark.line += 1;
+            parser.unread -= 1;
+            parser.buffer.pop_front();
         }
     }
 }
@@ -145,7 +143,7 @@ pub(crate) fn yaml_parser_fetch_more_tokens(
             need_more_tokens = true;
         } else {
             yaml_parser_stale_simple_keys(parser)?;
-            for simple_key in parser.simple_keys.iter() {
+            for simple_key in &parser.simple_keys {
                 if simple_key.possible && simple_key.token_number == parser.tokens_parsed {
                     need_more_tokens = true;
                     break;
@@ -274,7 +272,7 @@ fn yaml_parser_fetch_next_token(parser: &mut yaml_parser_t) -> Result<(), Scanne
 }
 
 fn yaml_parser_stale_simple_keys(parser: &mut yaml_parser_t) -> Result<(), ScannerError> {
-    for simple_key in parser.simple_keys.iter_mut() {
+    for simple_key in &mut parser.simple_keys {
         let mark = simple_key.mark;
         if simple_key.possible
             && (mark.line < parser.mark.line || mark.index.force_add(1024_u64) < parser.mark.index)
@@ -341,9 +339,7 @@ fn yaml_parser_increase_flow_level(parser: &mut yaml_parser_t) -> Result<(), Sca
         },
     };
     parser.simple_keys.push(empty_simple_key);
-    if parser.flow_level == libc::c_int::MAX {
-        panic!("parser.flow_level integer overflow");
-    }
+    assert!(!(parser.flow_level == libc::c_int::MAX), "parser.flow_level integer overflow");
     parser.flow_level += 1;
     Ok(())
 }
@@ -367,9 +363,7 @@ fn yaml_parser_roll_indent(
     }
     if (parser.indent as libc::c_long) < column {
         parser.indents.push(parser.indent);
-        if column > ptrdiff_t::from(libc::c_int::MAX) {
-            panic!("integer overflow");
-        }
+        assert!(!(column > ptrdiff_t::from(libc::c_int::MAX)), "integer overflow");
         parser.indent = column as libc::c_int;
         let token = yaml_token_t {
             data,
@@ -790,18 +784,18 @@ fn yaml_parser_scan_directive(
     }
 
     if !IS_BREAKZ!(parser.buffer) {
-        return yaml_parser_set_scanner_error(
+        yaml_parser_set_scanner_error(
             parser,
             "while scanning a directive",
             start_mark,
             "did not find expected comment or line break",
-        );
+        )
     } else {
         if IS_BREAK!(parser.buffer) {
             CACHE(parser, 2_u64)?;
             SKIP_LINE(parser);
         }
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -954,7 +948,7 @@ fn yaml_parser_scan_anchor(
     scan_alias_instead_of_anchor: bool,
 ) -> Result<(), ScannerError> {
     let mut length: libc::c_int = 0;
-    let end_mark: yaml_mark_t;
+    
     let mut string = String::new();
     let start_mark: yaml_mark_t = parser.mark;
     SKIP(parser);
@@ -968,7 +962,7 @@ fn yaml_parser_scan_anchor(
         CACHE(parser, 1_u64)?;
         length += 1;
     }
-    end_mark = parser.mark;
+    let end_mark: yaml_mark_t = parser.mark;
     if length == 0
         || !(IS_BLANKZ!(parser.buffer)
             || CHECK!(parser.buffer, '?')
@@ -1010,7 +1004,7 @@ fn yaml_parser_scan_tag(
 ) -> Result<(), ScannerError> {
     let mut handle;
     let mut suffix;
-    let end_mark: yaml_mark_t;
+    
     let start_mark: yaml_mark_t = parser.mark;
 
     CACHE(parser, 2_u64)?;
@@ -1058,14 +1052,14 @@ fn yaml_parser_scan_tag(
         }
     }
 
-    end_mark = parser.mark;
+    let end_mark: yaml_mark_t = parser.mark;
     *token = yaml_token_t {
         data: YamlTokenData::Tag { handle, suffix },
         start_mark,
         end_mark,
     };
 
-    return Ok(());
+    Ok(())
 }
 
 fn yaml_parser_scan_tag_handle(
@@ -1466,7 +1460,7 @@ fn yaml_parser_scan_flow_scalar(
     token: &mut yaml_token_t,
     single: bool,
 ) -> Result<(), ScannerError> {
-    let end_mark: yaml_mark_t;
+    
     let mut string = String::new();
     let mut leading_break = String::new();
     let mut trailing_breaks = String::new();
@@ -1563,24 +1557,24 @@ fn yaml_parser_scan_flow_scalar(
                             }
                             // NEL (#x85)
                             'N' => {
-                                string.push_str("\u{0085}");
+                                string.push('\u{0085}');
                             }
                             // #xA0
                             '_' => {
-                                string.push_str("\u{00a0}");
+                                string.push('\u{00a0}');
                                 // string.push('\xC2');
                                 // string.push('\xA0');
                             }
                             // LS (#x2028)
                             'L' => {
-                                string.push_str("\u{2028}");
+                                string.push('\u{2028}');
                                 // string.push('\xE2');
                                 // string.push('\x80');
                                 // string.push('\xA8');
                             }
                             // PS (#x2029)
                             'P' => {
-                                string.push_str("\u{2029}");
+                                string.push('\u{2029}');
                                 // string.push('\xE2');
                                 // string.push('\x80');
                                 // string.push('\xA9');
@@ -1696,7 +1690,7 @@ fn yaml_parser_scan_flow_scalar(
     }
 
     SKIP(parser);
-    end_mark = parser.mark;
+    let end_mark: yaml_mark_t = parser.mark;
     *token = yaml_token_t {
         data: YamlTokenData::Scalar {
             value: string,
@@ -1709,7 +1703,7 @@ fn yaml_parser_scan_flow_scalar(
         start_mark,
         end_mark,
     };
-    return Ok(());
+    Ok(())
 }
 
 fn yaml_parser_scan_plain_scalar(

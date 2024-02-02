@@ -192,7 +192,7 @@ fn main() -> ExitCode {
         let mut stdout = io::stdout();
         let result = test_main(&mut stdin, &mut stdout);
         if let Err(err) = result {
-            let _ = writeln!(io::stderr(), "{}", err);
+            let _ = writeln!(io::stderr(), "{err}");
             return ExitCode::FAILURE;
         }
     }

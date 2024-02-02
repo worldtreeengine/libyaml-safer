@@ -34,7 +34,7 @@ pub(crate) fn test_main(
     loop {
         let event = match yaml_parser_parse(&mut parser) {
             Err(err) => {
-                let error = format!("Parse error: {}", err);
+                let error = format!("Parse error: {err}");
                 yaml_parser_delete(&mut parser);
                 return Err(error.into());
             }
@@ -69,7 +69,7 @@ pub(crate) fn test_main(
                 _ = writeln!(stdout);
             }
             YamlEventData::Alias { anchor } => {
-                _ = writeln!(stdout, "=ALI *{}", anchor);
+                _ = writeln!(stdout, "=ALI *{anchor}");
             }
             YamlEventData::Scalar {
                 anchor,
@@ -80,10 +80,10 @@ pub(crate) fn test_main(
             } => {
                 let _ = write!(stdout, "=VAL");
                 if let Some(anchor) = anchor {
-                    _ = write!(stdout, " &{}", anchor);
+                    _ = write!(stdout, " &{anchor}");
                 }
                 if let Some(tag) = tag {
-                    _ = write!(stdout, " <{}>", tag);
+                    _ = write!(stdout, " <{tag}>");
                 }
                 _ = stdout.write_all(match *style {
                     YAML_PLAIN_SCALAR_STYLE => b" :",
@@ -93,16 +93,16 @@ pub(crate) fn test_main(
                     YAML_FOLDED_SCALAR_STYLE => b" >",
                     _ => process::abort(),
                 });
-                print_escaped(stdout, &value);
+                print_escaped(stdout, value);
                 _ = writeln!(stdout);
             }
             YamlEventData::SequenceStart { anchor, tag, .. } => {
                 let _ = write!(stdout, "+SEQ");
                 if let Some(anchor) = anchor {
-                    _ = write!(stdout, " &{}", anchor);
+                    _ = write!(stdout, " &{anchor}");
                 }
                 if let Some(tag) = tag {
-                    _ = write!(stdout, " <{}>", tag);
+                    _ = write!(stdout, " <{tag}>");
                 }
                 _ = writeln!(stdout);
             }
@@ -112,10 +112,10 @@ pub(crate) fn test_main(
             YamlEventData::MappingStart { anchor, tag, .. } => {
                 let _ = write!(stdout, "+MAP");
                 if let Some(anchor) = anchor {
-                    _ = write!(stdout, " &{}", anchor);
+                    _ = write!(stdout, " &{anchor}");
                 }
                 if let Some(tag) = tag {
-                    _ = write!(stdout, " <{}>", tag);
+                    _ = write!(stdout, " <{tag}>");
                 }
                 _ = writeln!(stdout);
             }
@@ -158,7 +158,7 @@ fn main() -> ExitCode {
         let mut stdout = io::stdout();
         let result = test_main(&mut stdin, &mut stdout);
         if let Err(err) = result {
-            let _ = writeln!(io::stderr(), "{}", err);
+            let _ = writeln!(io::stderr(), "{err}");
             return ExitCode::FAILURE;
         }
     }

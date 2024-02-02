@@ -8,7 +8,6 @@
 #![allow(non_camel_case_types, non_snake_case, unsafe_op_in_unsafe_fn)]
 #![warn(clippy::pedantic)]
 #![allow(
-    clippy::bool_to_int_with_if,
     clippy::cast_lossless,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
@@ -71,7 +70,7 @@ mod externs {
             }
         }
         let _abort_on_panic = Abort;
-        panic!("{}:{}: Assertion `{}` failed.", __file, __line, __assertion);
+        panic!("{__file}:{__line}: Assertion `{__assertion}` failed.");
     }
 }
 
@@ -152,7 +151,7 @@ mod tests {
         let mut parser = yaml_parser_new();
         // const SANITY_INPUT: &'static str =
         //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
-        const SANITY_INPUT: &'static str = r#"
+        const SANITY_INPUT: &str = r#"
 unicode: "Sosa did fine.\u263A"
 control: "\b1998\t1999\t2000\n"
 hex esc: "\x0d\x0a is \r\n"
@@ -188,10 +187,10 @@ tie-fighter: '|\-*-/|'
         // assert_eq!(output_str, SANITY_INPUT);
     }
 
-    const TEST_CASE_QF4Y: &str = r#"[
+    const TEST_CASE_QF4Y: &str = r"[
 foo: bar
 ]
-"#;
+";
 
     #[test]
     fn test_case() {

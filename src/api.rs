@@ -351,7 +351,7 @@ pub fn yaml_sequence_start_event_initialize(
         },
         ..Default::default()
     };
-    return Ok(());
+    Ok(())
 }
 
 /// Create a SEQUENCE-END event.
@@ -433,7 +433,7 @@ pub fn yaml_document_initialize(
         ..Default::default()
     };
 
-    return Ok(());
+    Ok(())
 }
 
 /// Delete a YAML document and all its nodes.
@@ -454,7 +454,7 @@ pub fn yaml_document_get_node(
     index: libc::c_int,
 ) -> *mut yaml_node_t {
     if index > 0 && index as usize <= document.nodes.len() {
-        return &mut document.nodes[index as usize - 1] as *mut _;
+        return std::ptr::addr_of_mut!(document.nodes[index as usize - 1]);
     }
     ptr::null_mut()
 }

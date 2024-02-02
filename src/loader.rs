@@ -182,7 +182,7 @@ fn yaml_parser_register_anchor(
         index,
         mark: document.nodes[index as usize - 1].start_mark,
     };
-    for alias_data in parser.aliases.iter() {
+    for alias_data in &parser.aliases {
         if alias_data.anchor == data.anchor {
             return yaml_parser_set_composer_error_context(
                 "found duplicate anchor; first occurrence",
@@ -240,12 +240,12 @@ fn yaml_parser_load_alias(
     ctx: &mut Vec<libc::c_int>,
 ) -> Result<(), ComposerError> {
     let anchor: &str = if let YamlEventData::Alias { anchor } = &event.data {
-        &*anchor
+        anchor
     } else {
         unreachable!()
     };
 
-    for alias_data in parser.aliases.iter() {
+    for alias_data in &parser.aliases {
         if alias_data.anchor == anchor {
             return yaml_parser_load_node_add(document, ctx, alias_data.index);
         }
@@ -271,7 +271,7 @@ fn yaml_parser_load_scalar(
         unreachable!()
     };
 
-    let index: libc::c_int;
+    
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:str"));
     }
@@ -282,7 +282,7 @@ fn yaml_parser_load_scalar(
         end_mark: event.end_mark,
     };
     document.nodes.push(node);
-    index = document.nodes.len() as libc::c_int;
+    let index: libc::c_int = document.nodes.len() as libc::c_int;
     yaml_parser_register_anchor(parser, document, index, anchor)?;
     yaml_parser_load_node_add(document, ctx, index)
 }
@@ -304,7 +304,7 @@ fn yaml_parser_load_sequence(
     };
 
     let mut items = Vec::with_capacity(16);
-    let index: libc::c_int;
+    
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:seq"));
     }
@@ -320,7 +320,7 @@ fn yaml_parser_load_sequence(
     };
 
     document.nodes.push(node);
-    index = document.nodes.len() as libc::c_int;
+    let index: libc::c_int = document.nodes.len() as libc::c_int;
     yaml_parser_register_anchor(parser, document, index, anchor.clone())?;
     yaml_parser_load_node_add(document, ctx, index)?;
     ctx.push(index);
@@ -361,7 +361,7 @@ fn yaml_parser_load_mapping(
     };
 
     let mut pairs = Vec::with_capacity(16);
-    let index: libc::c_int;
+    
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:map"));
     }
@@ -375,7 +375,7 @@ fn yaml_parser_load_mapping(
         end_mark: event.end_mark,
     };
     document.nodes.push(node);
-    index = document.nodes.len() as libc::c_int;
+    let index: libc::c_int = document.nodes.len() as libc::c_int;
     yaml_parser_register_anchor(parser, document, index, anchor)?;
     yaml_parser_load_node_add(document, ctx, index)?;
     ctx.push(index);

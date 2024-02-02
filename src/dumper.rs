@@ -60,12 +60,12 @@ pub fn yaml_emitter_dump(
         yaml_emitter_close(emitter)?;
     } else {
         __assert!(emitter.opened);
-        emitter.anchors = vec![yaml_anchors_t::default(); (*document).nodes.len()];
+        emitter.anchors = vec![yaml_anchors_t::default(); document.nodes.len()];
         let event = yaml_event_t {
             data: YamlEventData::DocumentStart {
-                version_directive: (*document).version_directive,
-                tag_directives: core::mem::take(&mut (*document).tag_directives),
-                implicit: (*document).start_implicit,
+                version_directive: document.version_directive,
+                tag_directives: core::mem::take(&mut document.tag_directives),
+                implicit: document.start_implicit,
             },
             ..Default::default()
         };
@@ -130,12 +130,12 @@ fn yaml_emitter_anchor_node(
     if emitter.anchors[index as usize - 1].references == 1 {
         match &node.data {
             YamlNodeData::Sequence { items, .. } => {
-                for item in items.iter() {
+                for item in items {
                     yaml_emitter_anchor_node_sub(emitter, *item);
                 }
             }
             YamlNodeData::Mapping { pairs, .. } => {
-                for pair in pairs.iter() {
+                for pair in pairs {
                     yaml_emitter_anchor_node_sub(emitter, pair.key);
                     yaml_emitter_anchor_node_sub(emitter, pair.value);
                 }
@@ -149,7 +149,7 @@ fn yaml_emitter_anchor_node(
 }
 
 fn yaml_emitter_generate_anchor(_emitter: &mut yaml_emitter_t, anchor_id: libc::c_int) -> String {
-    alloc::format!("id{:03}", anchor_id)
+    alloc::format!("id{anchor_id:03}")
 }
 
 fn yaml_emitter_dump_node(

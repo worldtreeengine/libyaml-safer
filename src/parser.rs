@@ -315,7 +315,7 @@ fn yaml_parser_parse_node(
         line: 0,
         column: 0,
     };
-    let implicit;
+    
 
     let mut token = PEEK_TOKEN_MUT(parser)?;
 
@@ -366,7 +366,7 @@ fn yaml_parser_parse_node(
         if tag_handle_value.is_empty() {
             tag = tag_suffix;
         } else {
-            for tag_directive in parser.tag_directives.iter() {
+            for tag_directive in &parser.tag_directives {
                 if tag_directive.handle == *tag_handle_value {
                     let suffix = tag_suffix.as_deref().unwrap_or("");
                     tag = Some(alloc::format!("{}{}", tag_directive.prefix, suffix));
@@ -386,7 +386,7 @@ fn yaml_parser_parse_node(
 
     let token = PEEK_TOKEN_MUT(parser)?;
 
-    implicit = tag.is_none() || tag.as_deref() == Some("");
+    let implicit = tag.is_none() || tag.as_deref() == Some("");
 
     if indentless_sequence && token.data.is_block_entry() {
         end_mark = token.end_mark;
@@ -401,7 +401,7 @@ fn yaml_parser_parse_node(
             start_mark,
             end_mark,
         };
-        return Ok(event);
+        Ok(event)
     } else if let YamlTokenData::Scalar { value, style } = &mut token.data {
         let mut plain_implicit = false;
         let mut quoted_implicit = false;
@@ -919,7 +919,7 @@ fn yaml_parser_process_directives(
 
     let start_mark = token.start_mark;
     for default_tag_directive in &default_tag_directives {
-        yaml_parser_append_tag_directive(parser, default_tag_directive, true, start_mark)?
+        yaml_parser_append_tag_directive(parser, default_tag_directive, true, start_mark)?;
     }
 
     if let Some(version_directive_ref) = version_directive_ref {
@@ -945,7 +945,7 @@ fn yaml_parser_append_tag_directive(
     allow_duplicates: bool,
     mark: yaml_mark_t,
 ) -> Result<(), ParserError> {
-    for tag_directive in parser.tag_directives.iter() {
+    for tag_directive in &parser.tag_directives {
         if value.handle == tag_directive.handle {
             if allow_duplicates {
                 return Ok(());
