@@ -4,7 +4,6 @@ use crate::api::OUTPUT_BUFFER_SIZE;
 use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_breakz, is_printable, is_space,
 };
-use crate::ops::ForceMul as _;
 use crate::yaml::YamlEventData;
 use crate::{
     yaml_emitter_flush, yaml_emitter_t, yaml_event_t, yaml_scalar_style_t, yaml_tag_directive_t,
@@ -287,7 +286,7 @@ fn yaml_emitter_emit_stream_start(
         if emitter.best_indent < 2 || emitter.best_indent > 9 {
             emitter.best_indent = 2;
         }
-        if emitter.best_width >= 0 && emitter.best_width <= emitter.best_indent.force_mul(2) {
+        if emitter.best_width >= 0 && emitter.best_width <= emitter.best_indent * 2 {
             emitter.best_width = 80;
         }
         if emitter.best_width < 0 {

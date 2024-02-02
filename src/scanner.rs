@@ -1,7 +1,6 @@
 use alloc::string::String;
 
 use crate::macros::{is_blankz, is_break, vecdeque_starts_with};
-use crate::ops::{ForceAdd as _, ForceMul as _};
 use crate::reader::yaml_parser_update_buffer;
 use crate::yaml::YamlTokenData;
 use crate::{
@@ -109,7 +108,7 @@ pub fn yaml_parser_scan(parser: &mut yaml_parser_t) -> Result<yaml_token_t, Scan
     }
     if let Some(token) = parser.tokens.pop_front() {
         parser.token_available = false;
-        parser.tokens_parsed = parser.tokens_parsed.force_add(1);
+        parser.tokens_parsed += 1;
         if let YamlTokenData::StreamEnd = &token.data {
             parser.stream_end_produced = true;
         }
@@ -275,7 +274,7 @@ fn yaml_parser_stale_simple_keys(parser: &mut yaml_parser_t) -> Result<(), Scann
     for simple_key in &mut parser.simple_keys {
         let mark = simple_key.mark;
         if simple_key.possible
-            && (mark.line < parser.mark.line || mark.index.force_add(1024_u64) < parser.mark.index)
+            && (mark.line < parser.mark.line || mark.index + 1024 < parser.mark.index)
         {
             if simple_key.required {
                 return yaml_parser_set_scanner_error(
@@ -298,7 +297,7 @@ fn yaml_parser_save_simple_key(parser: &mut yaml_parser_t) -> Result<(), Scanner
         let simple_key = yaml_simple_key_t {
             possible: true,
             required,
-            token_number: parser.tokens_parsed.force_add(parser.tokens.len()),
+            token_number: parser.tokens_parsed + parser.tokens.len(),
             mark: parser.mark,
         };
         yaml_parser_remove_simple_key(parser)?;
@@ -425,7 +424,7 @@ fn yaml_parser_fetch_stream_start(parser: &mut yaml_parser_t) {
 fn yaml_parser_fetch_stream_end(parser: &mut yaml_parser_t) -> Result<(), ScannerError> {
     if parser.mark.column != 0_u64 {
         parser.mark.column = 0_u64;
-        parser.mark.line = parser.mark.line.force_add(1);
+        parser.mark.line += 1;
     }
     yaml_parser_unroll_indent(parser, -1_i64);
     yaml_parser_remove_simple_key(parser)?;
@@ -868,7 +867,7 @@ fn yaml_parser_scan_version_directive_number(
     let mut length = 0;
     CACHE(parser, 1)?;
     while IS_DIGIT!(parser.buffer) {
-        length = length.force_add(1);
+        length += 1;
         if length > MAX_NUMBER_LENGTH {
             return yaml_parser_set_scanner_error(
                 parser,
@@ -877,9 +876,7 @@ fn yaml_parser_scan_version_directive_number(
                 "found extremely long version number",
             );
         }
-        value = value
-            .force_mul(10)
-            .force_add(AS_DIGIT!(parser.buffer) as i32);
+        value = (value * 10) + AS_DIGIT!(parser.buffer) as i32;
         SKIP(parser);
         CACHE(parser, 1)?;
     }
@@ -1149,7 +1146,7 @@ fn yaml_parser_scan_tag_uri(
         } else {
             READ_STRING(parser, &mut string);
         }
-        length = length.force_add(1);
+        length += 1;
         CACHE(parser, 1)?;
     }
     if length == 0 {
@@ -1605,9 +1602,8 @@ fn yaml_parser_scan_flow_scalar(
                                         "did not find expected hexdecimal number",
                                     );
                                 } else {
-                                    value = (value << 4)
-                                        .force_add(AS_HEX_AT!(parser.buffer, k as usize));
-                                    k = k.force_add(1);
+                                    value = (value << 4) + AS_HEX_AT!(parser.buffer, k as usize);
+                                    k += 1;
                                 }
                             }
                             if let Some(ch) = char::from_u32(value) {
@@ -1624,7 +1620,7 @@ fn yaml_parser_scan_flow_scalar(
                             k = 0;
                             while k < code_length {
                                 SKIP(parser);
-                                k = k.force_add(1);
+                                k += 1;
                             }
                         }
                     } else {

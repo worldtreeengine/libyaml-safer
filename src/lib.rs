@@ -44,7 +44,6 @@ mod dumper;
 mod emitter;
 mod error;
 mod loader;
-mod ops;
 mod parser;
 mod reader;
 mod scanner;
