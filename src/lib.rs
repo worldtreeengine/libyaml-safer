@@ -39,7 +39,6 @@ extern crate alloc;
 use core::mem::size_of;
 
 mod libc {
-    pub use core::ffi::c_void;
     pub use core::primitive::{
         i32 as c_int, i64 as c_long, u32 as c_uint, u64 as c_ulong, u8 as c_uchar,
     };
@@ -126,7 +125,7 @@ pub use crate::yaml::{
     yaml_encoding_t, yaml_event_t, yaml_mapping_style_t, yaml_mark_t, yaml_node_item_t,
     yaml_node_pair_t, yaml_node_t, yaml_parser_state_t, yaml_parser_t, yaml_scalar_style_t,
     yaml_sequence_style_t, yaml_simple_key_t, yaml_tag_directive_t, yaml_token_t,
-    yaml_token_type_t, yaml_version_directive_t, yaml_write_handler_t, YamlEventData,
+    yaml_token_type_t, yaml_version_directive_t, YamlEventData,
 };
 #[doc(hidden)]
 pub use crate::yaml::{

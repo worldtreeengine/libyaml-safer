@@ -3,7 +3,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::{api::yaml_parser_new, libc, yaml_emitter_new};
-use core::ptr;
 
 pub use self::yaml_encoding_t::*;
 pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t};
@@ -631,8 +630,6 @@ pub struct yaml_alias_data_t {
 pub struct yaml_parser_t<'r> {
     /// Read handler.
     pub(crate) read_handler: Option<&'r mut dyn std::io::Read>,
-    /// Standard (string or file) input data.
-    pub(crate) input: unnamed_yaml_parser_t_input_string,
     /// EOF flag
     pub(crate) eof: bool,
     /// The working buffer.
@@ -690,36 +687,6 @@ impl<'r> Default for yaml_parser_t<'r> {
         yaml_parser_new()
     }
 }
-
-#[repr(C)]
-pub(crate) struct unnamed_yaml_parser_t_input_string {
-    /// The string start pointer.
-    pub start: *const libc::c_uchar,
-    /// The string end pointer.
-    pub end: *const libc::c_uchar,
-    /// The string current position.
-    pub current: *const libc::c_uchar,
-}
-
-impl Default for unnamed_yaml_parser_t_input_string {
-    fn default() -> Self {
-        Self {
-            start: ptr::null(),
-            end: ptr::null(),
-            current: ptr::null(),
-        }
-    }
-}
-
-/// The prototype of a write handler.
-///
-/// The write handler is called when the emitter needs to flush the accumulated
-/// characters to the output. The handler should write `size` bytes of the
-/// `buffer` to the output.
-///
-/// On success, the handler should return 1. If the handler failed, the returned
-/// value should be 0.
-pub type yaml_write_handler_t = fn(data: *mut libc::c_void, buffer: &[u8]) -> libc::c_int;
 
 /// The emitter states.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -785,8 +752,6 @@ pub(crate) struct yaml_anchors_t {
 pub struct yaml_emitter_t<'w> {
     /// Write handler.
     pub(crate) write_handler: Option<&'w mut dyn std::io::Write>,
-    /// Standard (string or file) output data.
-    pub(crate) output: unnamed_yaml_emitter_t_output_string,
     /// The working buffer.
     ///
     /// This always contains valid UTF-8.
@@ -854,25 +819,5 @@ pub struct yaml_emitter_t<'w> {
 impl<'a> Default for yaml_emitter_t<'a> {
     fn default() -> Self {
         yaml_emitter_new()
-    }
-}
-
-#[repr(C)]
-pub(crate) struct unnamed_yaml_emitter_t_output_string {
-    /// The buffer pointer.
-    pub buffer: *mut libc::c_uchar,
-    /// The buffer size.
-    pub size: size_t,
-    /// The number of written bytes.
-    pub size_written: *mut size_t,
-}
-
-impl Default for unnamed_yaml_emitter_t_output_string {
-    fn default() -> Self {
-        Self {
-            buffer: ptr::null_mut(),
-            size: 0,
-            size_written: ptr::null_mut(),
-        }
     }
 }

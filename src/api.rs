@@ -22,7 +22,6 @@ pub(crate) const OUTPUT_BUFFER_SIZE: usize = 16384;
 pub fn yaml_parser_new<'r>() -> yaml_parser_t<'r> {
     yaml_parser_t {
         read_handler: None,
-        input: Default::default(),
         eof: false,
         buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
         unread: 0,
@@ -89,7 +88,6 @@ pub fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yaml_encod
 pub fn yaml_emitter_new<'w>() -> yaml_emitter_t<'w> {
     yaml_emitter_t {
         write_handler: None,
-        output: Default::default(),
         buffer: String::with_capacity(OUTPUT_BUFFER_SIZE),
         raw_buffer: Vec::with_capacity(OUTPUT_BUFFER_SIZE),
         encoding: YAML_ANY_ENCODING,
