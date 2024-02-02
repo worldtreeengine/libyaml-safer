@@ -2,7 +2,7 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::{api::yaml_parser_new, libc};
+use crate::{api::yaml_parser_new, libc, yaml_emitter_new};
 use core::ptr;
 
 pub use self::yaml_encoding_t::*;
@@ -854,38 +854,7 @@ pub struct yaml_emitter_t<'w> {
 
 impl<'a> Default for yaml_emitter_t<'a> {
     fn default() -> Self {
-        Self {
-            write_handler: None,
-            output: Default::default(),
-            buffer: Default::default(),
-            raw_buffer: Default::default(),
-            encoding: Default::default(),
-            canonical: Default::default(),
-            best_indent: Default::default(),
-            best_width: Default::default(),
-            unicode: Default::default(),
-            line_break: Default::default(),
-            states: Default::default(),
-            state: Default::default(),
-            events: Default::default(),
-            indents: Default::default(),
-            tag_directives: Default::default(),
-            indent: Default::default(),
-            flow_level: Default::default(),
-            root_context: Default::default(),
-            sequence_context: Default::default(),
-            mapping_context: Default::default(),
-            simple_key_context: Default::default(),
-            line: Default::default(),
-            column: Default::default(),
-            whitespace: Default::default(),
-            indention: Default::default(),
-            open_ended: Default::default(),
-            opened: Default::default(),
-            closed: Default::default(),
-            anchors: Default::default(),
-            last_anchor_id: Default::default(),
-        }
+        yaml_emitter_new()
     }
 }
 
