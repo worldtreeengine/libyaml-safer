@@ -11,7 +11,7 @@ use crate::{yaml_document_delete, yaml_emitter_emit, EmitterError};
 ///
 /// This function should be used before yaml_emitter_dump() is called.
 pub fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
-    __assert!(!emitter.opened);
+    assert!(!emitter.opened);
     let event = yaml_event_t {
         data: YamlEventData::StreamStart {
             encoding: YAML_ANY_ENCODING,
@@ -27,7 +27,7 @@ pub fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), EmitterErro
 ///
 /// This function should be used after yaml_emitter_dump() is called.
 pub fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
-    __assert!(emitter.opened);
+    assert!(emitter.opened);
     if emitter.closed {
         return Ok(());
     }
@@ -59,7 +59,7 @@ pub fn yaml_emitter_dump(
     if document.nodes.is_empty() {
         yaml_emitter_close(emitter)?;
     } else {
-        __assert!(emitter.opened);
+        assert!(emitter.opened);
         emitter.anchors = vec![yaml_anchors_t::default(); document.nodes.len()];
         let event = yaml_event_t {
             data: YamlEventData::DocumentStart {
@@ -175,7 +175,7 @@ fn yaml_emitter_dump_node(
             yaml_emitter_dump_sequence(emitter, document, node, anchor)
         }
         YamlNodeData::Mapping { .. } => yaml_emitter_dump_mapping(emitter, document, node, anchor),
-        _ => __assert!(false),
+        _ => unreachable!("document node is neither a scalar, sequence, or a mapping"),
     }
 }
 

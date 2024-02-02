@@ -38,31 +38,6 @@ extern crate alloc;
 
 use core::mem::size_of;
 
-#[macro_use]
-mod externs {
-    macro_rules! __assert {
-        (false $(,)?) => {
-            $crate::externs::__assert_fail(stringify!(false), file!(), line!())
-        };
-        ($assertion:expr $(,)?) => {
-            if !$assertion {
-                $crate::externs::__assert_fail(stringify!($assertion), file!(), line!());
-            }
-        };
-    }
-
-    pub(crate) fn __assert_fail(__assertion: &'static str, __file: &'static str, __line: u32) -> ! {
-        struct Abort;
-        impl Drop for Abort {
-            fn drop(&mut self) {
-                panic!();
-            }
-        }
-        let _abort_on_panic = Abort;
-        panic!("{__file}:{__line}: Assertion `{__assertion}` failed.");
-    }
-}
-
 trait PointerExt: Sized {
     fn c_offset_from(self, origin: Self) -> isize;
 }

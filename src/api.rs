@@ -65,19 +65,19 @@ pub fn yaml_parser_delete(parser: &mut yaml_parser_t) {
 /// exists. The application is responsible for destroying `input` after
 /// destroying the `parser`.
 pub fn yaml_parser_set_input_string<'r>(parser: &mut yaml_parser_t<'r>, input: &'r mut &[u8]) {
-    __assert!((parser.read_handler).is_none());
+    assert!((parser.read_handler).is_none());
     parser.read_handler = Some(input);
 }
 
 /// Set a generic input handler.
 pub fn yaml_parser_set_input<'r>(parser: &mut yaml_parser_t<'r>, input: &'r mut dyn std::io::Read) {
-    __assert!((parser.read_handler).is_none());
+    assert!((parser.read_handler).is_none());
     parser.read_handler = Some(input);
 }
 
 /// Set the source encoding.
 pub fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yaml_encoding_t) {
-    __assert!(parser.encoding == YAML_ANY_ENCODING);
+    assert!(parser.encoding == YAML_ANY_ENCODING);
     parser.encoding = encoding;
 }
 
@@ -140,7 +140,7 @@ pub fn yaml_emitter_set_output_string<'w>(
     emitter: &mut yaml_emitter_t<'w>,
     output: &'w mut Vec<u8>,
 ) {
-    __assert!(emitter.write_handler.is_none());
+    assert!(emitter.write_handler.is_none());
     if emitter.encoding == YAML_ANY_ENCODING {
         yaml_emitter_set_encoding(emitter, YAML_UTF8_ENCODING);
     } else if emitter.encoding != YAML_UTF8_ENCODING {
@@ -155,13 +155,13 @@ pub fn yaml_emitter_set_output<'w>(
     emitter: &mut yaml_emitter_t<'w>,
     handler: &'w mut dyn std::io::Write,
 ) {
-    __assert!(emitter.write_handler.is_none());
+    assert!(emitter.write_handler.is_none());
     emitter.write_handler = Some(handler);
 }
 
 /// Set the output encoding.
 pub fn yaml_emitter_set_encoding(emitter: &mut yaml_emitter_t, encoding: yaml_encoding_t) {
-    __assert!(emitter.encoding == YAML_ANY_ENCODING);
+    assert_eq!(emitter.encoding, YAML_ANY_ENCODING);
     emitter.encoding = encoding;
 }
 
@@ -533,12 +533,12 @@ pub fn yaml_document_append_sequence_item(
     sequence: i32,
     item: i32,
 ) {
-    __assert!(sequence > 0 && sequence as usize - 1 < document.nodes.len());
-    __assert!(matches!(
+    assert!(sequence > 0 && sequence as usize - 1 < document.nodes.len());
+    assert!(matches!(
         &document.nodes[sequence as usize - 1].data,
         YamlNodeData::Sequence { .. }
     ));
-    __assert!(item > 0 && item as usize - 1 < document.nodes.len());
+    assert!(item > 0 && item as usize - 1 < document.nodes.len());
     if let YamlNodeData::Sequence { ref mut items, .. } =
         &mut document.nodes[sequence as usize - 1].data
     {
@@ -553,13 +553,13 @@ pub fn yaml_document_append_mapping_pair(
     key: i32,
     value: i32,
 ) {
-    __assert!(mapping > 0 && mapping as usize - 1 < document.nodes.len());
-    __assert!(matches!(
+    assert!(mapping > 0 && mapping as usize - 1 < document.nodes.len());
+    assert!(matches!(
         &document.nodes[mapping as usize - 1].data,
         YamlNodeData::Mapping { .. }
     ));
-    __assert!(key > 0 && key as usize - 1 < document.nodes.len());
-    __assert!(value > 0 && value as usize - 1 < document.nodes.len());
+    assert!(key > 0 && key as usize - 1 < document.nodes.len());
+    assert!(value > 0 && value as usize - 1 < document.nodes.len());
     let pair = yaml_node_pair_t { key, value };
     if let YamlNodeData::Mapping { ref mut pairs, .. } =
         &mut document.nodes[mapping as usize - 1].data

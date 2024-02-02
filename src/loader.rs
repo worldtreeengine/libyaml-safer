@@ -111,7 +111,7 @@ fn yaml_parser_load_document(
         ctx.clear();
         Ok(())
     } else {
-        crate::externs::__assert_fail("event.type_ == YAML_DOCUMENT_START_EVENT", file!(), line!())
+        panic!("Expected YAML_DOCUMENT_START_EVENT")
     }
 }
 
@@ -219,7 +219,7 @@ fn yaml_parser_load_node_add(
             }
         }
         _ => {
-            __assert!(false);
+            panic!("document parent node is not a sequence or a mapping")
         }
     }
     Ok(())
@@ -324,9 +324,9 @@ fn yaml_parser_load_sequence_end(
     document: &mut yaml_document_t,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
-    __assert!(!ctx.is_empty());
+    assert!(!ctx.is_empty());
     let index: i32 = *ctx.last().unwrap();
-    __assert!(matches!(
+    assert!(matches!(
         document.nodes[index as usize - 1].data,
         YamlNodeData::Sequence { .. }
     ));
@@ -379,9 +379,9 @@ fn yaml_parser_load_mapping_end(
     document: &mut yaml_document_t,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
-    __assert!(!ctx.is_empty());
+    assert!(!ctx.is_empty());
     let index: i32 = *ctx.last().unwrap();
-    __assert!(matches!(
+    assert!(matches!(
         document.nodes[index as usize - 1].data,
         YamlNodeData::Mapping { .. }
     ));

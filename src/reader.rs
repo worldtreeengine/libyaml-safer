@@ -209,7 +209,7 @@ pub(crate) fn yaml_parser_update_buffer(
     length: usize,
 ) -> Result<(), ReaderError> {
     let mut first = true;
-    __assert!((parser.read_handler).is_some());
+    assert!((parser.read_handler).is_some());
     if parser.eof && parser.raw_buffer.is_empty() {
         return Ok(());
     }

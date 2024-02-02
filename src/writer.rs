@@ -5,8 +5,8 @@ use crate::{
 
 /// Flush the accumulated characters to the output.
 pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {
-    __assert!((emitter.write_handler).is_some());
-    __assert!(emitter.encoding != YAML_ANY_ENCODING);
+    assert!((emitter.write_handler).is_some());
+    assert_ne!(emitter.encoding, YAML_ANY_ENCODING);
 
     if emitter.buffer.is_empty() {
         return Ok(());
