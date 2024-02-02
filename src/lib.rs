@@ -36,24 +36,6 @@
 
 extern crate alloc;
 
-use core::mem::size_of;
-
-trait PointerExt: Sized {
-    fn c_offset_from(self, origin: Self) -> isize;
-}
-
-impl<T> PointerExt for *const T {
-    fn c_offset_from(self, origin: *const T) -> isize {
-        (self as isize - origin as isize) / size_of::<T>() as isize
-    }
-}
-
-impl<T> PointerExt for *mut T {
-    fn c_offset_from(self, origin: *mut T) -> isize {
-        (self as isize - origin as isize) / size_of::<T>() as isize
-    }
-}
-
 #[macro_use]
 mod macros;
 
