@@ -21,7 +21,7 @@ pub enum ReaderError {
     #[error("{problem}")]
     Problem {
         problem: &'static str,
-        offset: u64,
+        offset: usize,
         value: i32,
     },
     #[error(transparent)]

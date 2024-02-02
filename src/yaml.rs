@@ -2,10 +2,9 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::{api::yaml_parser_new, libc, yaml_emitter_new};
+use crate::{api::yaml_parser_new, yaml_emitter_new};
 
 pub use self::yaml_encoding_t::*;
-pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t};
 
 /// The version directive data.
 #[derive(Clone, Copy, Debug)]
@@ -13,9 +12,9 @@ pub use core::primitive::{i64 as ptrdiff_t, u64 as size_t};
 #[non_exhaustive]
 pub struct yaml_version_directive_t {
     /// The major version number.
-    pub major: libc::c_int,
+    pub major: i32,
     /// The minor version number.
-    pub minor: libc::c_int,
+    pub minor: i32,
 }
 
 /// The tag directive data.
@@ -67,11 +66,11 @@ pub enum yaml_break_t {
 #[non_exhaustive]
 pub struct yaml_mark_t {
     /// The position index.
-    pub index: size_t,
+    pub index: u64,
     /// The position line.
-    pub line: size_t,
+    pub line: u64,
     /// The position column.
-    pub column: size_t,
+    pub column: u64,
 }
 
 /// Scalar styles.
@@ -199,9 +198,9 @@ pub enum YamlTokenData {
     /// A VERSION-DIRECTIVE token.
     VersionDirective {
         /// The major version number.
-        major: libc::c_int,
+        major: i32,
         /// The minor version number.
-        minor: libc::c_int,
+        minor: i32,
     },
     /// A TAG-DIRECTIVE token.
     TagDirective {
@@ -495,16 +494,16 @@ pub enum YamlNodeData {
 }
 
 /// An element of a sequence node.
-pub type yaml_node_item_t = libc::c_int;
+pub type yaml_node_item_t = i32;
 /// An element of a mapping node.
 #[derive(Copy, Clone, Default)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_node_pair_t {
     /// The key of the element.
-    pub key: libc::c_int,
+    pub key: i32,
     /// The value of the element.
-    pub value: libc::c_int,
+    pub value: i32,
 }
 
 /// The document structure.
@@ -548,7 +547,7 @@ pub struct yaml_simple_key_t {
     /// Is a simple key required?
     pub required: bool,
     /// The number of the token.
-    pub token_number: size_t,
+    pub token_number: usize,
     /// The position mark.
     pub mark: yaml_mark_t,
 }
@@ -616,7 +615,7 @@ pub struct yaml_alias_data_t {
     /// The anchor.
     pub anchor: String,
     /// The node id.
-    pub index: libc::c_int,
+    pub index: i32,
     /// The anchor mark.
     pub mark: yaml_mark_t,
 }
@@ -637,7 +636,7 @@ pub struct yaml_parser_t<'r> {
     /// This always contains valid UTF-8.
     pub(crate) buffer: VecDeque<char>,
     /// The number of unread characters in the buffer.
-    pub(crate) unread: size_t,
+    pub(crate) unread: usize,
     /// The raw buffer.
     ///
     /// This is the raw unchecked input from the read handler (for example, it
@@ -647,7 +646,7 @@ pub struct yaml_parser_t<'r> {
     /// The input encoding.
     pub(crate) encoding: yaml_encoding_t,
     /// The offset of the current position (in bytes).
-    pub(crate) offset: size_t,
+    pub(crate) offset: usize,
     /// The mark of the current position.
     pub(crate) mark: yaml_mark_t,
     /// Have we started to scan the input stream?
@@ -655,17 +654,17 @@ pub struct yaml_parser_t<'r> {
     /// Have we reached the end of the input stream?
     pub(crate) stream_end_produced: bool,
     /// The number of unclosed '[' and '{' indicators.
-    pub(crate) flow_level: libc::c_int,
+    pub(crate) flow_level: i32,
     /// The tokens queue.
     pub(crate) tokens: VecDeque<yaml_token_t>,
     /// The number of tokens fetched from the queue.
-    pub(crate) tokens_parsed: size_t,
+    pub(crate) tokens_parsed: usize,
     /// Does the tokens queue contain a token ready for dequeueing.
     pub(crate) token_available: bool,
     /// The indentation levels stack.
-    pub(crate) indents: Vec<libc::c_int>,
+    pub(crate) indents: Vec<i32>,
     /// The current indentation level.
-    pub(crate) indent: libc::c_int,
+    pub(crate) indent: i32,
     /// May a simple key occur at the current position?
     pub(crate) simple_key_allowed: bool,
     /// The stack of simple keys.
@@ -736,9 +735,9 @@ pub enum yaml_emitter_state_t {
 #[repr(C)]
 pub(crate) struct yaml_anchors_t {
     /// The number of references.
-    pub references: libc::c_int,
+    pub references: i32,
     /// The anchor id.
-    pub anchor: libc::c_int,
+    pub anchor: i32,
     /// If the node has been emitted?
     pub serialized: bool,
 }
@@ -766,9 +765,9 @@ pub struct yaml_emitter_t<'w> {
     /// If the output is in the canonical style?
     pub(crate) canonical: bool,
     /// The number of indentation spaces.
-    pub(crate) best_indent: libc::c_int,
+    pub(crate) best_indent: i32,
     /// The preferred width of the output lines.
-    pub(crate) best_width: libc::c_int,
+    pub(crate) best_width: i32,
     /// Allow unescaped non-ASCII characters?
     pub(crate) unicode: bool,
     /// The preferred line break.
@@ -780,13 +779,13 @@ pub struct yaml_emitter_t<'w> {
     /// The event queue.
     pub(crate) events: VecDeque<yaml_event_t>,
     /// The stack of indentation levels.
-    pub(crate) indents: Vec<libc::c_int>,
+    pub(crate) indents: Vec<i32>,
     /// The list of tag directives.
     pub(crate) tag_directives: Vec<yaml_tag_directive_t>,
     /// The current indentation level.
-    pub(crate) indent: libc::c_int,
+    pub(crate) indent: i32,
     /// The current flow level.
-    pub(crate) flow_level: libc::c_int,
+    pub(crate) flow_level: i32,
     /// Is it the document root context?
     pub(crate) root_context: bool,
     /// Is it a sequence context?
@@ -796,15 +795,15 @@ pub struct yaml_emitter_t<'w> {
     /// Is it a simple mapping key context?
     pub(crate) simple_key_context: bool,
     /// The current line.
-    pub(crate) line: libc::c_int,
+    pub(crate) line: i32,
     /// The current column.
-    pub(crate) column: libc::c_int,
+    pub(crate) column: i32,
     /// If the last character was a whitespace?
     pub(crate) whitespace: bool,
     /// If the last character was an indentation character (' ', '-', '?', ':')?
     pub(crate) indention: bool,
     /// If an explicit document end is required?
-    pub(crate) open_ended: libc::c_int,
+    pub(crate) open_ended: i32,
     /// If the stream was already opened?
     pub(crate) opened: bool,
     /// If the stream was already closed?
@@ -813,7 +812,7 @@ pub struct yaml_emitter_t<'w> {
     // Note: Same length as `document.nodes`.
     pub(crate) anchors: Vec<yaml_anchors_t>,
     /// The last assigned anchor id.
-    pub(crate) last_anchor_id: libc::c_int,
+    pub(crate) last_anchor_id: i32,
 }
 
 impl<'a> Default for yaml_emitter_t<'a> {

@@ -3,7 +3,7 @@ use alloc::{vec, vec::Vec};
 
 use crate::yaml::{YamlEventData, YamlNodeData};
 use crate::{
-    libc, yaml_alias_data_t, yaml_document_new, yaml_document_t, yaml_event_t, yaml_mark_t,
+    yaml_alias_data_t, yaml_document_new, yaml_document_t, yaml_event_t, yaml_mark_t,
     yaml_node_pair_t, yaml_node_t, yaml_parser_parse, yaml_parser_t, ComposerError,
 };
 
@@ -118,7 +118,7 @@ fn yaml_parser_load_document(
 fn yaml_parser_load_nodes(
     parser: &mut yaml_parser_t,
     document: &mut yaml_document_t,
-    ctx: &mut Vec<libc::c_int>,
+    ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     let end_implicit;
     let end_mark;
@@ -163,7 +163,7 @@ fn yaml_parser_load_nodes(
 fn yaml_parser_register_anchor(
     parser: &mut yaml_parser_t,
     document: &mut yaml_document_t,
-    index: libc::c_int,
+    index: i32,
     anchor: Option<String>,
 ) -> Result<(), ComposerError> {
     let Some(anchor) = anchor else {
@@ -190,13 +190,13 @@ fn yaml_parser_register_anchor(
 
 fn yaml_parser_load_node_add(
     document: &mut yaml_document_t,
-    ctx: &mut Vec<libc::c_int>,
-    index: libc::c_int,
+    ctx: &mut Vec<i32>,
+    index: i32,
 ) -> Result<(), ComposerError> {
     if ctx.is_empty() {
         return Ok(());
     }
-    let parent_index: libc::c_int = *ctx.last().unwrap();
+    let parent_index: i32 = *ctx.last().unwrap();
     let parent = &mut document.nodes[parent_index as usize - 1];
     match parent.data {
         YamlNodeData::Sequence { ref mut items, .. } => {
@@ -229,7 +229,7 @@ fn yaml_parser_load_alias(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
-    ctx: &mut Vec<libc::c_int>,
+    ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     let anchor: &str = if let YamlEventData::Alias { anchor } = &event.data {
         anchor
@@ -250,7 +250,7 @@ fn yaml_parser_load_scalar(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
-    ctx: &mut Vec<libc::c_int>,
+    ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     let YamlEventData::Scalar {
         mut tag,
@@ -273,7 +273,7 @@ fn yaml_parser_load_scalar(
         end_mark: event.end_mark,
     };
     document.nodes.push(node);
-    let index: libc::c_int = document.nodes.len() as libc::c_int;
+    let index: i32 = document.nodes.len() as i32;
     yaml_parser_register_anchor(parser, document, index, anchor)?;
     yaml_parser_load_node_add(document, ctx, index)
 }
@@ -282,7 +282,7 @@ fn yaml_parser_load_sequence(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
-    ctx: &mut Vec<libc::c_int>,
+    ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     let YamlEventData::SequenceStart {
         anchor,
@@ -311,7 +311,7 @@ fn yaml_parser_load_sequence(
     };
 
     document.nodes.push(node);
-    let index: libc::c_int = document.nodes.len() as libc::c_int;
+    let index: i32 = document.nodes.len() as i32;
     yaml_parser_register_anchor(parser, document, index, anchor.clone())?;
     yaml_parser_load_node_add(document, ctx, index)?;
     ctx.push(index);
@@ -322,10 +322,10 @@ fn yaml_parser_load_sequence_end(
     _parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
-    ctx: &mut Vec<libc::c_int>,
+    ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     __assert!(!ctx.is_empty());
-    let index: libc::c_int = *ctx.last().unwrap();
+    let index: i32 = *ctx.last().unwrap();
     __assert!(matches!(
         document.nodes[index as usize - 1].data,
         YamlNodeData::Sequence { .. }
@@ -339,7 +339,7 @@ fn yaml_parser_load_mapping(
     parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
-    ctx: &mut Vec<libc::c_int>,
+    ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     let YamlEventData::MappingStart {
         anchor,
@@ -366,7 +366,7 @@ fn yaml_parser_load_mapping(
         end_mark: event.end_mark,
     };
     document.nodes.push(node);
-    let index: libc::c_int = document.nodes.len() as libc::c_int;
+    let index: i32 = document.nodes.len() as i32;
     yaml_parser_register_anchor(parser, document, index, anchor)?;
     yaml_parser_load_node_add(document, ctx, index)?;
     ctx.push(index);
@@ -377,10 +377,10 @@ fn yaml_parser_load_mapping_end(
     _parser: &mut yaml_parser_t,
     event: yaml_event_t,
     document: &mut yaml_document_t,
-    ctx: &mut Vec<libc::c_int>,
+    ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     __assert!(!ctx.is_empty());
-    let index: libc::c_int = *ctx.last().unwrap();
+    let index: i32 = *ctx.last().unwrap();
     __assert!(matches!(
         document.nodes[index as usize - 1].data,
         YamlNodeData::Mapping { .. }

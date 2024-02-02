@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use crate::yaml::{YamlEventData, YamlNodeData};
 use crate::{
-    libc, yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t, yaml_encoding_t,
+    yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t, yaml_encoding_t,
     yaml_event_t, yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t,
     yaml_parser_state_t, yaml_parser_t, yaml_scalar_style_t, yaml_sequence_style_t,
     yaml_tag_directive_t, yaml_version_directive_t, YAML_ANY_ENCODING, YAML_UTF8_ENCODING,
@@ -172,12 +172,12 @@ pub fn yaml_emitter_set_canonical(emitter: &mut yaml_emitter_t, canonical: bool)
 }
 
 /// Set the indentation increment.
-pub fn yaml_emitter_set_indent(emitter: &mut yaml_emitter_t, indent: libc::c_int) {
+pub fn yaml_emitter_set_indent(emitter: &mut yaml_emitter_t, indent: i32) {
     emitter.best_indent = if 1 < indent && indent < 10 { indent } else { 2 };
 }
 
 /// Set the preferred line width. -1 means unlimited.
-pub fn yaml_emitter_set_width(emitter: &mut yaml_emitter_t, width: libc::c_int) {
+pub fn yaml_emitter_set_width(emitter: &mut yaml_emitter_t, width: i32) {
     emitter.best_width = if width >= 0 { width } else { -1 };
 }
 
@@ -408,10 +408,7 @@ pub fn yaml_document_delete(document: &mut yaml_document_t) {
 /// modifying the documents are called.
 ///
 /// Returns the node object or NULL if `index` is out of range.
-pub fn yaml_document_get_node(
-    document: &mut yaml_document_t,
-    index: libc::c_int,
-) -> *mut yaml_node_t {
+pub fn yaml_document_get_node(document: &mut yaml_document_t, index: i32) -> *mut yaml_node_t {
     if index > 0 && index as usize <= document.nodes.len() {
         return std::ptr::addr_of_mut!(document.nodes[index as usize - 1]);
     }
@@ -447,7 +444,7 @@ pub fn yaml_document_add_scalar(
     tag: Option<&str>,
     value: &str,
     style: yaml_scalar_style_t,
-) -> libc::c_int {
+) -> i32 {
     let mark = yaml_mark_t {
         index: 0_u64,
         line: 0_u64,
@@ -466,7 +463,7 @@ pub fn yaml_document_add_scalar(
         end_mark: mark,
     };
     document.nodes.push(node);
-    document.nodes.len() as libc::c_int
+    document.nodes.len() as i32
 }
 
 /// Create a SEQUENCE node and attach it to the document.
@@ -479,7 +476,7 @@ pub fn yaml_document_add_sequence(
     document: &mut yaml_document_t,
     tag: Option<&str>,
     style: yaml_sequence_style_t,
-) -> libc::c_int {
+) -> i32 {
     let mark = yaml_mark_t {
         index: 0_u64,
         line: 0_u64,
@@ -496,7 +493,7 @@ pub fn yaml_document_add_sequence(
         end_mark: mark,
     };
     document.nodes.push(node);
-    document.nodes.len() as libc::c_int
+    document.nodes.len() as i32
 }
 
 /// Create a MAPPING node and attach it to the document.
@@ -509,7 +506,7 @@ pub fn yaml_document_add_mapping(
     document: &mut yaml_document_t,
     tag: Option<&str>,
     style: yaml_mapping_style_t,
-) -> libc::c_int {
+) -> i32 {
     let mark = yaml_mark_t {
         index: 0_u64,
         line: 0_u64,
@@ -527,14 +524,14 @@ pub fn yaml_document_add_mapping(
     };
 
     document.nodes.push(node);
-    document.nodes.len() as libc::c_int
+    document.nodes.len() as i32
 }
 
 /// Add an item to a SEQUENCE node.
 pub fn yaml_document_append_sequence_item(
     document: &mut yaml_document_t,
-    sequence: libc::c_int,
-    item: libc::c_int,
+    sequence: i32,
+    item: i32,
 ) {
     __assert!(sequence > 0 && sequence as usize - 1 < document.nodes.len());
     __assert!(matches!(
@@ -552,9 +549,9 @@ pub fn yaml_document_append_sequence_item(
 /// Add a pair of a key and a value to a MAPPING node.
 pub fn yaml_document_append_mapping_pair(
     document: &mut yaml_document_t,
-    mapping: libc::c_int,
-    key: libc::c_int,
-    value: libc::c_int,
+    mapping: i32,
+    key: i32,
+    value: i32,
 ) {
     __assert!(mapping > 0 && mapping as usize - 1 < document.nodes.len());
     __assert!(matches!(

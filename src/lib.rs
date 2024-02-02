@@ -38,12 +38,6 @@ extern crate alloc;
 
 use core::mem::size_of;
 
-mod libc {
-    pub use core::primitive::{
-        i32 as c_int, i64 as c_long, u32 as c_uint, u64 as c_ulong, u8 as c_uchar,
-    };
-}
-
 #[macro_use]
 mod externs {
     macro_rules! __assert {

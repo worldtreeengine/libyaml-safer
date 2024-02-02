@@ -2,16 +2,15 @@ use alloc::collections::VecDeque;
 
 use crate::api::INPUT_RAW_BUFFER_SIZE;
 use crate::macros::vecdeque_starts_with;
-use crate::yaml::size_t;
 use crate::{
-    libc, yaml_parser_t, ReaderError, YAML_ANY_ENCODING, YAML_UTF16BE_ENCODING,
-    YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING,
+    yaml_parser_t, ReaderError, YAML_ANY_ENCODING, YAML_UTF16BE_ENCODING, YAML_UTF16LE_ENCODING,
+    YAML_UTF8_ENCODING,
 };
 
 fn yaml_parser_set_reader_error<T>(
     _parser: &mut yaml_parser_t,
     problem: &'static str,
-    offset: u64,
+    offset: usize,
     value: i32,
 ) -> Result<T, ReaderError> {
     Err(ReaderError::Problem {
@@ -200,14 +199,14 @@ fn push_char(parser: &mut yaml_parser_t, ch: char) -> Result<(), ReaderError> {
         );
     }
     parser.buffer.push_back(ch);
-    parser.offset += ch.len_utf8() as u64;
+    parser.offset += ch.len_utf8();
     parser.unread += 1;
     Ok(())
 }
 
 pub(crate) fn yaml_parser_update_buffer(
     parser: &mut yaml_parser_t,
-    length: size_t,
+    length: usize,
 ) -> Result<(), ReaderError> {
     let mut first = true;
     __assert!((parser.read_handler).is_some());
@@ -259,7 +258,7 @@ pub(crate) fn yaml_parser_update_buffer(
                         return yaml_parser_set_reader_error(
                             parser,
                             "invalid trailing UTF-8 octet",
-                            parser.offset + offset as u64,
+                            parser.offset + offset,
                             parser.raw_buffer[offset] as _,
                         );
                     }
@@ -310,7 +309,7 @@ pub(crate) fn yaml_parser_update_buffer(
                             parser,
                             "unexpected low surrogate area",
                             parser.offset,
-                            value as libc::c_int,
+                            value as i32,
                         );
                     }
                     // Some(Err(Utf16Error::IncompleteSurrogatePair)) => {
@@ -326,7 +325,7 @@ pub(crate) fn yaml_parser_update_buffer(
                             parser,
                             "expected low surrogate area",
                             parser.offset + 2,
-                            value as libc::c_int,
+                            value as i32,
                         );
                     }
                     Some(Err(Utf16Error::InvalidUnicode(value))) => {
@@ -334,7 +333,7 @@ pub(crate) fn yaml_parser_update_buffer(
                             parser,
                             "invalid Unicode character",
                             parser.offset,
-                            value as libc::c_int,
+                            value as i32,
                         );
                     }
                     None => (),
@@ -346,7 +345,7 @@ pub(crate) fn yaml_parser_update_buffer(
         }
     }
 
-    if parser.offset >= (!0_u64).wrapping_div(2_u64) {
+    if parser.offset >= (!0_usize).wrapping_div(2_usize) {
         return yaml_parser_set_reader_error(parser, "input is too long", parser.offset, -1);
     }
     Ok(())

@@ -5,7 +5,7 @@ use crate::yaml::{
     yaml_anchors_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t, YamlEventData,
     YamlNodeData, YAML_ANY_ENCODING,
 };
-use crate::{libc, yaml_document_delete, yaml_emitter_emit, EmitterError};
+use crate::{yaml_document_delete, yaml_emitter_emit, EmitterError};
 
 /// Start a YAML stream.
 ///
@@ -112,7 +112,7 @@ fn yaml_emitter_delete_document_and_anchors(
     emitter.last_anchor_id = 0;
 }
 
-fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: libc::c_int) {
+fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: i32) {
     emitter.anchors[index as usize - 1].references += 1;
     if emitter.anchors[index as usize - 1].references == 2 {
         emitter.last_anchor_id += 1;
@@ -123,7 +123,7 @@ fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: libc::c_int
 fn yaml_emitter_anchor_node(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
-    index: libc::c_int,
+    index: i32,
 ) {
     let node = &document.nodes[index as usize - 1];
     emitter.anchors[index as usize - 1].references += 1;
@@ -148,17 +148,17 @@ fn yaml_emitter_anchor_node(
     }
 }
 
-fn yaml_emitter_generate_anchor(_emitter: &mut yaml_emitter_t, anchor_id: libc::c_int) -> String {
+fn yaml_emitter_generate_anchor(_emitter: &mut yaml_emitter_t, anchor_id: i32) -> String {
     alloc::format!("id{anchor_id:03}")
 }
 
 fn yaml_emitter_dump_node(
     emitter: &mut yaml_emitter_t,
     document: &mut yaml_document_t,
-    index: libc::c_int,
+    index: i32,
 ) -> Result<(), EmitterError> {
     let node = &mut document.nodes[index as usize - 1];
-    let anchor_id: libc::c_int = emitter.anchors[index as usize - 1].anchor;
+    let anchor_id: i32 = emitter.anchors[index as usize - 1].anchor;
     let mut anchor: Option<String> = None;
     if anchor_id != 0 {
         anchor = Some(yaml_emitter_generate_anchor(emitter, anchor_id));
