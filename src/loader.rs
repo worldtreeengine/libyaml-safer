@@ -3,7 +3,7 @@ use alloc::{vec, vec::Vec};
 
 use crate::yaml::{YamlEventData, YamlNodeData};
 use crate::{
-    libc, yaml_alias_data_t, yaml_document_delete, yaml_document_t, yaml_event_t, yaml_mark_t,
+    libc, yaml_alias_data_t, yaml_document_new, yaml_document_t, yaml_event_t, yaml_mark_t,
     yaml_node_pair_t, yaml_node_t, yaml_parser_parse, yaml_parser_t, ComposerError,
 };
 
@@ -15,17 +15,11 @@ use crate::{
 /// If the produced document has no root node, it means that the document end
 /// has been reached.
 ///
-/// An application is responsible for freeing any data associated with the
-/// produced document object using the yaml_document_delete() function.
-///
 /// An application must not alternate the calls of yaml_parser_load() with the
 /// calls of yaml_parser_scan() or yaml_parser_parse(). Doing this will break
 /// the parser.
-pub fn yaml_parser_load(
-    parser: &mut yaml_parser_t,
-    document: &mut yaml_document_t,
-) -> Result<(), ComposerError> {
-    *document = yaml_document_t::default();
+pub fn yaml_parser_load(parser: &mut yaml_parser_t) -> Result<yaml_document_t, ComposerError> {
+    let mut document = yaml_document_new(None, &[], false, false);
     document.nodes.reserve(16);
 
     if !parser.stream_start_produced {
@@ -37,25 +31,24 @@ pub fn yaml_parser_load(
             Ok(_) => panic!("expected stream start"),
             Err(err) => {
                 yaml_parser_delete_aliases(parser);
-                yaml_document_delete(document);
                 return Err(err.into());
             }
         }
     }
     if parser.stream_end_produced {
-        return Ok(());
+        return Ok(document);
     }
     let err: ComposerError;
     match yaml_parser_parse(parser) {
         Ok(event) => {
             if let YamlEventData::StreamEnd = &event.data {
-                return Ok(());
+                return Ok(document);
             }
             parser.aliases.reserve(16);
-            match yaml_parser_load_document(parser, event, document) {
+            match yaml_parser_load_document(parser, event, &mut document) {
                 Ok(()) => {
                     yaml_parser_delete_aliases(parser);
-                    return Ok(());
+                    return Ok(document);
                 }
                 Err(e) => err = e,
             }
@@ -63,7 +56,6 @@ pub fn yaml_parser_load(
         Err(e) => err = e.into(),
     }
     yaml_parser_delete_aliases(parser);
-    yaml_document_delete(document);
     Err(err)
 }
 
@@ -271,7 +263,6 @@ fn yaml_parser_load_scalar(
         unreachable!()
     };
 
-    
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:str"));
     }
@@ -304,7 +295,7 @@ fn yaml_parser_load_sequence(
     };
 
     let mut items = Vec::with_capacity(16);
-    
+
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:seq"));
     }
@@ -361,7 +352,7 @@ fn yaml_parser_load_mapping(
     };
 
     let mut pairs = Vec::with_capacity(16);
-    
+
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:map"));
     }

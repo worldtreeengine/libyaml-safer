@@ -7,7 +7,7 @@ use crate::macros::{
 use crate::ops::ForceMul as _;
 use crate::yaml::YamlEventData;
 use crate::{
-    libc, yaml_emitter_flush, yaml_emitter_t, yaml_event_delete, yaml_event_t, yaml_scalar_style_t,
+    libc, yaml_emitter_flush, yaml_emitter_t, yaml_event_t, yaml_scalar_style_t,
     yaml_tag_directive_t, yaml_version_directive_t, EmitterError, WriterError, YAML_ANY_BREAK,
     YAML_ANY_ENCODING, YAML_ANY_SCALAR_STYLE, YAML_CRLN_BREAK, YAML_CR_BREAK,
     YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE,
@@ -133,12 +133,11 @@ pub fn yaml_emitter_emit(
     event: yaml_event_t,
 ) -> Result<(), EmitterError> {
     emitter.events.push_back(event);
-    while let Some(mut event) = yaml_emitter_needs_mode_events(emitter) {
+    while let Some(event) = yaml_emitter_needs_mode_events(emitter) {
         let tag_directives = core::mem::take(&mut emitter.tag_directives);
 
         let mut analysis = yaml_emitter_analyze_event(emitter, &event, &tag_directives)?;
         yaml_emitter_state_machine(emitter, &event, &mut analysis)?;
-        yaml_event_delete(&mut event);
 
         // The DOCUMENT-START event populates the tag directives, and this
         // happens only once, so don't swap out the tags in that case.

@@ -509,7 +509,6 @@ pub struct yaml_node_pair_t {
 }
 
 /// The document structure.
-#[derive(Default)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_document_t {

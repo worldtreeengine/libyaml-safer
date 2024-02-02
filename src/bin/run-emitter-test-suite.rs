@@ -15,13 +15,12 @@
 )]
 
 use libyaml_safer::{
-    yaml_alias_event_initialize, yaml_document_end_event_initialize,
-    yaml_document_start_event_initialize, yaml_emitter_delete, yaml_emitter_emit, yaml_emitter_new,
-    yaml_emitter_set_canonical, yaml_emitter_set_output, yaml_emitter_set_unicode, yaml_event_t,
-    yaml_mapping_end_event_initialize, yaml_mapping_start_event_initialize,
-    yaml_scalar_event_initialize, yaml_scalar_style_t, yaml_sequence_end_event_initialize,
-    yaml_sequence_start_event_initialize, yaml_stream_end_event_initialize,
-    yaml_stream_start_event_initialize, YAML_ANY_SCALAR_STYLE, YAML_BLOCK_MAPPING_STYLE,
+    yaml_alias_event_new, yaml_document_end_event_new, yaml_document_start_event_new,
+    yaml_emitter_delete, yaml_emitter_emit, yaml_emitter_new, yaml_emitter_set_canonical,
+    yaml_emitter_set_output, yaml_emitter_set_unicode, yaml_mapping_end_event_new,
+    yaml_mapping_start_event_new, yaml_scalar_event_new, yaml_scalar_style_t,
+    yaml_sequence_end_event_new, yaml_sequence_start_event_new, yaml_stream_end_event_new,
+    yaml_stream_start_event_new, YAML_ANY_SCALAR_STYLE, YAML_BLOCK_MAPPING_STYLE,
     YAML_BLOCK_SEQUENCE_STYLE, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE,
     YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
     YAML_UTF8_ENCODING,
@@ -47,8 +46,6 @@ pub(crate) fn test_main(
     let mut value_buffer = String::with_capacity(128);
 
     let result = loop {
-        let mut event = yaml_event_t::default();
-
         line_buffer.clear();
         let n = buf.read_line(&mut line_buffer)?;
         if n == 0 {
@@ -56,42 +53,39 @@ pub(crate) fn test_main(
         }
         let line = line_buffer.strip_suffix('\n').unwrap_or(&line_buffer);
 
-        if line.starts_with("+STR") {
-            yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING)
+        let event = if line.starts_with("+STR") {
+            yaml_stream_start_event_new(YAML_UTF8_ENCODING)
         } else if line.starts_with("-STR") {
-            yaml_stream_end_event_initialize(&mut event)
+            yaml_stream_end_event_new()
         } else if line.starts_with("+DOC") {
             let implicit = !line[4..].starts_with(" ---");
-            yaml_document_start_event_initialize(&mut event, None, &[], implicit)
+            yaml_document_start_event_new(None, &[], implicit)
         } else if line.starts_with("-DOC") {
             let implicit = !line[4..].starts_with(" ...");
-            yaml_document_end_event_initialize(&mut event, implicit)
+            yaml_document_end_event_new(implicit)
         } else if line.starts_with("+MAP") {
-            yaml_mapping_start_event_initialize(
-                &mut event,
+            yaml_mapping_start_event_new(
                 get_anchor('&', line),
                 get_tag(line),
                 false,
                 YAML_BLOCK_MAPPING_STYLE,
             )
         } else if line.starts_with("-MAP") {
-            yaml_mapping_end_event_initialize(&mut event)
+            yaml_mapping_end_event_new()
         } else if line.starts_with("+SEQ") {
-            yaml_sequence_start_event_initialize(
-                &mut event,
+            yaml_sequence_start_event_new(
                 get_anchor('&', line),
                 get_tag(line),
                 false,
                 YAML_BLOCK_SEQUENCE_STYLE,
             )
         } else if line.starts_with("-SEQ") {
-            yaml_sequence_end_event_initialize(&mut event)
+            yaml_sequence_end_event_new()
         } else if line.starts_with("=VAL") {
             let mut style = YAML_ANY_SCALAR_STYLE;
             let value = get_value(line, &mut value_buffer, &mut style);
             let implicit = get_tag(line).is_none();
-            yaml_scalar_event_initialize(
-                &mut event,
+            yaml_scalar_event_new(
                 get_anchor('&', line),
                 get_tag(line),
                 value,
@@ -100,7 +94,7 @@ pub(crate) fn test_main(
                 style,
             )
         } else if line.starts_with("=ALI") {
-            yaml_alias_event_initialize(&mut event, get_anchor('*', line).expect("no alias name"))
+            yaml_alias_event_new(get_anchor('*', line).expect("no alias name"))
         } else {
             break Err(format!("Unknown event: '{line}'").into());
         };

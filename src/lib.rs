@@ -102,19 +102,17 @@ mod writer;
 mod yaml;
 
 pub use crate::api::{
-    yaml_alias_event_initialize, yaml_document_add_mapping, yaml_document_add_scalar,
+    yaml_alias_event_new, yaml_document_add_mapping, yaml_document_add_scalar,
     yaml_document_add_sequence, yaml_document_append_mapping_pair,
-    yaml_document_append_sequence_item, yaml_document_delete, yaml_document_end_event_initialize,
-    yaml_document_get_node, yaml_document_get_root_node, yaml_document_initialize,
-    yaml_document_start_event_initialize, yaml_emitter_delete, yaml_emitter_new,
-    yaml_emitter_set_break, yaml_emitter_set_canonical, yaml_emitter_set_encoding,
-    yaml_emitter_set_indent, yaml_emitter_set_output, yaml_emitter_set_output_string,
-    yaml_emitter_set_unicode, yaml_emitter_set_width, yaml_event_delete,
-    yaml_mapping_end_event_initialize, yaml_mapping_start_event_initialize, yaml_parser_delete,
-    yaml_parser_new, yaml_parser_set_encoding, yaml_parser_set_input, yaml_parser_set_input_string,
-    yaml_scalar_event_initialize, yaml_sequence_end_event_initialize,
-    yaml_sequence_start_event_initialize, yaml_stream_end_event_initialize,
-    yaml_stream_start_event_initialize, yaml_token_delete,
+    yaml_document_append_sequence_item, yaml_document_delete, yaml_document_end_event_new,
+    yaml_document_get_node, yaml_document_get_root_node, yaml_document_new,
+    yaml_document_start_event_new, yaml_emitter_delete, yaml_emitter_new, yaml_emitter_set_break,
+    yaml_emitter_set_canonical, yaml_emitter_set_encoding, yaml_emitter_set_indent,
+    yaml_emitter_set_output, yaml_emitter_set_output_string, yaml_emitter_set_unicode,
+    yaml_emitter_set_width, yaml_mapping_end_event_new, yaml_mapping_start_event_new,
+    yaml_parser_delete, yaml_parser_new, yaml_parser_set_encoding, yaml_parser_set_input,
+    yaml_parser_set_input_string, yaml_scalar_event_new, yaml_sequence_end_event_new,
+    yaml_sequence_start_event_new, yaml_stream_end_event_new, yaml_stream_start_event_new,
 };
 pub use crate::dumper::{yaml_emitter_close, yaml_emitter_dump, yaml_emitter_open};
 pub use crate::emitter::yaml_emitter_emit;
@@ -158,8 +156,7 @@ tie-fighter: '|\-*-/|'
 "#;
         let mut read_in = SANITY_INPUT.as_bytes();
         yaml_parser_set_input_string(&mut parser, &mut read_in);
-        let mut doc = yaml_document_t::default();
-        yaml_parser_load(&mut parser, &mut doc).unwrap();
+        let _doc = yaml_parser_load(&mut parser).unwrap();
         // let mut doc = doc.assume_init();
 
         // let mut emitter = core::mem::MaybeUninit::uninit();
@@ -193,8 +190,7 @@ foo: bar
         let mut parser = yaml_parser_new();
         let mut input = TEST_CASE_QF4Y.as_bytes();
         yaml_parser_set_input_string(&mut parser, &mut input);
-        let mut doc = yaml_document_t::default();
-        yaml_parser_load(&mut parser, &mut doc).unwrap();
+        let _doc = yaml_parser_load(&mut parser).unwrap();
     }
 
     // #[test]
@@ -255,13 +251,11 @@ foo: bar
         let mut output = Vec::new();
         yaml_emitter_set_output_string(&mut emitter, &mut output);
 
-        let mut event = yaml_event_t::default();
-        yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING);
-        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-        yaml_document_start_event_initialize(&mut event, None, &[], true);
-        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-        yaml_scalar_event_initialize(
-            &mut event,
+        let event = yaml_stream_start_event_new(YAML_UTF8_ENCODING);
+        yaml_emitter_emit(&mut emitter, event).unwrap();
+        let event = yaml_document_start_event_new(None, &[], true);
+        yaml_emitter_emit(&mut emitter, event).unwrap();
+        let event = yaml_scalar_event_new(
             None,
             None,
             "1st non-empty\n2nd non-empty 3rd non-empty",
@@ -269,11 +263,11 @@ foo: bar
             true,
             YAML_PLAIN_SCALAR_STYLE,
         );
-        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-        yaml_document_end_event_initialize(&mut event, true);
-        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-        yaml_stream_end_event_initialize(&mut event);
-        yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
+        yaml_emitter_emit(&mut emitter, event).unwrap();
+        let event = yaml_document_end_event_new(true);
+        yaml_emitter_emit(&mut emitter, event).unwrap();
+        let event = yaml_stream_end_event_new();
+        yaml_emitter_emit(&mut emitter, event).unwrap();
 
         assert_eq!(
             core::str::from_utf8(&output),
