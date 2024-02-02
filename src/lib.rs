@@ -169,9 +169,7 @@ tie-fighter: '|\-*-/|'
             let mut read_in = SANITY_INPUT.as_bytes();
             yaml_parser_set_input_string(&mut parser, &mut read_in);
             let mut doc = yaml_document_t::default();
-            if yaml_parser_load(&mut parser, &mut doc).is_err() {
-                panic!("parser error: {:?} {:?}", parser.error, parser.problem);
-            }
+            yaml_parser_load(&mut parser, &mut doc).unwrap();
             // let mut doc = doc.assume_init();
 
             // let mut emitter = core::mem::MaybeUninit::uninit();
@@ -193,6 +191,22 @@ tie-fighter: '|\-*-/|'
             // output.resize(size_written as _, 0);
             // let output_str = core::str::from_utf8(&output).expect("invalid UTF-8");
             // assert_eq!(output_str, SANITY_INPUT);
+        }
+    }
+
+    const TEST_CASE_QF4Y: &str = r#"[
+foo: bar
+]
+"#;
+
+    #[test]
+    fn test_case() {
+        let mut parser = parser_new();
+        let mut input = TEST_CASE_QF4Y.as_bytes();
+        yaml_parser_set_input_string(&mut parser, &mut input);
+        let mut doc = yaml_document_t::default();
+        unsafe {
+            yaml_parser_load(&mut parser, &mut doc).unwrap();
         }
     }
 
@@ -285,6 +299,14 @@ tie-fighter: '|\-*-/|'
         unsafe {
             let mut emitter = core::mem::MaybeUninit::uninit();
             yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
+            emitter.assume_init()
+        }
+    }
+
+    fn parser_new<'w>() -> yaml_parser_t<'w> {
+        unsafe {
+            let mut emitter = core::mem::MaybeUninit::uninit();
+            yaml_parser_initialize(emitter.as_mut_ptr()).unwrap();
             emitter.assume_init()
         }
     }

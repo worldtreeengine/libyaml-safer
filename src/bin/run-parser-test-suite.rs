@@ -12,14 +12,12 @@
 )]
 
 use libyaml_safer::{
-    yaml_event_delete, yaml_event_t, yaml_parser_delete, yaml_parser_initialize, yaml_parser_parse,
-    yaml_parser_set_input, yaml_parser_t, YamlEventData, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE,
-    YAML_SINGLE_QUOTED_SCALAR_STYLE,
+    yaml_parser_delete, yaml_parser_initialize, yaml_parser_parse, yaml_parser_set_input,
+    yaml_parser_t, YamlEventData, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE,
+    YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
 };
 use std::env;
 use std::error::Error;
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::mem::MaybeUninit;
@@ -38,21 +36,15 @@ pub(crate) unsafe fn unsafe_main(
 
     yaml_parser_set_input(&mut parser, stdin);
 
-    let mut event = yaml_event_t::default();
     loop {
-        if yaml_parser_parse(&mut parser, &mut event).is_err() {
-            let mut error = format!("Parse error: {}", parser.problem.unwrap_or(""));
-            if parser.problem_mark.line != 0 || parser.problem_mark.column != 0 {
-                let _ = write!(
-                    error,
-                    "\nLine: {} Column: {}",
-                    (parser.problem_mark.line).wrapping_add(1_u64),
-                    (parser.problem_mark.column).wrapping_add(1_u64),
-                );
+        let event = match yaml_parser_parse(&mut parser) {
+            Err(err) => {
+                let error = format!("Parse error: {}", err);
+                yaml_parser_delete(&mut parser);
+                return Err(error.into());
             }
-            yaml_parser_delete(&mut parser);
-            return Err(error.into());
-        }
+            Ok(event) => event,
+        };
 
         let mut is_end = false;
 
@@ -137,7 +129,6 @@ pub(crate) unsafe fn unsafe_main(
             }
         }
 
-        yaml_event_delete(&mut event);
         if is_end {
             break;
         }

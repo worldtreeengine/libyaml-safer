@@ -4,8 +4,7 @@ use alloc::{vec, vec::Vec};
 use crate::yaml::{YamlEventData, YamlNodeData};
 use crate::{
     libc, yaml_alias_data_t, yaml_document_delete, yaml_document_t, yaml_event_t, yaml_mark_t,
-    yaml_node_pair_t, yaml_node_t, yaml_parser_parse, yaml_parser_t, YAML_COMPOSER_ERROR,
-    YAML_MEMORY_ERROR,
+    yaml_node_pair_t, yaml_node_t, yaml_parser_parse, yaml_parser_t, ComposerError,
 };
 use core::mem::MaybeUninit;
 
@@ -26,65 +25,71 @@ use core::mem::MaybeUninit;
 pub unsafe fn yaml_parser_load(
     parser: &mut yaml_parser_t,
     document: &mut yaml_document_t,
-) -> Result<(), ()> {
-    let mut event = yaml_event_t::default();
+) -> Result<(), ComposerError> {
     *document = yaml_document_t::default();
     document.nodes.reserve(16);
 
     if !parser.stream_start_produced {
-        if let Err(()) = yaml_parser_parse(parser, &mut event) {
-            yaml_parser_delete_aliases(parser);
-            yaml_document_delete(document);
-            return Err(());
-        } else {
-            if let YamlEventData::StreamStart { .. } = &event.data {
-            } else {
-                panic!("expected stream start");
+        match yaml_parser_parse(parser) {
+            Ok(yaml_event_t {
+                data: YamlEventData::StreamStart { .. },
+                ..
+            }) => (),
+            Ok(_) => panic!("expected stream start"),
+            Err(err) => {
+                yaml_parser_delete_aliases(parser);
+                yaml_document_delete(document);
+                return Err(err.into());
             }
         }
     }
     if parser.stream_end_produced {
         return Ok(());
     }
-    if let Ok(()) = yaml_parser_parse(parser, &mut event) {
-        if let YamlEventData::StreamEnd = &event.data {
-            return Ok(());
+    let err: ComposerError;
+    match yaml_parser_parse(parser) {
+        Ok(event) => {
+            if let YamlEventData::StreamEnd = &event.data {
+                return Ok(());
+            }
+            parser.aliases.reserve(16);
+            match yaml_parser_load_document(parser, event, document) {
+                Ok(()) => {
+                    yaml_parser_delete_aliases(parser);
+                    return Ok(());
+                }
+                Err(e) => err = e,
+            }
         }
-        parser.aliases.reserve(16);
-        if let Ok(()) = yaml_parser_load_document(parser, &mut event, document) {
-            yaml_parser_delete_aliases(parser);
-            return Ok(());
-        }
+        Err(e) => err = e.into(),
     }
     yaml_parser_delete_aliases(parser);
     yaml_document_delete(document);
-    Err(())
+    Err(err)
 }
 
-fn yaml_parser_set_composer_error(
-    parser: &mut yaml_parser_t,
+fn yaml_parser_set_composer_error<T>(
     problem: &'static str,
     problem_mark: yaml_mark_t,
-) -> Result<(), ()> {
-    parser.error = YAML_COMPOSER_ERROR;
-    parser.problem = Some(problem);
-    parser.problem_mark = problem_mark;
-    Err(())
+) -> Result<T, ComposerError> {
+    Err(ComposerError::Problem {
+        problem,
+        mark: problem_mark,
+    })
 }
 
-fn yaml_parser_set_composer_error_context(
-    parser: &mut yaml_parser_t,
+fn yaml_parser_set_composer_error_context<T>(
     context: &'static str,
     context_mark: yaml_mark_t,
     problem: &'static str,
     problem_mark: yaml_mark_t,
-) -> Result<(), ()> {
-    parser.error = YAML_COMPOSER_ERROR;
-    parser.context = Some(context);
-    parser.context_mark = context_mark;
-    parser.problem = Some(problem);
-    parser.problem_mark = problem_mark;
-    Err(())
+) -> Result<T, ComposerError> {
+    Err(ComposerError::ProblemWithContext {
+        context,
+        context_mark,
+        problem,
+        mark: problem_mark,
+    })
 }
 
 unsafe fn yaml_parser_delete_aliases(parser: &mut yaml_parser_t) {
@@ -93,24 +98,24 @@ unsafe fn yaml_parser_delete_aliases(parser: &mut yaml_parser_t) {
 
 unsafe fn yaml_parser_load_document(
     parser: &mut yaml_parser_t,
-    event: &mut yaml_event_t,
+    event: yaml_event_t,
     document: &mut yaml_document_t,
-) -> Result<(), ()> {
+) -> Result<(), ComposerError> {
     let mut ctx = vec![];
     if let YamlEventData::DocumentStart {
         version_directive,
         tag_directives,
         implicit,
-    } = &mut event.data
+    } = event.data
     {
-        document.version_directive = *version_directive;
-        document.tag_directives = core::mem::take(tag_directives);
-        document.start_implicit = *implicit;
+        document.version_directive = version_directive;
+        document.tag_directives = tag_directives;
+        document.start_implicit = implicit;
         document.start_mark = event.start_mark;
         ctx.reserve(16);
-        if let Err(()) = yaml_parser_load_nodes(parser, document, &mut ctx) {
+        if let Err(err) = yaml_parser_load_nodes(parser, document, &mut ctx) {
             ctx.clear();
-            return Err(());
+            return Err(err);
         }
         ctx.clear();
         Ok(())
@@ -123,40 +128,39 @@ unsafe fn yaml_parser_load_nodes(
     parser: &mut yaml_parser_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
-) -> Result<(), ()> {
-    let mut event = yaml_event_t::default();
+) -> Result<(), ComposerError> {
     let end_implicit;
     let end_mark;
 
     loop {
-        yaml_parser_parse(parser, &mut event)?;
-        match &event.data {
+        let event = yaml_parser_parse(parser)?;
+        match event.data {
             YamlEventData::NoEvent => panic!("empty event"),
             YamlEventData::StreamStart { .. } => panic!("unexpected stream start event"),
             YamlEventData::StreamEnd => panic!("unexpected stream end event"),
             YamlEventData::DocumentStart { .. } => panic!("unexpected document start event"),
             YamlEventData::DocumentEnd { implicit } => {
-                end_implicit = *implicit;
+                end_implicit = implicit;
                 end_mark = event.end_mark;
                 break;
             }
             YamlEventData::Alias { .. } => {
-                yaml_parser_load_alias(parser, &mut event, document, ctx)?;
+                yaml_parser_load_alias(parser, event, document, ctx)?;
             }
             YamlEventData::Scalar { .. } => {
-                yaml_parser_load_scalar(parser, &mut event, document, ctx)?;
+                yaml_parser_load_scalar(parser, event, document, ctx)?;
             }
             YamlEventData::SequenceStart { .. } => {
-                yaml_parser_load_sequence(parser, &mut event, document, ctx)?;
+                yaml_parser_load_sequence(parser, event, document, ctx)?;
             }
             YamlEventData::SequenceEnd => {
-                yaml_parser_load_sequence_end(parser, &mut event, document, ctx)?;
+                yaml_parser_load_sequence_end(parser, event, document, ctx)?;
             }
             YamlEventData::MappingStart { .. } => {
-                yaml_parser_load_mapping(parser, &mut event, document, ctx)?;
+                yaml_parser_load_mapping(parser, event, document, ctx)?;
             }
             YamlEventData::MappingEnd => {
-                yaml_parser_load_mapping_end(parser, &mut event, document, ctx)?;
+                yaml_parser_load_mapping_end(parser, event, document, ctx)?;
             }
         }
     }
@@ -170,7 +174,7 @@ unsafe fn yaml_parser_register_anchor(
     document: &mut yaml_document_t,
     index: libc::c_int,
     anchor: Option<String>,
-) -> Result<(), ()> {
+) -> Result<(), ComposerError> {
     let Some(anchor) = anchor else {
         return Ok(());
     };
@@ -182,7 +186,6 @@ unsafe fn yaml_parser_register_anchor(
     for alias_data in parser.aliases.iter() {
         if alias_data.anchor == data.anchor {
             return yaml_parser_set_composer_error_context(
-                parser,
                 "found duplicate anchor; first occurrence",
                 alias_data.mark,
                 "second occurrence",
@@ -195,11 +198,10 @@ unsafe fn yaml_parser_register_anchor(
 }
 
 unsafe fn yaml_parser_load_node_add(
-    parser: &mut yaml_parser_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
     index: libc::c_int,
-) -> Result<(), ()> {
+) -> Result<(), ComposerError> {
     if ctx.is_empty() {
         return Ok(());
     }
@@ -207,7 +209,6 @@ unsafe fn yaml_parser_load_node_add(
     let parent = &mut document.nodes[parent_index as usize - 1];
     match parent.data {
         YamlNodeData::Sequence { ref mut items, .. } => {
-            STACK_LIMIT!(parser, items)?;
             items.push(index);
         }
         YamlNodeData::Mapping { ref mut pairs, .. } => {
@@ -224,7 +225,6 @@ unsafe fn yaml_parser_load_node_add(
             if do_push {
                 (*pair).key = index;
                 (*pair).value = 0;
-                STACK_LIMIT!(parser, pairs)?;
                 pairs.push(*pair);
             }
         }
@@ -237,10 +237,10 @@ unsafe fn yaml_parser_load_node_add(
 
 unsafe fn yaml_parser_load_alias(
     parser: &mut yaml_parser_t,
-    event: &mut yaml_event_t, // TODO: Take by value
+    event: yaml_event_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
-) -> Result<(), ()> {
+) -> Result<(), ComposerError> {
     let anchor: &str = if let YamlEventData::Alias { anchor } = &event.data {
         &*anchor
     } else {
@@ -249,72 +249,64 @@ unsafe fn yaml_parser_load_alias(
 
     for alias_data in parser.aliases.iter() {
         if alias_data.anchor == anchor {
-            return yaml_parser_load_node_add(parser, document, ctx, alias_data.index);
+            return yaml_parser_load_node_add(document, ctx, alias_data.index);
         }
     }
 
-    yaml_parser_set_composer_error(parser, "found undefined alias", event.start_mark)
+    yaml_parser_set_composer_error("found undefined alias", event.start_mark)
 }
 
 unsafe fn yaml_parser_load_scalar(
     parser: &mut yaml_parser_t,
-    event: &mut yaml_event_t, // TODO: Take by value
+    event: yaml_event_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
-) -> Result<(), ()> {
-    let (mut tag, value, style, anchor) = if let YamlEventData::Scalar {
-        tag,
+) -> Result<(), ComposerError> {
+    let YamlEventData::Scalar {
+        mut tag,
         value,
         style,
         anchor,
         ..
-    } = &event.data
-    {
-        (tag.clone(), value, *style, anchor.clone())
-    } else {
+    } = event.data
+    else {
         unreachable!()
     };
 
     let index: libc::c_int;
-    if let Ok(()) = STACK_LIMIT!(parser, document.nodes) {
-        if tag.is_none() || tag.as_deref() == Some("!") {
-            tag = Some(String::from("tag:yaml.org,2002:str"));
-        }
-        let node = yaml_node_t {
-            data: YamlNodeData::Scalar {
-                value: value.clone(), // TODO: move
-                style,
-            },
-            tag,
-            start_mark: (*event).start_mark,
-            end_mark: (*event).end_mark,
-        };
-        document.nodes.push(node);
-        index = document.nodes.len() as libc::c_int;
-        yaml_parser_register_anchor(parser, document, index, anchor)?;
-        return yaml_parser_load_node_add(parser, document, ctx, index);
+    if tag.is_none() || tag.as_deref() == Some("!") {
+        tag = Some(String::from("tag:yaml.org,2002:str"));
     }
-    Err(())
+    let node = yaml_node_t {
+        data: YamlNodeData::Scalar { value, style },
+        tag,
+        start_mark: event.start_mark,
+        end_mark: event.end_mark,
+    };
+    document.nodes.push(node);
+    index = document.nodes.len() as libc::c_int;
+    yaml_parser_register_anchor(parser, document, index, anchor)?;
+    yaml_parser_load_node_add(document, ctx, index)
 }
 
 unsafe fn yaml_parser_load_sequence(
     parser: &mut yaml_parser_t,
-    event: &mut yaml_event_t, // TODO: Take by value.
+    event: yaml_event_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
-) -> Result<(), ()> {
-    let (mut tag, style, anchor) = if let YamlEventData::SequenceStart {
-        anchor, tag, style, ..
-    } = &event.data
-    {
-        (tag.clone(), *style, anchor)
-    } else {
+) -> Result<(), ComposerError> {
+    let YamlEventData::SequenceStart {
+        anchor,
+        mut tag,
+        style,
+        ..
+    } = event.data
+    else {
         unreachable!()
     };
 
     let mut items = Vec::with_capacity(16);
     let index: libc::c_int;
-    STACK_LIMIT!(parser, document.nodes)?;
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:seq"));
     }
@@ -332,47 +324,46 @@ unsafe fn yaml_parser_load_sequence(
     document.nodes.push(node);
     index = document.nodes.len() as libc::c_int;
     yaml_parser_register_anchor(parser, document, index, anchor.clone())?;
-    yaml_parser_load_node_add(parser, document, ctx, index)?;
-    STACK_LIMIT!(parser, *ctx)?;
+    yaml_parser_load_node_add(document, ctx, index)?;
     ctx.push(index);
     Ok(())
 }
 
 unsafe fn yaml_parser_load_sequence_end(
     _parser: &mut yaml_parser_t,
-    event: *mut yaml_event_t,
+    event: yaml_event_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
-) -> Result<(), ()> {
+) -> Result<(), ComposerError> {
     __assert!(!ctx.is_empty());
     let index: libc::c_int = *ctx.last().unwrap();
     __assert!(matches!(
         document.nodes[index as usize - 1].data,
         YamlNodeData::Sequence { .. }
     ));
-    document.nodes[index as usize - 1].end_mark = (*event).end_mark;
+    document.nodes[index as usize - 1].end_mark = event.end_mark;
     _ = ctx.pop();
     Ok(())
 }
 
 unsafe fn yaml_parser_load_mapping(
     parser: &mut yaml_parser_t,
-    event: &mut yaml_event_t, // TODO: take by value
+    event: yaml_event_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
-) -> Result<(), ()> {
-    let (mut tag, style, anchor) = if let YamlEventData::MappingStart {
-        anchor, tag, style, ..
-    } = &event.data
-    {
-        (tag.clone(), *style, anchor.clone())
-    } else {
+) -> Result<(), ComposerError> {
+    let YamlEventData::MappingStart {
+        anchor,
+        mut tag,
+        style,
+        ..
+    } = event.data
+    else {
         unreachable!()
     };
 
     let mut pairs = Vec::with_capacity(16);
     let index: libc::c_int;
-    STACK_LIMIT!(parser, document.nodes)?;
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from("tag:yaml.org,2002:map"));
     }
@@ -388,25 +379,24 @@ unsafe fn yaml_parser_load_mapping(
     document.nodes.push(node);
     index = document.nodes.len() as libc::c_int;
     yaml_parser_register_anchor(parser, document, index, anchor)?;
-    yaml_parser_load_node_add(parser, document, ctx, index)?;
-    STACK_LIMIT!(parser, *ctx)?;
+    yaml_parser_load_node_add(document, ctx, index)?;
     ctx.push(index);
     Ok(())
 }
 
 unsafe fn yaml_parser_load_mapping_end(
     _parser: &mut yaml_parser_t,
-    event: *mut yaml_event_t,
+    event: yaml_event_t,
     document: &mut yaml_document_t,
     ctx: &mut Vec<libc::c_int>,
-) -> Result<(), ()> {
+) -> Result<(), ComposerError> {
     __assert!(!ctx.is_empty());
     let index: libc::c_int = *ctx.last().unwrap();
     __assert!(matches!(
         document.nodes[index as usize - 1].data,
         YamlNodeData::Mapping { .. }
     ));
-    document.nodes[index as usize - 1].end_mark = (*event).end_mark;
+    document.nodes[index as usize - 1].end_mark = event.end_mark;
     _ = ctx.pop();
     Ok(())
 }

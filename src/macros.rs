@@ -268,17 +268,6 @@ macro_rules! IS_BLANKZ {
     };
 }
 
-macro_rules! STACK_LIMIT {
-    ($context:expr, $stack:expr) => {
-        if $stack.len() < libc::c_int::MAX as usize - 1 {
-            Ok(())
-        } else {
-            (*$context).error = YAML_MEMORY_ERROR;
-            Err(())
-        }
-    };
-}
-
 pub(crate) fn vecdeque_starts_with<T: PartialEq + Copy>(
     vec: &alloc::collections::VecDeque<T>,
     needle: &[T],

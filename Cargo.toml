@@ -14,9 +14,9 @@ description = "Safer libyaml port, based on unsafe-libyaml"
 documentation = "https://docs.rs/libyaml-safer"
 edition = "2021"
 keywords = ["yaml"]
-license = "MIT"
+license = "Apache 2.0 OR MIT"
 repository = "https://github.com/simonask/libyaml-safer"
-rust-version = "1.56"
+rust-version = "1.70"
 
 [workspace]
 [dev-dependencies]
@@ -25,6 +25,9 @@ unsafe-libyaml-test-suite = { path = "tests/data" }
 
 [lib]
 doc-scrape-examples = false
+
+[dependencies]
+thiserror = "1.0"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

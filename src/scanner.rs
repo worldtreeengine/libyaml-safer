@@ -7,7 +7,7 @@ use crate::yaml::{ptrdiff_t, size_t, YamlTokenData};
 use crate::{
     libc, yaml_mark_t, yaml_parser_t, yaml_simple_key_t, yaml_token_t, ReaderError, ScannerError,
     YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE,
-    YAML_NO_ERROR, YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
+    YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
 };
 
 fn CACHE(parser: &mut yaml_parser_t, length: size_t) -> Result<(), ReaderError> {
@@ -99,28 +99,25 @@ fn READ_LINE_STRING(parser: &mut yaml_parser_t, string: &mut String) {
 /// An application must not alternate the calls of yaml_parser_scan() with the
 /// calls of yaml_parser_parse() or yaml_parser_load(). Doing this will break
 /// the parser.
-pub fn yaml_parser_scan(
-    parser: &mut yaml_parser_t,
-    token: &mut yaml_token_t,
-) -> Result<(), ScannerError> {
-    *token = yaml_token_t::default();
-    if parser.stream_end_produced || parser.error != YAML_NO_ERROR {
-        return Ok(());
+pub fn yaml_parser_scan(parser: &mut yaml_parser_t) -> Result<yaml_token_t, ScannerError> {
+    if parser.stream_end_produced {
+        return Ok(yaml_token_t {
+            data: YamlTokenData::StreamEnd,
+            ..Default::default()
+        });
     }
     if !parser.token_available {
         yaml_parser_fetch_more_tokens(parser)?;
     }
-    if let Some(popped) = parser.tokens.pop_front() {
-        *token = popped;
+    if let Some(token) = parser.tokens.pop_front() {
         parser.token_available = false;
         parser.tokens_parsed = parser.tokens_parsed.force_add(1);
-        if let YamlTokenData::StreamEnd = &(*token).data {
+        if let YamlTokenData::StreamEnd = &token.data {
             parser.stream_end_produced = true;
         }
-        Ok(())
+        Ok(token)
     } else {
-        // token_available should have been false
-        unreachable!()
+        unreachable!("no more tokens, but stream-end was not produced")
     }
 }
 

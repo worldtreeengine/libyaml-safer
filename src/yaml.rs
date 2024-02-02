@@ -670,20 +670,6 @@ pub struct yaml_alias_data_t {
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_parser_t<'r> {
-    /// Error type.
-    pub error: yaml_error_type_t,
-    /// Error description.
-    pub problem: Option<&'static str>,
-    /// The byte about which the problem occured.
-    pub problem_offset: size_t,
-    /// The problematic value (-1 is none).
-    pub problem_value: libc::c_int,
-    /// The problem position.
-    pub problem_mark: yaml_mark_t,
-    /// The error context.
-    pub context: Option<&'static str>,
-    /// The context position.
-    pub context_mark: yaml_mark_t,
     /// Read handler.
     pub(crate) read_handler: Option<&'r mut dyn std::io::Read>,
     /// Standard (string or file) input data.
@@ -743,13 +729,6 @@ pub struct yaml_parser_t<'r> {
 impl<'r> Default for yaml_parser_t<'r> {
     fn default() -> Self {
         Self {
-            error: Default::default(),
-            problem: Default::default(),
-            problem_offset: Default::default(),
-            problem_value: Default::default(),
-            problem_mark: Default::default(),
-            context: Default::default(),
-            context_mark: Default::default(),
             read_handler: None,
             input: Default::default(),
             eof: Default::default(),
