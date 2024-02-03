@@ -628,7 +628,7 @@ pub struct yaml_alias_data_t {
 #[non_exhaustive]
 pub struct yaml_parser_t<'r> {
     /// Read handler.
-    pub(crate) read_handler: Option<&'r mut dyn std::io::Read>,
+    pub(crate) read_handler: Option<&'r mut dyn std::io::BufRead>,
     /// EOF flag
     pub(crate) eof: bool,
     /// The working buffer.
@@ -637,12 +637,6 @@ pub struct yaml_parser_t<'r> {
     pub(crate) buffer: VecDeque<char>,
     /// The number of unread characters in the buffer.
     pub(crate) unread: usize,
-    /// The raw buffer.
-    ///
-    /// This is the raw unchecked input from the read handler (for example, it
-    /// may be UTF-16 encoded).
-    // TODO: Get rid of this and ask users to provide something implementing `BufRead` instead of `Read`.
-    pub(crate) raw_buffer: VecDeque<u8>,
     /// The input encoding.
     pub(crate) encoding: yaml_encoding_t,
     /// The offset of the current position (in bytes).

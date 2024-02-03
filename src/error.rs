@@ -24,6 +24,12 @@ pub enum ReaderError {
         offset: usize,
         value: i32,
     },
+    #[error("input stream produced an invalid byte order marker")]
+    InvalidBom,
+    #[error("invalid UTF-8 byte at offset: {value:x}")]
+    InvalidUtf8 { value: u8 },
+    #[error("invalid UTF-16 unpaired surrogate: {value:x}")]
+    InvalidUtf16 { value: u16 },
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }

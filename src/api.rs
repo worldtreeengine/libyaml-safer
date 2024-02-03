@@ -25,7 +25,6 @@ pub fn yaml_parser_new<'r>() -> yaml_parser_t<'r> {
         eof: false,
         buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
         unread: 0,
-        raw_buffer: VecDeque::with_capacity(INPUT_RAW_BUFFER_SIZE),
         encoding: YAML_ANY_ENCODING,
         offset: 0,
         mark: yaml_mark_t::default(),
@@ -49,7 +48,6 @@ pub fn yaml_parser_new<'r>() -> yaml_parser_t<'r> {
 
 /// Destroy a parser.
 pub fn yaml_parser_delete(parser: &mut yaml_parser_t) {
-    parser.raw_buffer.clear();
     parser.buffer.clear();
     parser.tokens.clear();
     parser.indents.clear();
@@ -70,7 +68,10 @@ pub fn yaml_parser_set_input_string<'r>(parser: &mut yaml_parser_t<'r>, input: &
 }
 
 /// Set a generic input handler.
-pub fn yaml_parser_set_input<'r>(parser: &mut yaml_parser_t<'r>, input: &'r mut dyn std::io::Read) {
+pub fn yaml_parser_set_input<'r>(
+    parser: &mut yaml_parser_t<'r>,
+    input: &'r mut dyn std::io::BufRead,
+) {
     assert!((parser.read_handler).is_none());
     parser.read_handler = Some(input);
 }

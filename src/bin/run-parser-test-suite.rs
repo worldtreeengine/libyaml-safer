@@ -29,7 +29,8 @@ pub(crate) fn test_main(
 ) -> Result<(), Box<dyn Error>> {
     let mut parser = yaml_parser_new();
 
-    yaml_parser_set_input(&mut parser, stdin);
+    let mut stdin = std::io::BufReader::new(stdin);
+    yaml_parser_set_input(&mut parser, &mut stdin);
 
     loop {
         let event = match yaml_parser_parse(&mut parser) {
