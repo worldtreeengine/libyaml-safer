@@ -475,7 +475,7 @@ pub enum YamlEventData {
 }
 
 /// The node structure.
-#[derive(Default)]
+#[derive(Clone, Default, Debug)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_node_t {
@@ -490,7 +490,7 @@ pub struct yaml_node_t {
 }
 
 /// Node types.
-#[derive(Default)]
+#[derive(Clone, Default, Debug)]
 pub enum YamlNodeData {
     /// An empty node.
     #[default]
@@ -521,7 +521,7 @@ pub enum YamlNodeData {
 /// An element of a sequence node.
 pub type yaml_node_item_t = i32;
 /// An element of a mapping node.
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Debug)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_node_pair_t {
@@ -532,6 +532,7 @@ pub struct yaml_node_pair_t {
 }
 
 /// The document structure.
+#[derive(Clone, Debug)]
 #[repr(C)]
 #[non_exhaustive]
 pub struct yaml_document_t {
