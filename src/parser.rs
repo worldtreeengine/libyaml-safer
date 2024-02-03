@@ -2,11 +2,11 @@ use alloc::string::String;
 use alloc::{vec, vec::Vec};
 
 use crate::scanner::yaml_parser_fetch_more_tokens;
-use crate::yaml::{YamlEventData, YamlTokenData};
+use crate::yaml::{EventData, TokenData};
 use crate::{
-    yaml_event_t, yaml_mark_t, yaml_parser_t, yaml_tag_directive_t, yaml_token_t,
-    yaml_version_directive_t, ParserError, YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE,
-    YAML_FLOW_MAPPING_STYLE, YAML_FLOW_SEQUENCE_STYLE, YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE,
+    Event, Mark, Parser, ParserError, TagDirective, Token, VersionDirective,
+    YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE, YAML_FLOW_MAPPING_STYLE,
+    YAML_FLOW_SEQUENCE_STYLE, YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE,
     YAML_PARSE_BLOCK_MAPPING_KEY_STATE, YAML_PARSE_BLOCK_MAPPING_VALUE_STATE,
     YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE, YAML_PARSE_BLOCK_NODE_STATE,
     YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE, YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE,
@@ -22,7 +22,7 @@ use crate::{
     YAML_PLAIN_SCALAR_STYLE,
 };
 
-fn PEEK_TOKEN<'a>(parser: &'a mut yaml_parser_t) -> Result<&'a yaml_token_t, ParserError> {
+fn PEEK_TOKEN<'a>(parser: &'a mut Parser) -> Result<&'a Token, ParserError> {
     if parser.token_available {
         return Ok(parser
             .tokens
@@ -39,7 +39,7 @@ fn PEEK_TOKEN<'a>(parser: &'a mut yaml_parser_t) -> Result<&'a yaml_token_t, Par
         .expect("token_available is true, but token queue is empty"))
 }
 
-fn PEEK_TOKEN_MUT<'a>(parser: &'a mut yaml_parser_t) -> Result<&'a mut yaml_token_t, ParserError> {
+fn PEEK_TOKEN_MUT<'a>(parser: &'a mut Parser) -> Result<&'a mut Token, ParserError> {
     if parser.token_available {
         return Ok(parser
             .tokens
@@ -56,14 +56,14 @@ fn PEEK_TOKEN_MUT<'a>(parser: &'a mut yaml_parser_t) -> Result<&'a mut yaml_toke
         .expect("token_available is true, but token queue is empty"))
 }
 
-fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
+fn SKIP_TOKEN(parser: &mut Parser) {
     parser.token_available = false;
     parser.tokens_parsed = parser.tokens_parsed.wrapping_add(1);
     let skipped = parser.tokens.pop_front().expect("SKIP_TOKEN but EOF");
     parser.stream_end_produced = matches!(
         skipped,
-        yaml_token_t {
-            data: YamlTokenData::StreamEnd,
+        Token {
+            data: TokenData::StreamEnd,
             ..
         }
     );
@@ -78,10 +78,10 @@ fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
 /// An application must not alternate the calls of yaml_parser_parse() with the
 /// calls of yaml_parser_scan() or yaml_parser_load(). Doing this will break the
 /// parser.
-pub fn yaml_parser_parse(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
+pub fn yaml_parser_parse(parser: &mut Parser) -> Result<Event, ParserError> {
     if parser.stream_end_produced || parser.state == YAML_PARSE_END_STATE {
-        return Ok(yaml_event_t {
-            data: YamlEventData::StreamEnd,
+        return Ok(Event {
+            data: EventData::StreamEnd,
             ..Default::default()
         });
     }
@@ -90,7 +90,7 @@ pub fn yaml_parser_parse(parser: &mut yaml_parser_t) -> Result<yaml_event_t, Par
 
 fn yaml_parser_set_parser_error<T>(
     problem: &'static str,
-    problem_mark: yaml_mark_t,
+    problem_mark: Mark,
 ) -> Result<T, ParserError> {
     Err(ParserError::Problem {
         problem,
@@ -100,9 +100,9 @@ fn yaml_parser_set_parser_error<T>(
 
 fn yaml_parser_set_parser_error_context<T>(
     context: &'static str,
-    context_mark: yaml_mark_t,
+    context_mark: Mark,
     problem: &'static str,
-    problem_mark: yaml_mark_t,
+    problem_mark: Mark,
 ) -> Result<T, ParserError> {
     Err(ParserError::ProblemWithContext {
         context,
@@ -112,7 +112,7 @@ fn yaml_parser_set_parser_error_context<T>(
     })
 }
 
-fn yaml_parser_state_machine(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_state_machine(parser: &mut Parser) -> Result<Event, ParserError> {
     match parser.state {
         YAML_PARSE_STREAM_START_STATE => yaml_parser_parse_stream_start(parser),
         YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE => yaml_parser_parse_document_start(parser, true),
@@ -163,12 +163,12 @@ fn yaml_parser_state_machine(parser: &mut yaml_parser_t) -> Result<yaml_event_t,
     }
 }
 
-fn yaml_parser_parse_stream_start(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_parse_stream_start(parser: &mut Parser) -> Result<Event, ParserError> {
     let token = PEEK_TOKEN(parser)?;
 
-    if let YamlTokenData::StreamStart { encoding } = &token.data {
-        let event = yaml_event_t {
-            data: YamlEventData::StreamStart {
+    if let TokenData::StreamStart { encoding } = &token.data {
+        let event = Event {
+            data: EventData::StreamStart {
                 encoding: *encoding,
             },
             start_mark: token.start_mark,
@@ -184,15 +184,15 @@ fn yaml_parser_parse_stream_start(parser: &mut yaml_parser_t) -> Result<yaml_eve
 }
 
 fn yaml_parser_parse_document_start(
-    parser: &mut yaml_parser_t,
+    parser: &mut Parser,
     implicit: bool,
-) -> Result<yaml_event_t, ParserError> {
-    let mut version_directive: Option<yaml_version_directive_t> = None;
+) -> Result<Event, ParserError> {
+    let mut version_directive: Option<VersionDirective> = None;
 
     let mut tag_directives = vec![];
     let mut token = PEEK_TOKEN(parser)?;
     if !implicit {
-        while let YamlTokenData::DocumentEnd = &token.data {
+        while let TokenData::DocumentEnd = &token.data {
             SKIP_TOKEN(parser);
             token = PEEK_TOKEN(parser)?;
         }
@@ -203,8 +203,8 @@ fn yaml_parser_parse_document_start(
         && !token.data.is_document_start()
         && !token.data.is_stream_end()
     {
-        let event = yaml_event_t {
-            data: YamlEventData::DocumentStart {
+        let event = Event {
+            data: EventData::DocumentStart {
                 version_directive: None,
                 tag_directives: vec![],
                 implicit: true,
@@ -217,8 +217,8 @@ fn yaml_parser_parse_document_start(
         parser.state = YAML_PARSE_BLOCK_NODE_STATE;
         Ok(event)
     } else if !token.data.is_stream_end() {
-        let end_mark: yaml_mark_t;
-        let start_mark: yaml_mark_t = token.start_mark;
+        let end_mark: Mark;
+        let start_mark: Mark = token.start_mark;
         yaml_parser_process_directives(
             parser,
             Some(&mut version_directive),
@@ -232,8 +232,8 @@ fn yaml_parser_parse_document_start(
             );
         } else {
             end_mark = token.end_mark;
-            let event = yaml_event_t {
-                data: YamlEventData::DocumentStart {
+            let event = Event {
+                data: EventData::DocumentStart {
                     version_directive,
                     tag_directives: core::mem::take(&mut tag_directives),
                     implicit: false,
@@ -247,8 +247,8 @@ fn yaml_parser_parse_document_start(
             return Ok(event);
         }
     } else {
-        let event = yaml_event_t {
-            data: YamlEventData::StreamEnd,
+        let event = Event {
+            data: EventData::StreamEnd,
             start_mark: token.start_mark,
             end_mark: token.end_mark,
         };
@@ -258,15 +258,13 @@ fn yaml_parser_parse_document_start(
     }
 }
 
-fn yaml_parser_parse_document_content(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_parse_document_content(parser: &mut Parser) -> Result<Event, ParserError> {
     let token = PEEK_TOKEN(parser)?;
-    if let YamlTokenData::VersionDirective { .. }
-    | YamlTokenData::TagDirective { .. }
-    | YamlTokenData::DocumentStart
-    | YamlTokenData::DocumentEnd
-    | YamlTokenData::StreamEnd = &token.data
+    if let TokenData::VersionDirective { .. }
+    | TokenData::TagDirective { .. }
+    | TokenData::DocumentStart
+    | TokenData::DocumentEnd
+    | TokenData::StreamEnd = &token.data
     {
         let mark = token.start_mark;
         parser.state = parser.states.pop().unwrap();
@@ -276,38 +274,38 @@ fn yaml_parser_parse_document_content(
     }
 }
 
-fn yaml_parser_parse_document_end(parser: &mut yaml_parser_t) -> Result<yaml_event_t, ParserError> {
-    let mut end_mark: yaml_mark_t;
+fn yaml_parser_parse_document_end(parser: &mut Parser) -> Result<Event, ParserError> {
+    let mut end_mark: Mark;
     let mut implicit = true;
     let token = PEEK_TOKEN(parser)?;
     end_mark = token.start_mark;
-    let start_mark: yaml_mark_t = end_mark;
-    if let YamlTokenData::DocumentEnd = &token.data {
+    let start_mark: Mark = end_mark;
+    if let TokenData::DocumentEnd = &token.data {
         end_mark = token.end_mark;
         SKIP_TOKEN(parser);
         implicit = false;
     }
     parser.tag_directives.clear();
     parser.state = YAML_PARSE_DOCUMENT_START_STATE;
-    Ok(yaml_event_t {
-        data: YamlEventData::DocumentEnd { implicit },
+    Ok(Event {
+        data: EventData::DocumentEnd { implicit },
         start_mark,
         end_mark,
     })
 }
 
 fn yaml_parser_parse_node(
-    parser: &mut yaml_parser_t,
+    parser: &mut Parser,
     block: bool,
     indentless_sequence: bool,
-) -> Result<yaml_event_t, ParserError> {
+) -> Result<Event, ParserError> {
     let mut anchor: Option<String> = None;
     let mut tag_handle: Option<String> = None;
     let mut tag_suffix: Option<String> = None;
     let mut tag: Option<String> = None;
-    let mut start_mark: yaml_mark_t;
-    let mut end_mark: yaml_mark_t;
-    let mut tag_mark = yaml_mark_t {
+    let mut start_mark: Mark;
+    let mut end_mark: Mark;
+    let mut tag_mark = Mark {
         index: 0,
         line: 0,
         column: 0,
@@ -315,9 +313,9 @@ fn yaml_parser_parse_node(
 
     let mut token = PEEK_TOKEN_MUT(parser)?;
 
-    if let YamlTokenData::Alias { value } = &mut token.data {
-        let event = yaml_event_t {
-            data: YamlEventData::Alias {
+    if let TokenData::Alias { value } = &mut token.data {
+        let event = Event {
+            data: EventData::Alias {
                 anchor: core::mem::take(value),
             },
             start_mark: token.start_mark,
@@ -330,20 +328,20 @@ fn yaml_parser_parse_node(
 
     end_mark = token.start_mark;
     start_mark = end_mark;
-    if let YamlTokenData::Anchor { value } = &mut token.data {
+    if let TokenData::Anchor { value } = &mut token.data {
         anchor = Some(core::mem::take(value));
         start_mark = token.start_mark;
         end_mark = token.end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN_MUT(parser)?;
-        if let YamlTokenData::Tag { handle, suffix } = &mut token.data {
+        if let TokenData::Tag { handle, suffix } = &mut token.data {
             tag_handle = Some(core::mem::take(handle));
             tag_suffix = Some(core::mem::take(suffix));
             tag_mark = token.start_mark;
             end_mark = token.end_mark;
             SKIP_TOKEN(parser);
         }
-    } else if let YamlTokenData::Tag { handle, suffix } = &mut token.data {
+    } else if let TokenData::Tag { handle, suffix } = &mut token.data {
         tag_handle = Some(core::mem::take(handle));
         tag_suffix = Some(core::mem::take(suffix));
         tag_mark = token.start_mark;
@@ -351,7 +349,7 @@ fn yaml_parser_parse_node(
         end_mark = token.end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN_MUT(parser)?;
-        if let YamlTokenData::Anchor { value } = &mut token.data {
+        if let TokenData::Anchor { value } = &mut token.data {
             anchor = Some(core::mem::take(value));
             end_mark = token.end_mark;
             SKIP_TOKEN(parser);
@@ -387,8 +385,8 @@ fn yaml_parser_parse_node(
     if indentless_sequence && token.data.is_block_entry() {
         end_mark = token.end_mark;
         parser.state = YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE;
-        let event = yaml_event_t {
-            data: YamlEventData::SequenceStart {
+        let event = Event {
+            data: EventData::SequenceStart {
                 anchor,
                 tag,
                 implicit,
@@ -398,7 +396,7 @@ fn yaml_parser_parse_node(
             end_mark,
         };
         Ok(event)
-    } else if let YamlTokenData::Scalar { value, style } = &mut token.data {
+    } else if let TokenData::Scalar { value, style } = &mut token.data {
         let mut plain_implicit = false;
         let mut quoted_implicit = false;
         end_mark = token.end_mark;
@@ -407,8 +405,8 @@ fn yaml_parser_parse_node(
         } else if tag.is_none() {
             quoted_implicit = true;
         }
-        let event = yaml_event_t {
-            data: YamlEventData::Scalar {
+        let event = Event {
+            data: EventData::Scalar {
                 anchor,
                 tag,
                 value: core::mem::take(value),
@@ -422,11 +420,11 @@ fn yaml_parser_parse_node(
         parser.state = parser.states.pop().unwrap();
         SKIP_TOKEN(parser);
         return Ok(event);
-    } else if let YamlTokenData::FlowSequenceStart = &token.data {
+    } else if let TokenData::FlowSequenceStart = &token.data {
         end_mark = token.end_mark;
         parser.state = YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE;
-        let event = yaml_event_t {
-            data: YamlEventData::SequenceStart {
+        let event = Event {
+            data: EventData::SequenceStart {
                 anchor,
                 tag,
                 implicit,
@@ -436,11 +434,11 @@ fn yaml_parser_parse_node(
             end_mark,
         };
         return Ok(event);
-    } else if let YamlTokenData::FlowMappingStart = &token.data {
+    } else if let TokenData::FlowMappingStart = &token.data {
         end_mark = token.end_mark;
         parser.state = YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE;
-        let event = yaml_event_t {
-            data: YamlEventData::MappingStart {
+        let event = Event {
+            data: EventData::MappingStart {
                 anchor,
                 tag,
                 implicit,
@@ -453,8 +451,8 @@ fn yaml_parser_parse_node(
     } else if block && token.data.is_block_sequence_start() {
         end_mark = token.end_mark;
         parser.state = YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE;
-        let event = yaml_event_t {
-            data: YamlEventData::SequenceStart {
+        let event = Event {
+            data: EventData::SequenceStart {
                 anchor,
                 tag,
                 implicit,
@@ -467,8 +465,8 @@ fn yaml_parser_parse_node(
     } else if block && token.data.is_block_mapping_start() {
         end_mark = token.end_mark;
         parser.state = YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE;
-        let event = yaml_event_t {
-            data: YamlEventData::MappingStart {
+        let event = Event {
+            data: EventData::MappingStart {
                 anchor,
                 tag,
                 implicit,
@@ -480,8 +478,8 @@ fn yaml_parser_parse_node(
         return Ok(event);
     } else if anchor.is_some() || tag.is_some() {
         parser.state = parser.states.pop().unwrap();
-        let event = yaml_event_t {
-            data: YamlEventData::Scalar {
+        let event = Event {
+            data: EventData::Scalar {
                 anchor,
                 tag,
                 value: String::new(),
@@ -508,9 +506,9 @@ fn yaml_parser_parse_node(
 }
 
 fn yaml_parser_parse_block_sequence_entry(
-    parser: &mut yaml_parser_t,
+    parser: &mut Parser,
     first: bool,
-) -> Result<yaml_event_t, ParserError> {
+) -> Result<Event, ParserError> {
     if first {
         let token = PEEK_TOKEN(parser)?;
         let mark = token.start_mark;
@@ -520,8 +518,8 @@ fn yaml_parser_parse_block_sequence_entry(
 
     let mut token = PEEK_TOKEN(parser)?;
 
-    if let YamlTokenData::BlockEntry = &token.data {
-        let mark: yaml_mark_t = token.end_mark;
+    if let TokenData::BlockEntry = &token.data {
+        let mark: Mark = token.end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_block_entry() && !token.data.is_block_end() {
@@ -532,8 +530,8 @@ fn yaml_parser_parse_block_sequence_entry(
             yaml_parser_process_empty_scalar(mark)
         }
     } else if token.data.is_block_end() {
-        let event = yaml_event_t {
-            data: YamlEventData::SequenceEnd,
+        let event = Event {
+            data: EventData::SequenceEnd,
             start_mark: token.start_mark,
             end_mark: token.end_mark,
         };
@@ -553,12 +551,10 @@ fn yaml_parser_parse_block_sequence_entry(
     }
 }
 
-fn yaml_parser_parse_indentless_sequence_entry(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_parse_indentless_sequence_entry(parser: &mut Parser) -> Result<Event, ParserError> {
     let mut token = PEEK_TOKEN(parser)?;
     if token.data.is_block_entry() {
-        let mark: yaml_mark_t = token.end_mark;
+        let mark: Mark = token.end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_block_entry()
@@ -575,8 +571,8 @@ fn yaml_parser_parse_indentless_sequence_entry(
             yaml_parser_process_empty_scalar(mark)
         }
     } else {
-        let event = yaml_event_t {
-            data: YamlEventData::SequenceEnd,
+        let event = Event {
+            data: EventData::SequenceEnd,
             start_mark: token.start_mark,
             end_mark: token.end_mark,
         };
@@ -586,9 +582,9 @@ fn yaml_parser_parse_indentless_sequence_entry(
 }
 
 fn yaml_parser_parse_block_mapping_key(
-    parser: &mut yaml_parser_t,
+    parser: &mut Parser,
     first: bool,
-) -> Result<yaml_event_t, ParserError> {
+) -> Result<Event, ParserError> {
     if first {
         let token = PEEK_TOKEN(parser)?;
         let mark = token.start_mark;
@@ -598,7 +594,7 @@ fn yaml_parser_parse_block_mapping_key(
 
     let mut token = PEEK_TOKEN(parser)?;
     if token.data.is_key() {
-        let mark: yaml_mark_t = token.end_mark;
+        let mark: Mark = token.end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_key() && !token.data.is_value() && !token.data.is_block_end() {
@@ -609,8 +605,8 @@ fn yaml_parser_parse_block_mapping_key(
             yaml_parser_process_empty_scalar(mark)
         }
     } else if token.data.is_block_end() {
-        let event = yaml_event_t {
-            data: YamlEventData::MappingEnd,
+        let event = Event {
+            data: EventData::MappingEnd,
             start_mark: token.start_mark,
             end_mark: token.end_mark,
         };
@@ -630,12 +626,10 @@ fn yaml_parser_parse_block_mapping_key(
     }
 }
 
-fn yaml_parser_parse_block_mapping_value(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+fn yaml_parser_parse_block_mapping_value(parser: &mut Parser) -> Result<Event, ParserError> {
     let mut token = PEEK_TOKEN(parser)?;
     if token.data.is_value() {
-        let mark: yaml_mark_t = token.end_mark;
+        let mark: Mark = token.end_mark;
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_key() && !token.data.is_value() && !token.data.is_block_end() {
@@ -653,9 +647,9 @@ fn yaml_parser_parse_block_mapping_value(
 }
 
 fn yaml_parser_parse_flow_sequence_entry(
-    parser: &mut yaml_parser_t,
+    parser: &mut Parser,
     first: bool,
-) -> Result<yaml_event_t, ParserError> {
+) -> Result<Event, ParserError> {
     if first {
         let token = PEEK_TOKEN(parser)?;
         let mark = token.start_mark;
@@ -681,8 +675,8 @@ fn yaml_parser_parse_flow_sequence_entry(
             }
         }
         if token.data.is_key() {
-            let event = yaml_event_t {
-                data: YamlEventData::MappingStart {
+            let event = Event {
+                data: EventData::MappingStart {
                     anchor: None,
                     tag: None,
                     implicit: true,
@@ -699,8 +693,8 @@ fn yaml_parser_parse_flow_sequence_entry(
             return yaml_parser_parse_node(parser, false, false);
         }
     }
-    let event = yaml_event_t {
-        data: YamlEventData::SequenceEnd,
+    let event = Event {
+        data: EventData::SequenceEnd,
         start_mark: token.start_mark,
         end_mark: token.end_mark,
     };
@@ -711,8 +705,8 @@ fn yaml_parser_parse_flow_sequence_entry(
 }
 
 fn yaml_parser_parse_flow_sequence_entry_mapping_key(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+    parser: &mut Parser,
+) -> Result<Event, ParserError> {
     let token = PEEK_TOKEN(parser)?;
     if !token.data.is_value() && !token.data.is_flow_entry() && !token.data.is_flow_sequence_end() {
         parser
@@ -720,7 +714,7 @@ fn yaml_parser_parse_flow_sequence_entry_mapping_key(
             .push(YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE);
         yaml_parser_parse_node(parser, false, false)
     } else {
-        let mark: yaml_mark_t = token.end_mark;
+        let mark: Mark = token.end_mark;
         SKIP_TOKEN(parser);
         parser.state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE;
         yaml_parser_process_empty_scalar(mark)
@@ -728,8 +722,8 @@ fn yaml_parser_parse_flow_sequence_entry_mapping_key(
 }
 
 fn yaml_parser_parse_flow_sequence_entry_mapping_value(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+    parser: &mut Parser,
+) -> Result<Event, ParserError> {
     let mut token = PEEK_TOKEN(parser)?;
     if token.data.is_value() {
         SKIP_TOKEN(parser);
@@ -747,23 +741,23 @@ fn yaml_parser_parse_flow_sequence_entry_mapping_value(
 }
 
 fn yaml_parser_parse_flow_sequence_entry_mapping_end(
-    parser: &mut yaml_parser_t,
-) -> Result<yaml_event_t, ParserError> {
+    parser: &mut Parser,
+) -> Result<Event, ParserError> {
     let token = PEEK_TOKEN(parser)?;
     let start_mark = token.start_mark;
     let end_mark = token.end_mark;
     parser.state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE;
-    Ok(yaml_event_t {
-        data: YamlEventData::MappingEnd,
+    Ok(Event {
+        data: EventData::MappingEnd,
         start_mark,
         end_mark,
     })
 }
 
 fn yaml_parser_parse_flow_mapping_key(
-    parser: &mut yaml_parser_t,
+    parser: &mut Parser,
     first: bool,
-) -> Result<yaml_event_t, ParserError> {
+) -> Result<Event, ParserError> {
     if first {
         let token = PEEK_TOKEN(parser)?;
         let mark = token.start_mark;
@@ -809,8 +803,8 @@ fn yaml_parser_parse_flow_mapping_key(
             return yaml_parser_parse_node(parser, false, false);
         }
     }
-    let event = yaml_event_t {
-        data: YamlEventData::MappingEnd,
+    let event = Event {
+        data: EventData::MappingEnd,
         start_mark: token.start_mark,
         end_mark: token.end_mark,
     };
@@ -821,9 +815,9 @@ fn yaml_parser_parse_flow_mapping_key(
 }
 
 fn yaml_parser_parse_flow_mapping_value(
-    parser: &mut yaml_parser_t,
+    parser: &mut Parser,
     empty: bool,
-) -> Result<yaml_event_t, ParserError> {
+) -> Result<Event, ParserError> {
     let mut token = PEEK_TOKEN(parser)?;
     if empty {
         let mark = token.start_mark;
@@ -843,9 +837,9 @@ fn yaml_parser_parse_flow_mapping_value(
     yaml_parser_process_empty_scalar(mark)
 }
 
-fn yaml_parser_process_empty_scalar(mark: yaml_mark_t) -> Result<yaml_event_t, ParserError> {
-    Ok(yaml_event_t {
-        data: YamlEventData::Scalar {
+fn yaml_parser_process_empty_scalar(mark: Mark) -> Result<Event, ParserError> {
+    Ok(Event {
+        data: EventData::Scalar {
             anchor: None,
             tag: None,
             value: String::new(),
@@ -859,22 +853,22 @@ fn yaml_parser_process_empty_scalar(mark: yaml_mark_t) -> Result<yaml_event_t, P
 }
 
 fn yaml_parser_process_directives(
-    parser: &mut yaml_parser_t,
-    version_directive_ref: Option<&mut Option<yaml_version_directive_t>>,
-    tag_directives_ref: Option<&mut Vec<yaml_tag_directive_t>>,
+    parser: &mut Parser,
+    version_directive_ref: Option<&mut Option<VersionDirective>>,
+    tag_directives_ref: Option<&mut Vec<TagDirective>>,
 ) -> Result<(), ParserError> {
-    let default_tag_directives: [yaml_tag_directive_t; 2] = [
+    let default_tag_directives: [TagDirective; 2] = [
         // TODO: Get rid of these heap allocations.
-        yaml_tag_directive_t {
+        TagDirective {
             handle: String::from("!"),
             prefix: String::from("!"),
         },
-        yaml_tag_directive_t {
+        TagDirective {
             handle: String::from("!!"),
             prefix: String::from("tag:yaml.org,2002:"),
         },
     ];
-    let mut version_directive: Option<yaml_version_directive_t> = None;
+    let mut version_directive: Option<VersionDirective> = None;
 
     let mut tag_directives = Vec::with_capacity(16);
 
@@ -885,20 +879,20 @@ fn yaml_parser_process_directives(
             break;
         }
 
-        if let YamlTokenData::VersionDirective { major, minor } = &token.data {
+        if let TokenData::VersionDirective { major, minor } = &token.data {
             let mark = token.start_mark;
             if version_directive.is_some() {
                 return yaml_parser_set_parser_error("found duplicate %YAML directive", mark);
             } else if *major != 1 || *minor != 1 && *minor != 2 {
                 return yaml_parser_set_parser_error("found incompatible YAML document", mark);
             } else {
-                version_directive = Some(yaml_version_directive_t {
+                version_directive = Some(VersionDirective {
                     major: *major,
                     minor: *minor,
                 });
             }
-        } else if let YamlTokenData::TagDirective { handle, prefix } = &token.data {
-            let value = yaml_tag_directive_t {
+        } else if let TokenData::TagDirective { handle, prefix } = &token.data {
+            let value = TagDirective {
                 // TODO: Get rid of these clones by consuming tokens by value.
                 handle: handle.clone(),
                 prefix: prefix.clone(),
@@ -936,10 +930,10 @@ fn yaml_parser_process_directives(
 }
 
 fn yaml_parser_append_tag_directive(
-    parser: &mut yaml_parser_t,
-    value: &yaml_tag_directive_t,
+    parser: &mut Parser,
+    value: &TagDirective,
     allow_duplicates: bool,
-    mark: yaml_mark_t,
+    mark: Mark,
 ) -> Result<(), ParserError> {
     for tag_directive in &parser.tag_directives {
         if value.handle == tag_directive.handle {

@@ -18,12 +18,11 @@ use libyaml_safer::{
     yaml_alias_event_new, yaml_document_end_event_new, yaml_document_start_event_new,
     yaml_emitter_emit, yaml_emitter_new, yaml_emitter_reset, yaml_emitter_set_canonical,
     yaml_emitter_set_output, yaml_emitter_set_unicode, yaml_mapping_end_event_new,
-    yaml_mapping_start_event_new, yaml_scalar_event_new, yaml_scalar_style_t,
-    yaml_sequence_end_event_new, yaml_sequence_start_event_new, yaml_stream_end_event_new,
-    yaml_stream_start_event_new, YAML_ANY_SCALAR_STYLE, YAML_BLOCK_MAPPING_STYLE,
-    YAML_BLOCK_SEQUENCE_STYLE, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE,
-    YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
-    YAML_UTF8_ENCODING,
+    yaml_mapping_start_event_new, yaml_scalar_event_new, yaml_sequence_end_event_new,
+    yaml_sequence_start_event_new, yaml_stream_end_event_new, yaml_stream_start_event_new,
+    ScalarStyle, YAML_ANY_SCALAR_STYLE, YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE,
+    YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE,
+    YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
 };
 use std::env;
 use std::error::Error;
@@ -125,7 +124,7 @@ fn get_tag(line: &str) -> Option<&str> {
     Some(until_angle_close)
 }
 
-fn get_value<'a>(line: &str, buffer: &'a mut String, style: &mut yaml_scalar_style_t) -> &'a str {
+fn get_value<'a>(line: &str, buffer: &'a mut String, style: &mut ScalarStyle) -> &'a str {
     let mut remainder = line;
     let value = loop {
         let Some((_before, tail)) = remainder.split_once(' ') else {

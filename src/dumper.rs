@@ -4,8 +4,7 @@ use alloc::string::String;
 use alloc::vec;
 
 use crate::yaml::{
-    yaml_anchors_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t, YamlEventData,
-    YamlNodeData, YAML_ANY_ENCODING,
+    Anchors, Document, Emitter, Event, EventData, Node, NodeData, YAML_ANY_ENCODING,
 };
 use crate::{
     yaml_emitter_emit, EmitterError, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG,
@@ -15,10 +14,10 @@ use crate::{
 /// Start a YAML stream.
 ///
 /// This function should be used before yaml_emitter_dump() is called.
-pub fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
+pub fn yaml_emitter_open(emitter: &mut Emitter) -> Result<(), EmitterError> {
     assert!(!emitter.opened);
-    let event = yaml_event_t {
-        data: YamlEventData::StreamStart {
+    let event = Event {
+        data: EventData::StreamStart {
             encoding: YAML_ANY_ENCODING,
         },
         ..Default::default()
@@ -31,13 +30,13 @@ pub fn yaml_emitter_open(emitter: &mut yaml_emitter_t) -> Result<(), EmitterErro
 /// Finish a YAML stream.
 ///
 /// This function should be used after yaml_emitter_dump() is called.
-pub fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
+pub fn yaml_emitter_close(emitter: &mut Emitter) -> Result<(), EmitterError> {
     assert!(emitter.opened);
     if emitter.closed {
         return Ok(());
     }
-    let event = yaml_event_t {
-        data: YamlEventData::StreamEnd,
+    let event = Event {
+        data: EventData::StreamEnd,
         ..Default::default()
     };
     yaml_emitter_emit(emitter, event)?;
@@ -50,8 +49,8 @@ pub fn yaml_emitter_close(emitter: &mut yaml_emitter_t) -> Result<(), EmitterErr
 /// The document object may be generated using the yaml_parser_load() function
 /// or the yaml_document_new() function.
 pub fn yaml_emitter_dump(
-    emitter: &mut yaml_emitter_t,
-    mut document: yaml_document_t,
+    emitter: &mut Emitter,
+    mut document: Document,
 ) -> Result<(), EmitterError> {
     if !emitter.opened {
         if let Err(err) = yaml_emitter_open(emitter) {
@@ -63,9 +62,9 @@ pub fn yaml_emitter_dump(
         yaml_emitter_close(emitter)?;
     } else {
         assert!(emitter.opened);
-        emitter.anchors = vec![yaml_anchors_t::default(); document.nodes.len()];
-        let event = yaml_event_t {
-            data: YamlEventData::DocumentStart {
+        emitter.anchors = vec![Anchors::default(); document.nodes.len()];
+        let event = Event {
+            data: EventData::DocumentStart {
                 version_directive: document.version_directive,
                 tag_directives: take(&mut document.tag_directives),
                 implicit: document.start_implicit,
@@ -75,8 +74,8 @@ pub fn yaml_emitter_dump(
         yaml_emitter_emit(emitter, event)?;
         yaml_emitter_anchor_node(emitter, &document, 1);
         yaml_emitter_dump_node(emitter, &mut document, 1)?;
-        let event = yaml_event_t {
-            data: YamlEventData::DocumentEnd {
+        let event = Event {
+            data: EventData::DocumentEnd {
                 implicit: document.end_implicit,
             },
             ..Default::default()
@@ -88,12 +87,12 @@ pub fn yaml_emitter_dump(
     Ok(())
 }
 
-fn yaml_emitter_reset_anchors(emitter: &mut yaml_emitter_t) {
+fn yaml_emitter_reset_anchors(emitter: &mut Emitter) {
     emitter.anchors.clear();
     emitter.last_anchor_id = 0;
 }
 
-fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: i32) {
+fn yaml_emitter_anchor_node_sub(emitter: &mut Emitter, index: i32) {
     emitter.anchors[index as usize - 1].references += 1;
     if emitter.anchors[index as usize - 1].references == 2 {
         emitter.last_anchor_id += 1;
@@ -101,17 +100,17 @@ fn yaml_emitter_anchor_node_sub(emitter: &mut yaml_emitter_t, index: i32) {
     }
 }
 
-fn yaml_emitter_anchor_node(emitter: &mut yaml_emitter_t, document: &yaml_document_t, index: i32) {
+fn yaml_emitter_anchor_node(emitter: &mut Emitter, document: &Document, index: i32) {
     let node = &document.nodes[index as usize - 1];
     emitter.anchors[index as usize - 1].references += 1;
     if emitter.anchors[index as usize - 1].references == 1 {
         match &node.data {
-            YamlNodeData::Sequence { items, .. } => {
+            NodeData::Sequence { items, .. } => {
                 for item in items {
                     yaml_emitter_anchor_node_sub(emitter, *item);
                 }
             }
-            YamlNodeData::Mapping { pairs, .. } => {
+            NodeData::Mapping { pairs, .. } => {
                 for pair in pairs {
                     yaml_emitter_anchor_node_sub(emitter, pair.key);
                     yaml_emitter_anchor_node_sub(emitter, pair.value);
@@ -125,13 +124,13 @@ fn yaml_emitter_anchor_node(emitter: &mut yaml_emitter_t, document: &yaml_docume
     }
 }
 
-fn yaml_emitter_generate_anchor(_emitter: &mut yaml_emitter_t, anchor_id: i32) -> String {
+fn yaml_emitter_generate_anchor(_emitter: &mut Emitter, anchor_id: i32) -> String {
     alloc::format!("id{anchor_id:03}")
 }
 
 fn yaml_emitter_dump_node(
-    emitter: &mut yaml_emitter_t,
-    document: &mut yaml_document_t,
+    emitter: &mut Emitter,
+    document: &mut Document,
     index: i32,
 ) -> Result<(), EmitterError> {
     let node = &mut document.nodes[index as usize - 1];
@@ -147,37 +146,32 @@ fn yaml_emitter_dump_node(
 
     let node = take(node);
     match node.data {
-        YamlNodeData::Scalar { .. } => yaml_emitter_dump_scalar(emitter, node, anchor),
-        YamlNodeData::Sequence { .. } => {
-            yaml_emitter_dump_sequence(emitter, document, node, anchor)
-        }
-        YamlNodeData::Mapping { .. } => yaml_emitter_dump_mapping(emitter, document, node, anchor),
+        NodeData::Scalar { .. } => yaml_emitter_dump_scalar(emitter, node, anchor),
+        NodeData::Sequence { .. } => yaml_emitter_dump_sequence(emitter, document, node, anchor),
+        NodeData::Mapping { .. } => yaml_emitter_dump_mapping(emitter, document, node, anchor),
         _ => unreachable!("document node is neither a scalar, sequence, or a mapping"),
     }
 }
 
-fn yaml_emitter_dump_alias(
-    emitter: &mut yaml_emitter_t,
-    anchor: String,
-) -> Result<(), EmitterError> {
-    let event = yaml_event_t {
-        data: YamlEventData::Alias { anchor },
+fn yaml_emitter_dump_alias(emitter: &mut Emitter, anchor: String) -> Result<(), EmitterError> {
+    let event = Event {
+        data: EventData::Alias { anchor },
         ..Default::default()
     };
     yaml_emitter_emit(emitter, event)
 }
 
 fn yaml_emitter_dump_scalar(
-    emitter: &mut yaml_emitter_t,
-    node: yaml_node_t,
+    emitter: &mut Emitter,
+    node: Node,
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
     let plain_implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SCALAR_TAG);
     let quoted_implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SCALAR_TAG); // TODO: Why compare twice?! (even the C code does this)
 
-    if let YamlNodeData::Scalar { value, style } = node.data {
-        let event = yaml_event_t {
-            data: YamlEventData::Scalar {
+    if let NodeData::Scalar { value, style } = node.data {
+        let event = Event {
+            data: EventData::Scalar {
                 anchor,
                 tag: node.tag,
                 value,
@@ -194,16 +188,16 @@ fn yaml_emitter_dump_scalar(
 }
 
 fn yaml_emitter_dump_sequence(
-    emitter: &mut yaml_emitter_t,
-    document: &mut yaml_document_t,
-    node: yaml_node_t,
+    emitter: &mut Emitter,
+    document: &mut Document,
+    node: Node,
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
     let implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SEQUENCE_TAG);
 
-    if let YamlNodeData::Sequence { items, style } = node.data {
-        let event = yaml_event_t {
-            data: YamlEventData::SequenceStart {
+    if let NodeData::Sequence { items, style } = node.data {
+        let event = Event {
+            data: EventData::SequenceStart {
                 anchor,
                 tag: node.tag,
                 implicit,
@@ -216,8 +210,8 @@ fn yaml_emitter_dump_sequence(
         for item in items {
             yaml_emitter_dump_node(emitter, document, item)?;
         }
-        let event = yaml_event_t {
-            data: YamlEventData::SequenceEnd,
+        let event = Event {
+            data: EventData::SequenceEnd,
             ..Default::default()
         };
         yaml_emitter_emit(emitter, event)
@@ -227,16 +221,16 @@ fn yaml_emitter_dump_sequence(
 }
 
 fn yaml_emitter_dump_mapping(
-    emitter: &mut yaml_emitter_t,
-    document: &mut yaml_document_t,
-    node: yaml_node_t,
+    emitter: &mut Emitter,
+    document: &mut Document,
+    node: Node,
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
     let implicit = node.tag.as_deref() == Some(YAML_DEFAULT_MAPPING_TAG);
 
-    if let YamlNodeData::Mapping { pairs, style } = node.data {
-        let event = yaml_event_t {
-            data: YamlEventData::MappingStart {
+    if let NodeData::Mapping { pairs, style } = node.data {
+        let event = Event {
+            data: EventData::MappingStart {
                 anchor,
                 tag: node.tag,
                 implicit,
@@ -250,8 +244,8 @@ fn yaml_emitter_dump_mapping(
             yaml_emitter_dump_node(emitter, document, pair.key)?;
             yaml_emitter_dump_node(emitter, document, pair.value)?;
         }
-        let event = yaml_event_t {
-            data: YamlEventData::MappingEnd,
+        let event = Event {
+            data: EventData::MappingEnd,
             ..Default::default()
         };
         yaml_emitter_emit(emitter, event)

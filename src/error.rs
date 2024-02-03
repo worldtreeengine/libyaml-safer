@@ -1,4 +1,4 @@
-use crate::yaml_mark_t;
+use crate::Mark;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmitterError {
@@ -37,9 +37,9 @@ pub enum ScannerError {
     #[error("{}:{}: {} {} ({}:{})", problem_mark.line, problem_mark.column, problem, context, context_mark.line, context_mark.column)]
     Problem {
         context: &'static str,
-        context_mark: yaml_mark_t,
+        context_mark: Mark,
         problem: &'static str,
-        problem_mark: yaml_mark_t,
+        problem_mark: Mark,
     },
     #[error(transparent)]
     Reader(#[from] ReaderError),
@@ -50,16 +50,13 @@ pub enum ParserError {
     #[error("no more tokens")]
     UnexpectedEof,
     #[error("{}:{}: {}", mark.line, mark.column, problem)]
-    Problem {
-        problem: &'static str,
-        mark: yaml_mark_t,
-    },
+    Problem { problem: &'static str, mark: Mark },
     #[error("{}:{}: {} {} ({}:{})", mark.line, mark.column, problem, context, context_mark.line, context_mark.column)]
     ProblemWithContext {
         context: &'static str,
-        context_mark: yaml_mark_t,
+        context_mark: Mark,
         problem: &'static str,
-        mark: yaml_mark_t,
+        mark: Mark,
     },
     #[error(transparent)]
     Scanner(#[from] ScannerError),
@@ -68,16 +65,13 @@ pub enum ParserError {
 #[derive(Debug, thiserror::Error)]
 pub enum ComposerError {
     #[error("{}:{}: {}", mark.line, mark.column, problem)]
-    Problem {
-        problem: &'static str,
-        mark: yaml_mark_t,
-    },
+    Problem { problem: &'static str, mark: Mark },
     #[error("{}:{}: {} {} ({}:{})", mark.line, mark.column, problem, context, context_mark.line, context_mark.column)]
     ProblemWithContext {
         context: &'static str,
-        context_mark: yaml_mark_t,
+        context_mark: Mark,
         problem: &'static str,
-        mark: yaml_mark_t,
+        mark: Mark,
     },
     #[error(transparent)]
     Parser(#[from] ParserError),

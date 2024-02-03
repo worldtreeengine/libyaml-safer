@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use crate::{api::yaml_parser_new, yaml_emitter_new};
 
-pub use self::yaml_encoding_t::*;
+pub use self::Encoding::*;
 
 /// The tag @c !!null with the only possible value: @c null.
 pub const YAML_NULL_TAG: &str = "tag:yaml.org,2002:null";
@@ -34,7 +34,7 @@ pub const YAML_DEFAULT_MAPPING_TAG: &str = YAML_MAP_TAG;
 /// The version directive data.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
-pub struct yaml_version_directive_t {
+pub struct VersionDirective {
     /// The major version number.
     pub major: i32,
     /// The minor version number.
@@ -44,7 +44,7 @@ pub struct yaml_version_directive_t {
 /// The tag directive data.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct yaml_tag_directive_t {
+pub struct TagDirective {
     /// The tag handle.
     pub handle: String,
     /// The tag prefix.
@@ -54,7 +54,7 @@ pub struct yaml_tag_directive_t {
 /// The stream encoding.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[non_exhaustive]
-pub enum yaml_encoding_t {
+pub enum Encoding {
     /// Let the parser choose the encoding.
     #[default]
     YAML_ANY_ENCODING = 0,
@@ -69,7 +69,7 @@ pub enum yaml_encoding_t {
 /// Line break type.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[non_exhaustive]
-pub enum yaml_break_t {
+pub enum Break {
     /// Let the parser choose the break type.
     #[default]
     YAML_ANY_BREAK = 0,
@@ -84,7 +84,7 @@ pub enum yaml_break_t {
 /// The pointer position.
 #[derive(Copy, Clone, Default, Debug)]
 #[non_exhaustive]
-pub struct yaml_mark_t {
+pub struct Mark {
     /// The position index.
     pub index: u64,
     /// The position line.
@@ -96,7 +96,7 @@ pub struct yaml_mark_t {
 /// Scalar styles.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[non_exhaustive]
-pub enum yaml_scalar_style_t {
+pub enum ScalarStyle {
     /// Let the emitter choose the style.
     #[default]
     YAML_ANY_SCALAR_STYLE = 0,
@@ -115,7 +115,7 @@ pub enum yaml_scalar_style_t {
 /// Sequence styles.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[non_exhaustive]
-pub enum yaml_sequence_style_t {
+pub enum SequenceStyle {
     /// Let the emitter choose the style.
     YAML_ANY_SEQUENCE_STYLE = 0,
     /// The block sequence style.
@@ -127,7 +127,7 @@ pub enum yaml_sequence_style_t {
 /// Mapping styles.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[non_exhaustive]
-pub enum yaml_mapping_style_t {
+pub enum MappingStyle {
     /// Let the emitter choose the style.
     YAML_ANY_MAPPING_STYLE = 0,
     /// The block mapping style.
@@ -136,77 +136,27 @@ pub enum yaml_mapping_style_t {
     YAML_FLOW_MAPPING_STYLE = 2,
 }
 
-/// Token types.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[non_exhaustive]
-pub enum yaml_token_type_t {
-    /// An empty token.
-    YAML_NO_TOKEN = 0,
-    /// A STREAM-START token.
-    YAML_STREAM_START_TOKEN = 1,
-    /// A STREAM-END token.
-    YAML_STREAM_END_TOKEN = 2,
-    /// A VERSION-DIRECTIVE token.
-    YAML_VERSION_DIRECTIVE_TOKEN = 3,
-    /// A TAG-DIRECTIVE token.
-    YAML_TAG_DIRECTIVE_TOKEN = 4,
-    /// A DOCUMENT-START token.
-    YAML_DOCUMENT_START_TOKEN = 5,
-    /// A DOCUMENT-END token.
-    YAML_DOCUMENT_END_TOKEN = 6,
-    /// A BLOCK-SEQUENCE-START token.
-    YAML_BLOCK_SEQUENCE_START_TOKEN = 7,
-    /// A BLOCK-MAPPING-START token.
-    YAML_BLOCK_MAPPING_START_TOKEN = 8,
-    /// A BLOCK-END token.
-    YAML_BLOCK_END_TOKEN = 9,
-    /// A FLOW-SEQUENCE-START token.
-    YAML_FLOW_SEQUENCE_START_TOKEN = 10,
-    /// A FLOW-SEQUENCE-END token.
-    YAML_FLOW_SEQUENCE_END_TOKEN = 11,
-    /// A FLOW-MAPPING-START token.
-    YAML_FLOW_MAPPING_START_TOKEN = 12,
-    /// A FLOW-MAPPING-END token.
-    YAML_FLOW_MAPPING_END_TOKEN = 13,
-    /// A BLOCK-ENTRY token.
-    YAML_BLOCK_ENTRY_TOKEN = 14,
-    /// A FLOW-ENTRY token.
-    YAML_FLOW_ENTRY_TOKEN = 15,
-    /// A KEY token.
-    YAML_KEY_TOKEN = 16,
-    /// A VALUE token.
-    YAML_VALUE_TOKEN = 17,
-    /// An ALIAS token.
-    YAML_ALIAS_TOKEN = 18,
-    /// An ANCHOR token.
-    YAML_ANCHOR_TOKEN = 19,
-    /// A TAG token.
-    YAML_TAG_TOKEN = 20,
-    /// A SCALAR token.
-    YAML_SCALAR_TOKEN = 21,
-}
-
 /// The token structure.
 #[derive(Default)]
 #[non_exhaustive]
-pub struct yaml_token_t {
+pub struct Token {
     /// The token type.
-    pub data: YamlTokenData,
+    pub data: TokenData,
     /// The beginning of the token.
-    pub start_mark: yaml_mark_t,
+    pub start_mark: Mark,
     /// The end of the token.
-    pub end_mark: yaml_mark_t,
+    pub end_mark: Mark,
 }
 
 #[derive(Default)]
-pub enum YamlTokenData {
+pub enum TokenData {
     /// An empty token.
     #[default]
     NoToken,
     /// A STREAM-START token.
     StreamStart {
         /// The stream encoding.
-        encoding: yaml_encoding_t,
+        encoding: Encoding,
     },
     /// A STREAM-END token.
     StreamEnd,
@@ -272,11 +222,11 @@ pub enum YamlTokenData {
         /// The scalar value.
         value: String,
         /// The scalar style.
-        style: yaml_scalar_style_t,
+        style: ScalarStyle,
     },
 }
 
-impl YamlTokenData {
+impl TokenData {
     /// Returns `true` if the yaml token data is [`VersionDirective`].
     ///
     /// [`VersionDirective`]: YamlTokenData::VersionDirective
@@ -385,31 +335,31 @@ impl YamlTokenData {
 /// The event structure.
 #[derive(Default, Debug)]
 #[non_exhaustive]
-pub struct yaml_event_t {
+pub struct Event {
     /// The event data.
-    pub data: YamlEventData,
+    pub data: EventData,
     /// The beginning of the event.
-    pub start_mark: yaml_mark_t,
+    pub start_mark: Mark,
     /// The end of the event.
-    pub end_mark: yaml_mark_t,
+    pub end_mark: Mark,
 }
 
 #[derive(Default, Debug)]
-pub enum YamlEventData {
+pub enum EventData {
     #[default]
     NoEvent,
     /// The stream parameters (for YAML_STREAM_START_EVENT).
     StreamStart {
         /// The document encoding.
-        encoding: yaml_encoding_t,
+        encoding: Encoding,
     },
     StreamEnd,
     /// The document parameters (for YAML_DOCUMENT_START_EVENT).
     DocumentStart {
         /// The version directive.
-        version_directive: Option<yaml_version_directive_t>,
+        version_directive: Option<VersionDirective>,
         /// The tag directives list.
-        tag_directives: Vec<yaml_tag_directive_t>,
+        tag_directives: Vec<TagDirective>,
         /// Is the document indicator implicit?
         implicit: bool,
     },
@@ -435,7 +385,7 @@ pub enum YamlEventData {
         /// Is the tag optional for any non-plain style?
         quoted_implicit: bool,
         /// The scalar style.
-        style: yaml_scalar_style_t,
+        style: ScalarStyle,
     },
     /// The sequence parameters (for YAML_SEQUENCE_START_EVENT).
     SequenceStart {
@@ -446,7 +396,7 @@ pub enum YamlEventData {
         /// Is the tag optional?
         implicit: bool,
         /// The sequence style.
-        style: yaml_sequence_style_t,
+        style: SequenceStyle,
     },
     SequenceEnd,
     /// The mapping parameters (for YAML_MAPPING_START_EVENT).
@@ -458,7 +408,7 @@ pub enum YamlEventData {
         /// Is the tag optional?
         implicit: bool,
         /// The mapping style.
-        style: yaml_mapping_style_t,
+        style: MappingStyle,
     },
     MappingEnd,
 }
@@ -466,20 +416,20 @@ pub enum YamlEventData {
 /// The node structure.
 #[derive(Clone, Default, Debug)]
 #[non_exhaustive]
-pub struct yaml_node_t {
+pub struct Node {
     /// The node type.
-    pub data: YamlNodeData,
+    pub data: NodeData,
     /// The node tag.
     pub tag: Option<String>,
     /// The beginning of the node.
-    pub start_mark: yaml_mark_t,
+    pub start_mark: Mark,
     /// The end of the node.
-    pub end_mark: yaml_mark_t,
+    pub end_mark: Mark,
 }
 
 /// Node types.
 #[derive(Clone, Default, Debug)]
-pub enum YamlNodeData {
+pub enum NodeData {
     /// An empty node.
     #[default]
     NoNode,
@@ -488,30 +438,31 @@ pub enum YamlNodeData {
         /// The scalar value.
         value: String,
         /// The scalar style.
-        style: yaml_scalar_style_t,
+        style: ScalarStyle,
     },
     /// A sequence node.
     Sequence {
         /// The stack of sequence items.
-        items: Vec<yaml_node_item_t>,
+        items: Vec<NodeItem>,
         /// The sequence style.
-        style: yaml_sequence_style_t,
+        style: SequenceStyle,
     },
     /// A mapping node.
     Mapping {
         /// The stack of mapping pairs (key, value).
-        pairs: Vec<yaml_node_pair_t>,
+        pairs: Vec<NodePair>,
         /// The mapping style.
-        style: yaml_mapping_style_t,
+        style: MappingStyle,
     },
 }
 
 /// An element of a sequence node.
-pub type yaml_node_item_t = i32;
+pub type NodeItem = i32;
+
 /// An element of a mapping node.
 #[derive(Copy, Clone, Default, Debug)]
 #[non_exhaustive]
-pub struct yaml_node_pair_t {
+pub struct NodePair {
     /// The key of the element.
     pub key: i32,
     /// The value of the element.
@@ -521,11 +472,11 @@ pub struct yaml_node_pair_t {
 /// The document structure.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub struct yaml_document_t {
+pub struct Document {
     /// The document nodes.
-    pub nodes: Vec<yaml_node_t>,
+    pub nodes: Vec<Node>,
     /// The version directive.
-    pub version_directive: Option<yaml_version_directive_t>,
+    pub version_directive: Option<VersionDirective>,
     /// The list of tag directives.
     ///
     /// ```
@@ -538,21 +489,21 @@ pub struct yaml_document_t {
     /// }
     /// # };
     /// ```
-    pub tag_directives: Vec<yaml_tag_directive_t>,
+    pub tag_directives: Vec<TagDirective>,
     /// Is the document start indicator implicit?
     pub start_implicit: bool,
     /// Is the document end indicator implicit?
     pub end_implicit: bool,
     /// The beginning of the document.
-    pub start_mark: yaml_mark_t,
+    pub start_mark: Mark,
     /// The end of the document.
-    pub end_mark: yaml_mark_t,
+    pub end_mark: Mark,
 }
 
 /// This structure holds information about a potential simple key.
 #[derive(Copy, Clone)]
 #[non_exhaustive]
-pub struct yaml_simple_key_t {
+pub struct SimpleKey {
     /// Is a simple key possible?
     pub possible: bool,
     /// Is a simple key required?
@@ -560,13 +511,13 @@ pub struct yaml_simple_key_t {
     /// The number of the token.
     pub token_number: usize,
     /// The position mark.
-    pub mark: yaml_mark_t,
+    pub mark: Mark,
 }
 
 /// The states of the parser.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[non_exhaustive]
-pub enum yaml_parser_state_t {
+pub enum ParserState {
     /// Expect STREAM-START.
     #[default]
     YAML_PARSE_STREAM_START_STATE = 0,
@@ -620,13 +571,13 @@ pub enum yaml_parser_state_t {
 
 /// This structure holds aliases data.
 #[non_exhaustive]
-pub struct yaml_alias_data_t {
+pub struct AliasData {
     /// The anchor.
     pub anchor: String,
     /// The node id.
     pub index: i32,
     /// The anchor mark.
-    pub mark: yaml_mark_t,
+    pub mark: Mark,
 }
 
 /// The parser structure.
@@ -634,7 +585,7 @@ pub struct yaml_alias_data_t {
 /// All members are internal. Manage the structure using the `yaml_parser_`
 /// family of functions.
 #[non_exhaustive]
-pub struct yaml_parser_t<'r> {
+pub struct Parser<'r> {
     /// Read handler.
     pub(crate) read_handler: Option<&'r mut dyn std::io::BufRead>,
     /// EOF flag
@@ -646,11 +597,11 @@ pub struct yaml_parser_t<'r> {
     /// The number of unread characters in the buffer.
     pub(crate) unread: usize,
     /// The input encoding.
-    pub(crate) encoding: yaml_encoding_t,
+    pub(crate) encoding: Encoding,
     /// The offset of the current position (in bytes).
     pub(crate) offset: usize,
     /// The mark of the current position.
-    pub(crate) mark: yaml_mark_t,
+    pub(crate) mark: Mark,
     /// Have we started to scan the input stream?
     pub(crate) stream_start_produced: bool,
     /// Have we reached the end of the input stream?
@@ -658,7 +609,7 @@ pub struct yaml_parser_t<'r> {
     /// The number of unclosed '[' and '{' indicators.
     pub(crate) flow_level: i32,
     /// The tokens queue.
-    pub(crate) tokens: VecDeque<yaml_token_t>,
+    pub(crate) tokens: VecDeque<Token>,
     /// The number of tokens fetched from the queue.
     pub(crate) tokens_parsed: usize,
     /// Does the tokens queue contain a token ready for dequeueing.
@@ -670,20 +621,20 @@ pub struct yaml_parser_t<'r> {
     /// May a simple key occur at the current position?
     pub(crate) simple_key_allowed: bool,
     /// The stack of simple keys.
-    pub(crate) simple_keys: Vec<yaml_simple_key_t>,
+    pub(crate) simple_keys: Vec<SimpleKey>,
     /// The parser states stack.
-    pub(crate) states: Vec<yaml_parser_state_t>,
+    pub(crate) states: Vec<ParserState>,
     /// The current parser state.
-    pub(crate) state: yaml_parser_state_t,
+    pub(crate) state: ParserState,
     /// The stack of marks.
-    pub(crate) marks: Vec<yaml_mark_t>,
+    pub(crate) marks: Vec<Mark>,
     /// The list of TAG directives.
-    pub(crate) tag_directives: Vec<yaml_tag_directive_t>,
+    pub(crate) tag_directives: Vec<TagDirective>,
     /// The alias data.
-    pub(crate) aliases: Vec<yaml_alias_data_t>,
+    pub(crate) aliases: Vec<AliasData>,
 }
 
-impl<'r> Default for yaml_parser_t<'r> {
+impl<'r> Default for Parser<'r> {
     fn default() -> Self {
         yaml_parser_new()
     }
@@ -692,7 +643,7 @@ impl<'r> Default for yaml_parser_t<'r> {
 /// The emitter states.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[non_exhaustive]
-pub enum yaml_emitter_state_t {
+pub enum EmitterState {
     /// Expect STREAM-START.
     #[default]
     YAML_EMIT_STREAM_START_STATE = 0,
@@ -733,7 +684,7 @@ pub enum yaml_emitter_state_t {
 }
 
 #[derive(Copy, Clone, Default)]
-pub(crate) struct yaml_anchors_t {
+pub(crate) struct Anchors {
     /// The number of references.
     pub references: i32,
     /// The anchor id.
@@ -747,7 +698,7 @@ pub(crate) struct yaml_anchors_t {
 /// All members are internal. Manage the structure using the `yaml_emitter_`
 /// family of functions.
 #[non_exhaustive]
-pub struct yaml_emitter_t<'w> {
+pub struct Emitter<'w> {
     /// Write handler.
     pub(crate) write_handler: Option<&'w mut dyn std::io::Write>,
     /// The working buffer.
@@ -760,7 +711,7 @@ pub struct yaml_emitter_t<'w> {
     /// UTF-16 encoded.
     pub(crate) raw_buffer: Vec<u8>,
     /// The stream encoding.
-    pub(crate) encoding: yaml_encoding_t,
+    pub(crate) encoding: Encoding,
     /// If the output is in the canonical style?
     pub(crate) canonical: bool,
     /// The number of indentation spaces.
@@ -770,17 +721,17 @@ pub struct yaml_emitter_t<'w> {
     /// Allow unescaped non-ASCII characters?
     pub(crate) unicode: bool,
     /// The preferred line break.
-    pub(crate) line_break: yaml_break_t,
+    pub(crate) line_break: Break,
     /// The stack of states.
-    pub(crate) states: Vec<yaml_emitter_state_t>,
+    pub(crate) states: Vec<EmitterState>,
     /// The current emitter state.
-    pub(crate) state: yaml_emitter_state_t,
+    pub(crate) state: EmitterState,
     /// The event queue.
-    pub(crate) events: VecDeque<yaml_event_t>,
+    pub(crate) events: VecDeque<Event>,
     /// The stack of indentation levels.
     pub(crate) indents: Vec<i32>,
     /// The list of tag directives.
-    pub(crate) tag_directives: Vec<yaml_tag_directive_t>,
+    pub(crate) tag_directives: Vec<TagDirective>,
     /// The current indentation level.
     pub(crate) indent: i32,
     /// The current flow level.
@@ -809,12 +760,12 @@ pub struct yaml_emitter_t<'w> {
     pub(crate) closed: bool,
     /// The information associated with the document nodes.
     // Note: Same length as `document.nodes`.
-    pub(crate) anchors: Vec<yaml_anchors_t>,
+    pub(crate) anchors: Vec<Anchors>,
     /// The last assigned anchor id.
     pub(crate) last_anchor_id: i32,
 }
 
-impl<'a> Default for yaml_emitter_t<'a> {
+impl<'a> Default for Emitter<'a> {
     fn default() -> Self {
         yaml_emitter_new()
     }

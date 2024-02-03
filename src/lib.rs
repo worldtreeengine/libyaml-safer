@@ -71,19 +71,16 @@ pub use crate::parser::yaml_parser_parse;
 pub use crate::scanner::yaml_parser_scan;
 pub use crate::writer::yaml_emitter_flush;
 pub use crate::yaml::{
-    yaml_alias_data_t, yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t,
-    yaml_encoding_t, yaml_event_t, yaml_mapping_style_t, yaml_mark_t, yaml_node_item_t,
-    yaml_node_pair_t, yaml_node_t, yaml_parser_state_t, yaml_parser_t, yaml_scalar_style_t,
-    yaml_sequence_style_t, yaml_simple_key_t, yaml_tag_directive_t, yaml_token_t,
-    yaml_token_type_t, yaml_version_directive_t, YamlEventData,
+    AliasData, Break, Document, Emitter, EmitterState, Encoding, Event, EventData, MappingStyle,
+    Mark, Node, NodeItem, NodePair, Parser, ParserState, ScalarStyle, SequenceStyle, SimpleKey,
+    TagDirective, Token, VersionDirective,
 };
 #[doc(hidden)]
 pub use crate::yaml::{
-    yaml_break_t::*, yaml_emitter_state_t::*, yaml_encoding_t::*, yaml_mapping_style_t::*,
-    yaml_parser_state_t::*, yaml_scalar_style_t::*, yaml_sequence_style_t::*, yaml_token_type_t::*,
-    YAML_BOOL_TAG, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
-    YAML_FLOAT_TAG, YAML_INT_TAG, YAML_MAP_TAG, YAML_NULL_TAG, YAML_SEQ_TAG, YAML_STR_TAG,
-    YAML_TIMESTAMP_TAG,
+    Break::*, EmitterState::*, Encoding::*, MappingStyle::*, ParserState::*, ScalarStyle::*,
+    SequenceStyle::*, YAML_BOOL_TAG, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG,
+    YAML_DEFAULT_SEQUENCE_TAG, YAML_FLOAT_TAG, YAML_INT_TAG, YAML_MAP_TAG, YAML_NULL_TAG,
+    YAML_SEQ_TAG, YAML_STR_TAG, YAML_TIMESTAMP_TAG,
 };
 
 #[cfg(test)]

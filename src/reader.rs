@@ -3,8 +3,8 @@ use std::io::BufRead;
 use alloc::collections::VecDeque;
 
 use crate::{
-    yaml_encoding_t, yaml_parser_t, ReaderError, YAML_ANY_ENCODING, YAML_UTF16BE_ENCODING,
-    YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING,
+    Encoding, Parser, ReaderError, YAML_ANY_ENCODING, YAML_UTF16BE_ENCODING, YAML_UTF16LE_ENCODING,
+    YAML_UTF8_ENCODING,
 };
 
 fn yaml_parser_set_reader_error<T>(
@@ -25,7 +25,7 @@ const BOM_UTF16BE: [u8; 2] = [0xfe, 0xff];
 
 fn yaml_parser_determine_encoding(
     reader: &mut dyn BufRead,
-) -> Result<Option<yaml_encoding_t>, ReaderError> {
+) -> Result<Option<Encoding>, ReaderError> {
     let initial_bytes = reader.fill_buf()?;
     if initial_bytes.is_empty() {
         return Ok(None);
@@ -283,7 +283,7 @@ fn push_char(out: &mut VecDeque<char>, ch: char, offset: usize) -> Result<(), Re
 }
 
 pub(crate) fn yaml_parser_update_buffer(
-    parser: &mut yaml_parser_t,
+    parser: &mut Parser,
     length: usize,
 ) -> Result<(), ReaderError> {
     let reader = parser.read_handler.as_deref_mut().expect("no read handler");

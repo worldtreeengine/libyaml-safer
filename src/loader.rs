@@ -1,11 +1,10 @@
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
 
-use crate::yaml::{YamlEventData, YamlNodeData};
+use crate::yaml::{EventData, NodeData};
 use crate::{
-    yaml_alias_data_t, yaml_document_new, yaml_document_t, yaml_event_t, yaml_mark_t,
-    yaml_node_pair_t, yaml_node_t, yaml_parser_parse, yaml_parser_t, ComposerError,
-    YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
+    yaml_document_new, yaml_parser_parse, AliasData, ComposerError, Document, Event, Mark, Node,
+    NodePair, Parser, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
 };
 
 /// Parse the input stream and produce the next YAML document.
@@ -19,14 +18,14 @@ use crate::{
 /// An application must not alternate the calls of yaml_parser_load() with the
 /// calls of yaml_parser_scan() or yaml_parser_parse(). Doing this will break
 /// the parser.
-pub fn yaml_parser_load(parser: &mut yaml_parser_t) -> Result<yaml_document_t, ComposerError> {
+pub fn yaml_parser_load(parser: &mut Parser) -> Result<Document, ComposerError> {
     let mut document = yaml_document_new(None, &[], false, false);
     document.nodes.reserve(16);
 
     if !parser.stream_start_produced {
         match yaml_parser_parse(parser) {
-            Ok(yaml_event_t {
-                data: YamlEventData::StreamStart { .. },
+            Ok(Event {
+                data: EventData::StreamStart { .. },
                 ..
             }) => (),
             Ok(_) => panic!("expected stream start"),
@@ -42,7 +41,7 @@ pub fn yaml_parser_load(parser: &mut yaml_parser_t) -> Result<yaml_document_t, C
     let err: ComposerError;
     match yaml_parser_parse(parser) {
         Ok(event) => {
-            if let YamlEventData::StreamEnd = &event.data {
+            if let EventData::StreamEnd = &event.data {
                 return Ok(document);
             }
             parser.aliases.reserve(16);
@@ -62,7 +61,7 @@ pub fn yaml_parser_load(parser: &mut yaml_parser_t) -> Result<yaml_document_t, C
 
 fn yaml_parser_set_composer_error<T>(
     problem: &'static str,
-    problem_mark: yaml_mark_t,
+    problem_mark: Mark,
 ) -> Result<T, ComposerError> {
     Err(ComposerError::Problem {
         problem,
@@ -72,9 +71,9 @@ fn yaml_parser_set_composer_error<T>(
 
 fn yaml_parser_set_composer_error_context<T>(
     context: &'static str,
-    context_mark: yaml_mark_t,
+    context_mark: Mark,
     problem: &'static str,
-    problem_mark: yaml_mark_t,
+    problem_mark: Mark,
 ) -> Result<T, ComposerError> {
     Err(ComposerError::ProblemWithContext {
         context,
@@ -84,17 +83,17 @@ fn yaml_parser_set_composer_error_context<T>(
     })
 }
 
-fn yaml_parser_delete_aliases(parser: &mut yaml_parser_t) {
+fn yaml_parser_delete_aliases(parser: &mut Parser) {
     parser.aliases.clear();
 }
 
 fn yaml_parser_load_document(
-    parser: &mut yaml_parser_t,
-    event: yaml_event_t,
-    document: &mut yaml_document_t,
+    parser: &mut Parser,
+    event: Event,
+    document: &mut Document,
 ) -> Result<(), ComposerError> {
     let mut ctx = vec![];
-    if let YamlEventData::DocumentStart {
+    if let EventData::DocumentStart {
         version_directive,
         tag_directives,
         implicit,
@@ -117,8 +116,8 @@ fn yaml_parser_load_document(
 }
 
 fn yaml_parser_load_nodes(
-    parser: &mut yaml_parser_t,
-    document: &mut yaml_document_t,
+    parser: &mut Parser,
+    document: &mut Document,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     let end_implicit;
@@ -127,31 +126,31 @@ fn yaml_parser_load_nodes(
     loop {
         let event = yaml_parser_parse(parser)?;
         match event.data {
-            YamlEventData::NoEvent => panic!("empty event"),
-            YamlEventData::StreamStart { .. } => panic!("unexpected stream start event"),
-            YamlEventData::StreamEnd => panic!("unexpected stream end event"),
-            YamlEventData::DocumentStart { .. } => panic!("unexpected document start event"),
-            YamlEventData::DocumentEnd { implicit } => {
+            EventData::NoEvent => panic!("empty event"),
+            EventData::StreamStart { .. } => panic!("unexpected stream start event"),
+            EventData::StreamEnd => panic!("unexpected stream end event"),
+            EventData::DocumentStart { .. } => panic!("unexpected document start event"),
+            EventData::DocumentEnd { implicit } => {
                 end_implicit = implicit;
                 end_mark = event.end_mark;
                 break;
             }
-            YamlEventData::Alias { .. } => {
+            EventData::Alias { .. } => {
                 yaml_parser_load_alias(parser, event, document, ctx)?;
             }
-            YamlEventData::Scalar { .. } => {
+            EventData::Scalar { .. } => {
                 yaml_parser_load_scalar(parser, event, document, ctx)?;
             }
-            YamlEventData::SequenceStart { .. } => {
+            EventData::SequenceStart { .. } => {
                 yaml_parser_load_sequence(parser, event, document, ctx)?;
             }
-            YamlEventData::SequenceEnd => {
+            EventData::SequenceEnd => {
                 yaml_parser_load_sequence_end(parser, event, document, ctx)?;
             }
-            YamlEventData::MappingStart { .. } => {
+            EventData::MappingStart { .. } => {
                 yaml_parser_load_mapping(parser, event, document, ctx)?;
             }
-            YamlEventData::MappingEnd => {
+            EventData::MappingEnd => {
                 yaml_parser_load_mapping_end(parser, event, document, ctx)?;
             }
         }
@@ -162,15 +161,15 @@ fn yaml_parser_load_nodes(
 }
 
 fn yaml_parser_register_anchor(
-    parser: &mut yaml_parser_t,
-    document: &mut yaml_document_t,
+    parser: &mut Parser,
+    document: &mut Document,
     index: i32,
     anchor: Option<String>,
 ) -> Result<(), ComposerError> {
     let Some(anchor) = anchor else {
         return Ok(());
     };
-    let data = yaml_alias_data_t {
+    let data = AliasData {
         anchor,
         index,
         mark: document.nodes[index as usize - 1].start_mark,
@@ -190,7 +189,7 @@ fn yaml_parser_register_anchor(
 }
 
 fn yaml_parser_load_node_add(
-    document: &mut yaml_document_t,
+    document: &mut Document,
     ctx: &mut Vec<i32>,
     index: i32,
 ) -> Result<(), ComposerError> {
@@ -200,14 +199,14 @@ fn yaml_parser_load_node_add(
     let parent_index: i32 = *ctx.last().unwrap();
     let parent = &mut document.nodes[parent_index as usize - 1];
     match parent.data {
-        YamlNodeData::Sequence { ref mut items, .. } => {
+        NodeData::Sequence { ref mut items, .. } => {
             items.push(index);
         }
-        YamlNodeData::Mapping { ref mut pairs, .. } => {
-            let mut pair = yaml_node_pair_t::default();
+        NodeData::Mapping { ref mut pairs, .. } => {
+            let mut pair = NodePair::default();
             let mut do_push = true;
             if !pairs.is_empty() {
-                let p: &mut yaml_node_pair_t = pairs.last_mut().unwrap();
+                let p: &mut NodePair = pairs.last_mut().unwrap();
                 if p.key != 0 && p.value == 0 {
                     p.value = index;
                     do_push = false;
@@ -227,12 +226,12 @@ fn yaml_parser_load_node_add(
 }
 
 fn yaml_parser_load_alias(
-    parser: &mut yaml_parser_t,
-    event: yaml_event_t,
-    document: &mut yaml_document_t,
+    parser: &mut Parser,
+    event: Event,
+    document: &mut Document,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
-    let anchor: &str = if let YamlEventData::Alias { anchor } = &event.data {
+    let anchor: &str = if let EventData::Alias { anchor } = &event.data {
         anchor
     } else {
         unreachable!()
@@ -248,12 +247,12 @@ fn yaml_parser_load_alias(
 }
 
 fn yaml_parser_load_scalar(
-    parser: &mut yaml_parser_t,
-    event: yaml_event_t,
-    document: &mut yaml_document_t,
+    parser: &mut Parser,
+    event: Event,
+    document: &mut Document,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
-    let YamlEventData::Scalar {
+    let EventData::Scalar {
         mut tag,
         value,
         style,
@@ -267,8 +266,8 @@ fn yaml_parser_load_scalar(
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from(YAML_DEFAULT_SCALAR_TAG));
     }
-    let node = yaml_node_t {
-        data: YamlNodeData::Scalar { value, style },
+    let node = Node {
+        data: NodeData::Scalar { value, style },
         tag,
         start_mark: event.start_mark,
         end_mark: event.end_mark,
@@ -280,12 +279,12 @@ fn yaml_parser_load_scalar(
 }
 
 fn yaml_parser_load_sequence(
-    parser: &mut yaml_parser_t,
-    event: yaml_event_t,
-    document: &mut yaml_document_t,
+    parser: &mut Parser,
+    event: Event,
+    document: &mut Document,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
-    let YamlEventData::SequenceStart {
+    let EventData::SequenceStart {
         anchor,
         mut tag,
         style,
@@ -301,8 +300,8 @@ fn yaml_parser_load_sequence(
         tag = Some(String::from(YAML_DEFAULT_SEQUENCE_TAG));
     }
 
-    let node = yaml_node_t {
-        data: YamlNodeData::Sequence {
+    let node = Node {
+        data: NodeData::Sequence {
             items: core::mem::take(&mut items),
             style,
         },
@@ -320,16 +319,16 @@ fn yaml_parser_load_sequence(
 }
 
 fn yaml_parser_load_sequence_end(
-    _parser: &mut yaml_parser_t,
-    event: yaml_event_t,
-    document: &mut yaml_document_t,
+    _parser: &mut Parser,
+    event: Event,
+    document: &mut Document,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     assert!(!ctx.is_empty());
     let index: i32 = *ctx.last().unwrap();
     assert!(matches!(
         document.nodes[index as usize - 1].data,
-        YamlNodeData::Sequence { .. }
+        NodeData::Sequence { .. }
     ));
     document.nodes[index as usize - 1].end_mark = event.end_mark;
     _ = ctx.pop();
@@ -337,12 +336,12 @@ fn yaml_parser_load_sequence_end(
 }
 
 fn yaml_parser_load_mapping(
-    parser: &mut yaml_parser_t,
-    event: yaml_event_t,
-    document: &mut yaml_document_t,
+    parser: &mut Parser,
+    event: Event,
+    document: &mut Document,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
-    let YamlEventData::MappingStart {
+    let EventData::MappingStart {
         anchor,
         mut tag,
         style,
@@ -357,8 +356,8 @@ fn yaml_parser_load_mapping(
     if tag.is_none() || tag.as_deref() == Some("!") {
         tag = Some(String::from(YAML_DEFAULT_MAPPING_TAG));
     }
-    let node = yaml_node_t {
-        data: YamlNodeData::Mapping {
+    let node = Node {
+        data: NodeData::Mapping {
             pairs: core::mem::take(&mut pairs),
             style,
         },
@@ -375,16 +374,16 @@ fn yaml_parser_load_mapping(
 }
 
 fn yaml_parser_load_mapping_end(
-    _parser: &mut yaml_parser_t,
-    event: yaml_event_t,
-    document: &mut yaml_document_t,
+    _parser: &mut Parser,
+    event: Event,
+    document: &mut Document,
     ctx: &mut Vec<i32>,
 ) -> Result<(), ComposerError> {
     assert!(!ctx.is_empty());
     let index: i32 = *ctx.last().unwrap();
     assert!(matches!(
         document.nodes[index as usize - 1].data,
-        YamlNodeData::Mapping { .. }
+        NodeData::Mapping { .. }
     ));
     document.nodes[index as usize - 1].end_mark = event.end_mark;
     _ = ctx.pop();

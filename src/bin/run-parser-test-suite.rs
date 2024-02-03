@@ -12,7 +12,7 @@
 )]
 
 use libyaml_safer::{
-    yaml_parser_new, yaml_parser_parse, yaml_parser_reset, yaml_parser_set_input, YamlEventData,
+    yaml_parser_new, yaml_parser_parse, yaml_parser_reset, yaml_parser_set_input, EventData,
     YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE,
     YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
 };
@@ -45,34 +45,34 @@ pub(crate) fn test_main(
         let mut is_end = false;
 
         match &event.data {
-            YamlEventData::NoEvent => {
+            EventData::NoEvent => {
                 _ = writeln!(stdout, "???");
             }
-            YamlEventData::StreamStart { .. } => {
+            EventData::StreamStart { .. } => {
                 _ = writeln!(stdout, "+STR");
             }
-            YamlEventData::StreamEnd => {
+            EventData::StreamEnd => {
                 is_end = true;
                 _ = writeln!(stdout, "-STR");
             }
-            YamlEventData::DocumentStart { implicit, .. } => {
+            EventData::DocumentStart { implicit, .. } => {
                 _ = write!(stdout, "+DOC");
                 if !*implicit {
                     _ = write!(stdout, " ---");
                 }
                 _ = writeln!(stdout);
             }
-            YamlEventData::DocumentEnd { implicit } => {
+            EventData::DocumentEnd { implicit } => {
                 _ = write!(stdout, "-DOC");
                 if !*implicit {
                     _ = write!(stdout, " ...");
                 }
                 _ = writeln!(stdout);
             }
-            YamlEventData::Alias { anchor } => {
+            EventData::Alias { anchor } => {
                 _ = writeln!(stdout, "=ALI *{anchor}");
             }
-            YamlEventData::Scalar {
+            EventData::Scalar {
                 anchor,
                 tag,
                 value,
@@ -97,7 +97,7 @@ pub(crate) fn test_main(
                 print_escaped(stdout, value);
                 _ = writeln!(stdout);
             }
-            YamlEventData::SequenceStart { anchor, tag, .. } => {
+            EventData::SequenceStart { anchor, tag, .. } => {
                 let _ = write!(stdout, "+SEQ");
                 if let Some(anchor) = anchor {
                     _ = write!(stdout, " &{anchor}");
@@ -107,10 +107,10 @@ pub(crate) fn test_main(
                 }
                 _ = writeln!(stdout);
             }
-            YamlEventData::SequenceEnd => {
+            EventData::SequenceEnd => {
                 _ = writeln!(stdout, "-SEQ");
             }
-            YamlEventData::MappingStart { anchor, tag, .. } => {
+            EventData::MappingStart { anchor, tag, .. } => {
                 let _ = write!(stdout, "+MAP");
                 if let Some(anchor) = anchor {
                     _ = write!(stdout, " &{anchor}");
@@ -120,7 +120,7 @@ pub(crate) fn test_main(
                 }
                 _ = writeln!(stdout);
             }
-            YamlEventData::MappingEnd => {
+            EventData::MappingEnd => {
                 _ = writeln!(stdout, "-MAP");
             }
         }

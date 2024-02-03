@@ -4,25 +4,24 @@ use crate::api::OUTPUT_BUFFER_SIZE;
 use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_breakz, is_printable, is_space,
 };
-use crate::yaml::YamlEventData;
+use crate::yaml::EventData;
 use crate::{
-    yaml_emitter_flush, yaml_emitter_t, yaml_event_t, yaml_scalar_style_t, yaml_tag_directive_t,
-    yaml_version_directive_t, EmitterError, WriterError, YAML_ANY_BREAK, YAML_ANY_ENCODING,
-    YAML_ANY_SCALAR_STYLE, YAML_CRLN_BREAK, YAML_CR_BREAK, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-    YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE, YAML_EMIT_BLOCK_MAPPING_KEY_STATE,
-    YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE, YAML_EMIT_BLOCK_MAPPING_VALUE_STATE,
-    YAML_EMIT_BLOCK_SEQUENCE_FIRST_ITEM_STATE, YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE,
-    YAML_EMIT_DOCUMENT_CONTENT_STATE, YAML_EMIT_DOCUMENT_END_STATE, YAML_EMIT_DOCUMENT_START_STATE,
-    YAML_EMIT_END_STATE, YAML_EMIT_FIRST_DOCUMENT_START_STATE,
-    YAML_EMIT_FLOW_MAPPING_FIRST_KEY_STATE, YAML_EMIT_FLOW_MAPPING_KEY_STATE,
-    YAML_EMIT_FLOW_MAPPING_SIMPLE_VALUE_STATE, YAML_EMIT_FLOW_MAPPING_VALUE_STATE,
-    YAML_EMIT_FLOW_SEQUENCE_FIRST_ITEM_STATE, YAML_EMIT_FLOW_SEQUENCE_ITEM_STATE,
-    YAML_EMIT_STREAM_START_STATE, YAML_FLOW_MAPPING_STYLE, YAML_FLOW_SEQUENCE_STYLE,
-    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_LN_BREAK, YAML_PLAIN_SCALAR_STYLE,
-    YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
+    yaml_emitter_flush, Emitter, EmitterError, Event, ScalarStyle, TagDirective, VersionDirective,
+    WriterError, YAML_ANY_BREAK, YAML_ANY_ENCODING, YAML_ANY_SCALAR_STYLE, YAML_CRLN_BREAK,
+    YAML_CR_BREAK, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE,
+    YAML_EMIT_BLOCK_MAPPING_KEY_STATE, YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE,
+    YAML_EMIT_BLOCK_MAPPING_VALUE_STATE, YAML_EMIT_BLOCK_SEQUENCE_FIRST_ITEM_STATE,
+    YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE, YAML_EMIT_DOCUMENT_CONTENT_STATE,
+    YAML_EMIT_DOCUMENT_END_STATE, YAML_EMIT_DOCUMENT_START_STATE, YAML_EMIT_END_STATE,
+    YAML_EMIT_FIRST_DOCUMENT_START_STATE, YAML_EMIT_FLOW_MAPPING_FIRST_KEY_STATE,
+    YAML_EMIT_FLOW_MAPPING_KEY_STATE, YAML_EMIT_FLOW_MAPPING_SIMPLE_VALUE_STATE,
+    YAML_EMIT_FLOW_MAPPING_VALUE_STATE, YAML_EMIT_FLOW_SEQUENCE_FIRST_ITEM_STATE,
+    YAML_EMIT_FLOW_SEQUENCE_ITEM_STATE, YAML_EMIT_STREAM_START_STATE, YAML_FLOW_MAPPING_STYLE,
+    YAML_FLOW_SEQUENCE_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_LN_BREAK,
+    YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
 };
 
-fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {
+fn FLUSH(emitter: &mut Emitter) -> Result<(), WriterError> {
     if emitter.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
         Ok(())
     } else {
@@ -30,7 +29,7 @@ fn FLUSH(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {
     }
 }
 
-fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), WriterError> {
+fn PUT(emitter: &mut Emitter, value: u8) -> Result<(), WriterError> {
     FLUSH(emitter)?;
     let ch = char::try_from(value).expect("invalid char");
     emitter.buffer.push(ch);
@@ -38,7 +37,7 @@ fn PUT(emitter: &mut yaml_emitter_t, value: u8) -> Result<(), WriterError> {
     Ok(())
 }
 
-fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {
+fn PUT_BREAK(emitter: &mut Emitter) -> Result<(), WriterError> {
     FLUSH(emitter)?;
     if emitter.line_break == YAML_CR_BREAK {
         emitter.buffer.push('\r');
@@ -54,21 +53,21 @@ fn PUT_BREAK(emitter: &mut yaml_emitter_t) -> Result<(), WriterError> {
 
 /// Write UTF-8 charanters from `string` to `emitter` and increment
 /// `emitter.column` the appropriate number of times.
-fn WRITE_STR(emitter: &mut yaml_emitter_t, string: &str) -> Result<(), WriterError> {
+fn WRITE_STR(emitter: &mut Emitter, string: &str) -> Result<(), WriterError> {
     for ch in string.chars() {
         WRITE_CHAR(emitter, ch)?;
     }
     Ok(())
 }
 
-fn WRITE_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), WriterError> {
+fn WRITE_CHAR(emitter: &mut Emitter, ch: char) -> Result<(), WriterError> {
     FLUSH(emitter)?;
     emitter.buffer.push(ch);
     emitter.column += 1;
     Ok(())
 }
 
-fn WRITE_BREAK_CHAR(emitter: &mut yaml_emitter_t, ch: char) -> Result<(), WriterError> {
+fn WRITE_BREAK_CHAR(emitter: &mut Emitter, ch: char) -> Result<(), WriterError> {
     FLUSH(emitter)?;
     if ch == '\n' {
         _ = PUT_BREAK(emitter);
@@ -111,11 +110,11 @@ struct ScalarAnalysis<'a> {
     /// Can the scalar be expressed in the literal or folded styles?
     pub block_allowed: bool,
     /// The output style.
-    pub style: yaml_scalar_style_t,
+    pub style: ScalarStyle,
 }
 
 fn yaml_emitter_set_emitter_error<T>(
-    _emitter: &mut yaml_emitter_t,
+    _emitter: &mut Emitter,
     problem: &'static str,
 ) -> Result<T, EmitterError> {
     Err(EmitterError::Problem(problem))
@@ -127,10 +126,7 @@ fn yaml_emitter_set_emitter_error<T>(
 /// The emitter takes the responsibility for the event object and destroys its
 /// content after it is emitted. The event object is destroyed even if the
 /// function fails.
-pub fn yaml_emitter_emit(
-    emitter: &mut yaml_emitter_t,
-    event: yaml_event_t,
-) -> Result<(), EmitterError> {
+pub fn yaml_emitter_emit(emitter: &mut Emitter, event: Event) -> Result<(), EmitterError> {
     emitter.events.push_back(event);
     while let Some(event) = yaml_emitter_needs_mode_events(emitter) {
         let tag_directives = core::mem::take(&mut emitter.tag_directives);
@@ -147,13 +143,13 @@ pub fn yaml_emitter_emit(
     Ok(())
 }
 
-fn yaml_emitter_needs_mode_events(emitter: &mut yaml_emitter_t) -> Option<yaml_event_t> {
+fn yaml_emitter_needs_mode_events(emitter: &mut Emitter) -> Option<Event> {
     let first = emitter.events.front()?;
 
     let accummulate = match &first.data {
-        YamlEventData::DocumentStart { .. } => 1,
-        YamlEventData::SequenceStart { .. } => 2,
-        YamlEventData::MappingStart { .. } => 3,
+        EventData::DocumentStart { .. } => 1,
+        EventData::SequenceStart { .. } => 2,
+        EventData::MappingStart { .. } => 3,
         _ => return emitter.events.pop_front(),
     };
 
@@ -164,17 +160,17 @@ fn yaml_emitter_needs_mode_events(emitter: &mut yaml_emitter_t) -> Option<yaml_e
     let mut level = 0;
     for event in &emitter.events {
         match event.data {
-            YamlEventData::StreamStart { .. }
-            | YamlEventData::DocumentStart { .. }
-            | YamlEventData::SequenceStart { .. }
-            | YamlEventData::MappingStart { .. } => {
+            EventData::StreamStart { .. }
+            | EventData::DocumentStart { .. }
+            | EventData::SequenceStart { .. }
+            | EventData::MappingStart { .. } => {
                 level += 1;
             }
 
-            YamlEventData::StreamEnd
-            | YamlEventData::DocumentEnd { .. }
-            | YamlEventData::SequenceEnd
-            | YamlEventData::MappingEnd => {
+            EventData::StreamEnd
+            | EventData::DocumentEnd { .. }
+            | EventData::SequenceEnd
+            | EventData::MappingEnd => {
                 level -= 1;
             }
             _ => {}
@@ -189,8 +185,8 @@ fn yaml_emitter_needs_mode_events(emitter: &mut yaml_emitter_t) -> Option<yaml_e
 }
 
 fn yaml_emitter_append_tag_directive(
-    emitter: &mut yaml_emitter_t,
-    value: &yaml_tag_directive_t,
+    emitter: &mut Emitter,
+    value: &TagDirective,
     allow_duplicates: bool,
 ) -> Result<(), EmitterError> {
     for tag_directive in &emitter.tag_directives {
@@ -205,7 +201,7 @@ fn yaml_emitter_append_tag_directive(
     Ok(())
 }
 
-fn yaml_emitter_increase_indent(emitter: &mut yaml_emitter_t, flow: bool, indentless: bool) {
+fn yaml_emitter_increase_indent(emitter: &mut Emitter, flow: bool, indentless: bool) {
     emitter.indents.push(emitter.indent);
     if emitter.indent < 0 {
         emitter.indent = if flow { emitter.best_indent } else { 0 };
@@ -215,8 +211,8 @@ fn yaml_emitter_increase_indent(emitter: &mut yaml_emitter_t, flow: bool, indent
 }
 
 fn yaml_emitter_state_machine(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
     match emitter.state {
@@ -272,11 +268,11 @@ fn yaml_emitter_state_machine(
 }
 
 fn yaml_emitter_emit_stream_start(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
 ) -> Result<(), EmitterError> {
     emitter.open_ended = 0;
-    if let YamlEventData::StreamStart { ref encoding } = event.data {
+    if let EventData::StreamStart { ref encoding } = event.data {
         if emitter.encoding == YAML_ANY_ENCODING {
             emitter.encoding = *encoding;
         }
@@ -310,11 +306,11 @@ fn yaml_emitter_emit_stream_start(
 }
 
 fn yaml_emitter_emit_document_start(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     first: bool,
 ) -> Result<(), EmitterError> {
-    if let YamlEventData::DocumentStart {
+    if let EventData::DocumentStart {
         version_directive,
         tag_directives,
         implicit,
@@ -323,13 +319,13 @@ fn yaml_emitter_emit_document_start(
         let (version_directive, tag_directives, implicit) =
             (*version_directive, tag_directives, *implicit);
 
-        let default_tag_directives: [yaml_tag_directive_t; 2] = [
+        let default_tag_directives: [TagDirective; 2] = [
             // TODO: Avoid these heap allocations.
-            yaml_tag_directive_t {
+            TagDirective {
                 handle: String::from("!"),
                 prefix: String::from("!"),
             },
-            yaml_tag_directive_t {
+            TagDirective {
                 handle: String::from("!!"),
                 prefix: String::from("tag:yaml.org,2002:"),
             },
@@ -385,7 +381,7 @@ fn yaml_emitter_emit_document_start(
         emitter.state = YAML_EMIT_DOCUMENT_CONTENT_STATE;
         emitter.open_ended = 0;
         return Ok(());
-    } else if let YamlEventData::StreamEnd = &event.data {
+    } else if let EventData::StreamEnd = &event.data {
         if emitter.open_ended == 2 {
             yaml_emitter_write_indicator(emitter, "...", true, false, false)?;
             emitter.open_ended = 0;
@@ -400,8 +396,8 @@ fn yaml_emitter_emit_document_start(
 }
 
 fn yaml_emitter_emit_document_content(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
     emitter.states.push(YAML_EMIT_DOCUMENT_END_STATE);
@@ -409,10 +405,10 @@ fn yaml_emitter_emit_document_content(
 }
 
 fn yaml_emitter_emit_document_end(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
 ) -> Result<(), EmitterError> {
-    if let YamlEventData::DocumentEnd { implicit } = &event.data {
+    if let EventData::DocumentEnd { implicit } = &event.data {
         let implicit = *implicit;
         yaml_emitter_write_indent(emitter)?;
         if !implicit {
@@ -432,8 +428,8 @@ fn yaml_emitter_emit_document_end(
 }
 
 fn yaml_emitter_emit_flow_sequence_item(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     first: bool,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
@@ -442,7 +438,7 @@ fn yaml_emitter_emit_flow_sequence_item(
         yaml_emitter_increase_indent(emitter, true, false);
         emitter.flow_level += 1;
     }
-    if let YamlEventData::SequenceEnd = &event.data {
+    if let EventData::SequenceEnd = &event.data {
         emitter.flow_level -= 1;
         emitter.indent = emitter.indents.pop().unwrap();
         if emitter.canonical && !first {
@@ -464,8 +460,8 @@ fn yaml_emitter_emit_flow_sequence_item(
 }
 
 fn yaml_emitter_emit_flow_mapping_key(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     first: bool,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
@@ -474,7 +470,7 @@ fn yaml_emitter_emit_flow_mapping_key(
         yaml_emitter_increase_indent(emitter, true, false);
         emitter.flow_level += 1;
     }
-    if let YamlEventData::MappingEnd = &event.data {
+    if let EventData::MappingEnd = &event.data {
         assert!(
             !emitter.indents.is_empty(),
             "emitter.indents should not be empty"
@@ -508,8 +504,8 @@ fn yaml_emitter_emit_flow_mapping_key(
 }
 
 fn yaml_emitter_emit_flow_mapping_value(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     simple: bool,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
@@ -526,8 +522,8 @@ fn yaml_emitter_emit_flow_mapping_value(
 }
 
 fn yaml_emitter_emit_block_sequence_item(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     first: bool,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
@@ -538,7 +534,7 @@ fn yaml_emitter_emit_block_sequence_item(
             emitter.mapping_context && !emitter.indention,
         );
     }
-    if let YamlEventData::SequenceEnd = &event.data {
+    if let EventData::SequenceEnd = &event.data {
         emitter.indent = emitter.indents.pop().unwrap();
         emitter.state = emitter.states.pop().unwrap();
         return Ok(());
@@ -550,15 +546,15 @@ fn yaml_emitter_emit_block_sequence_item(
 }
 
 fn yaml_emitter_emit_block_mapping_key(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     first: bool,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
     if first {
         yaml_emitter_increase_indent(emitter, false, false);
     }
-    if let YamlEventData::MappingEnd = &event.data {
+    if let EventData::MappingEnd = &event.data {
         emitter.indent = emitter.indents.pop().unwrap();
         emitter.state = emitter.states.pop().unwrap();
         return Ok(());
@@ -577,8 +573,8 @@ fn yaml_emitter_emit_block_mapping_key(
 }
 
 fn yaml_emitter_emit_block_mapping_value(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     simple: bool,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
@@ -593,8 +589,8 @@ fn yaml_emitter_emit_block_mapping_value(
 }
 
 fn yaml_emitter_emit_node(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     root: bool,
     sequence: bool,
     mapping: bool,
@@ -607,14 +603,12 @@ fn yaml_emitter_emit_node(
     emitter.simple_key_context = simple_key;
 
     match event.data {
-        YamlEventData::Alias { .. } => yaml_emitter_emit_alias(emitter, event, &analysis.anchor),
-        YamlEventData::Scalar { .. } => yaml_emitter_emit_scalar(emitter, event, analysis),
-        YamlEventData::SequenceStart { .. } => {
+        EventData::Alias { .. } => yaml_emitter_emit_alias(emitter, event, &analysis.anchor),
+        EventData::Scalar { .. } => yaml_emitter_emit_scalar(emitter, event, analysis),
+        EventData::SequenceStart { .. } => {
             yaml_emitter_emit_sequence_start(emitter, event, analysis)
         }
-        YamlEventData::MappingStart { .. } => {
-            yaml_emitter_emit_mapping_start(emitter, event, analysis)
-        }
+        EventData::MappingStart { .. } => yaml_emitter_emit_mapping_start(emitter, event, analysis),
         _ => yaml_emitter_set_emitter_error(
             emitter,
             "expected SCALAR, SEQUENCE-START, MAPPING-START, or ALIAS",
@@ -623,8 +617,8 @@ fn yaml_emitter_emit_node(
 }
 
 fn yaml_emitter_emit_alias(
-    emitter: &mut yaml_emitter_t,
-    _event: &yaml_event_t,
+    emitter: &mut Emitter,
+    _event: &Event,
     analysis: &Option<AnchorAnalysis>,
 ) -> Result<(), EmitterError> {
     yaml_emitter_process_anchor(emitter, analysis)?;
@@ -636,8 +630,8 @@ fn yaml_emitter_emit_alias(
 }
 
 fn yaml_emitter_emit_scalar(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
     let Analysis {
@@ -660,15 +654,15 @@ fn yaml_emitter_emit_scalar(
 }
 
 fn yaml_emitter_emit_sequence_start(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     analysis: &Analysis,
 ) -> Result<(), EmitterError> {
     let Analysis { anchor, tag, .. } = analysis;
     yaml_emitter_process_anchor(emitter, anchor)?;
     yaml_emitter_process_tag(emitter, tag)?;
 
-    let style = if let YamlEventData::SequenceStart { style, .. } = &event.data {
+    let style = if let EventData::SequenceStart { style, .. } = &event.data {
         *style
     } else {
         unreachable!()
@@ -687,15 +681,15 @@ fn yaml_emitter_emit_sequence_start(
 }
 
 fn yaml_emitter_emit_mapping_start(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     analysis: &Analysis,
 ) -> Result<(), EmitterError> {
     let Analysis { anchor, tag, .. } = analysis;
     yaml_emitter_process_anchor(emitter, anchor)?;
     yaml_emitter_process_tag(emitter, tag)?;
 
-    let style = if let YamlEventData::MappingStart { style, .. } = &event.data {
+    let style = if let EventData::MappingStart { style, .. } = &event.data {
         *style
     } else {
         unreachable!()
@@ -713,33 +707,29 @@ fn yaml_emitter_emit_mapping_start(
     Ok(())
 }
 
-fn yaml_emitter_check_empty_document(_emitter: &yaml_emitter_t) -> bool {
+fn yaml_emitter_check_empty_document(_emitter: &Emitter) -> bool {
     false
 }
 
-fn yaml_emitter_check_empty_sequence(emitter: &yaml_emitter_t, event: &yaml_event_t) -> bool {
+fn yaml_emitter_check_empty_sequence(emitter: &Emitter, event: &Event) -> bool {
     if emitter.events.is_empty() {
         return false;
     }
-    let start = matches!(event.data, YamlEventData::SequenceStart { .. });
-    let end = matches!(emitter.events[0].data, YamlEventData::SequenceEnd);
+    let start = matches!(event.data, EventData::SequenceStart { .. });
+    let end = matches!(emitter.events[0].data, EventData::SequenceEnd);
     start && end
 }
 
-fn yaml_emitter_check_empty_mapping(emitter: &yaml_emitter_t, event: &yaml_event_t) -> bool {
+fn yaml_emitter_check_empty_mapping(emitter: &Emitter, event: &Event) -> bool {
     if emitter.events.is_empty() {
         return false;
     }
-    let start = matches!(event.data, YamlEventData::MappingStart { .. });
-    let end = matches!(emitter.events[0].data, YamlEventData::MappingEnd);
+    let start = matches!(event.data, EventData::MappingStart { .. });
+    let end = matches!(emitter.events[0].data, EventData::MappingEnd);
     start && end
 }
 
-fn yaml_emitter_check_simple_key(
-    emitter: &yaml_emitter_t,
-    event: &yaml_event_t,
-    analysis: &Analysis,
-) -> bool {
+fn yaml_emitter_check_simple_key(emitter: &Emitter, event: &Event, analysis: &Analysis) -> bool {
     let Analysis {
         tag,
         anchor,
@@ -750,10 +740,10 @@ fn yaml_emitter_check_simple_key(
         + tag.as_ref().map_or(0, |t| t.handle.len() + t.suffix.len());
 
     match event.data {
-        YamlEventData::Alias { .. } => {
+        EventData::Alias { .. } => {
             length = analysis.anchor.as_ref().map_or(0, |a| a.anchor.len());
         }
-        YamlEventData::Scalar { .. } => {
+        EventData::Scalar { .. } => {
             let Some(scalar) = scalar else {
                 panic!("no analysis for scalar")
             };
@@ -763,12 +753,12 @@ fn yaml_emitter_check_simple_key(
             }
             length += scalar.value.len();
         }
-        YamlEventData::SequenceStart { .. } => {
+        EventData::SequenceStart { .. } => {
             if !yaml_emitter_check_empty_sequence(emitter, event) {
                 return false;
             }
         }
-        YamlEventData::MappingStart { .. } => {
+        EventData::MappingStart { .. } => {
             if !yaml_emitter_check_empty_mapping(emitter, event) {
                 return false;
             }
@@ -784,19 +774,19 @@ fn yaml_emitter_check_simple_key(
 }
 
 fn yaml_emitter_select_scalar_style(
-    emitter: &mut yaml_emitter_t,
-    event: &yaml_event_t,
+    emitter: &mut Emitter,
+    event: &Event,
     scalar_analysis: &mut ScalarAnalysis,
     tag_analysis: &mut Option<TagAnalysis>,
 ) -> Result<(), EmitterError> {
-    if let YamlEventData::Scalar {
+    if let EventData::Scalar {
         plain_implicit,
         quoted_implicit,
         style,
         ..
     } = &event.data
     {
-        let mut style: yaml_scalar_style_t = *style;
+        let mut style: ScalarStyle = *style;
         let no_tag = tag_analysis.is_none();
         if no_tag && !*plain_implicit && !*quoted_implicit {
             yaml_emitter_set_emitter_error(
@@ -855,7 +845,7 @@ fn yaml_emitter_select_scalar_style(
 }
 
 fn yaml_emitter_process_anchor(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     analysis: &Option<AnchorAnalysis>,
 ) -> Result<(), EmitterError> {
     let Some(analysis) = analysis.as_ref() else {
@@ -872,7 +862,7 @@ fn yaml_emitter_process_anchor(
 }
 
 fn yaml_emitter_process_tag(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     analysis: &Option<TagAnalysis>,
 ) -> Result<(), EmitterError> {
     let Some(analysis) = analysis.as_ref() else {
@@ -896,7 +886,7 @@ fn yaml_emitter_process_tag(
 }
 
 fn yaml_emitter_process_scalar(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     analysis: &ScalarAnalysis,
 ) -> Result<(), EmitterError> {
     match analysis.style {
@@ -920,8 +910,8 @@ fn yaml_emitter_process_scalar(
 }
 
 fn yaml_emitter_analyze_version_directive(
-    emitter: &mut yaml_emitter_t,
-    version_directive: yaml_version_directive_t,
+    emitter: &mut Emitter,
+    version_directive: VersionDirective,
 ) -> Result<(), EmitterError> {
     if version_directive.major != 1 || version_directive.minor != 1 && version_directive.minor != 2
     {
@@ -931,8 +921,8 @@ fn yaml_emitter_analyze_version_directive(
 }
 
 fn yaml_emitter_analyze_tag_directive(
-    emitter: &mut yaml_emitter_t,
-    tag_directive: &yaml_tag_directive_t,
+    emitter: &mut Emitter,
+    tag_directive: &TagDirective,
 ) -> Result<(), EmitterError> {
     if tag_directive.handle.is_empty() {
         return yaml_emitter_set_emitter_error(emitter, "tag handle must not be empty");
@@ -963,7 +953,7 @@ fn yaml_emitter_analyze_tag_directive(
 }
 
 fn yaml_emitter_analyze_anchor<'a>(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     anchor: &'a str,
     alias: bool,
 ) -> Result<AnchorAnalysis<'a>, EmitterError> {
@@ -995,9 +985,9 @@ fn yaml_emitter_analyze_anchor<'a>(
 }
 
 fn yaml_emitter_analyze_tag<'a>(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     tag: &'a str,
-    tag_directives: &'a [yaml_tag_directive_t],
+    tag_directives: &'a [TagDirective],
 ) -> Result<TagAnalysis<'a>, EmitterError> {
     if tag.is_empty() {
         yaml_emitter_set_emitter_error(emitter, "tag value must not be empty")?;
@@ -1019,7 +1009,7 @@ fn yaml_emitter_analyze_tag<'a>(
 }
 
 fn yaml_emitter_analyze_scalar<'a>(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     value: &'a str,
 ) -> Result<ScalarAnalysis<'a>, EmitterError> {
     let mut block_indicators = false;
@@ -1185,17 +1175,17 @@ fn yaml_emitter_analyze_scalar<'a>(
 }
 
 fn yaml_emitter_analyze_event<'a>(
-    emitter: &mut yaml_emitter_t,
-    event: &'a yaml_event_t,
-    tag_directives: &'a [yaml_tag_directive_t],
+    emitter: &mut Emitter,
+    event: &'a Event,
+    tag_directives: &'a [TagDirective],
 ) -> Result<Analysis<'a>, EmitterError> {
     let mut analysis = Analysis::default();
 
     match &event.data {
-        YamlEventData::Alias { anchor } => {
+        EventData::Alias { anchor } => {
             analysis.anchor = Some(yaml_emitter_analyze_anchor(emitter, anchor, true)?);
         }
-        YamlEventData::Scalar {
+        EventData::Scalar {
             anchor,
             tag,
             value,
@@ -1216,7 +1206,7 @@ fn yaml_emitter_analyze_event<'a>(
             }
             analysis.scalar = Some(yaml_emitter_analyze_scalar(emitter, value)?);
         }
-        YamlEventData::SequenceStart {
+        EventData::SequenceStart {
             anchor,
             tag,
             implicit,
@@ -1233,7 +1223,7 @@ fn yaml_emitter_analyze_event<'a>(
                 )?);
             }
         }
-        YamlEventData::MappingStart {
+        EventData::MappingStart {
             anchor,
             tag,
             implicit,
@@ -1256,13 +1246,13 @@ fn yaml_emitter_analyze_event<'a>(
     Ok(analysis)
 }
 
-fn yaml_emitter_write_bom(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
+fn yaml_emitter_write_bom(emitter: &mut Emitter) -> Result<(), EmitterError> {
     FLUSH(emitter)?;
     emitter.buffer.push('\u{feff}');
     Ok(())
 }
 
-fn yaml_emitter_write_indent(emitter: &mut yaml_emitter_t) -> Result<(), EmitterError> {
+fn yaml_emitter_write_indent(emitter: &mut Emitter) -> Result<(), EmitterError> {
     let indent = if emitter.indent >= 0 {
         emitter.indent
     } else {
@@ -1283,7 +1273,7 @@ fn yaml_emitter_write_indent(emitter: &mut yaml_emitter_t) -> Result<(), Emitter
 }
 
 fn yaml_emitter_write_indicator(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     indicator: &str,
     need_whitespace: bool,
     is_whitespace: bool,
@@ -1298,20 +1288,14 @@ fn yaml_emitter_write_indicator(
     Ok(())
 }
 
-fn yaml_emitter_write_anchor(
-    emitter: &mut yaml_emitter_t,
-    value: &str,
-) -> Result<(), EmitterError> {
+fn yaml_emitter_write_anchor(emitter: &mut Emitter, value: &str) -> Result<(), EmitterError> {
     WRITE_STR(emitter, value)?;
     emitter.whitespace = false;
     emitter.indention = false;
     Ok(())
 }
 
-fn yaml_emitter_write_tag_handle(
-    emitter: &mut yaml_emitter_t,
-    value: &str,
-) -> Result<(), EmitterError> {
+fn yaml_emitter_write_tag_handle(emitter: &mut Emitter, value: &str) -> Result<(), EmitterError> {
     if !emitter.whitespace {
         PUT(emitter, b' ')?;
     }
@@ -1322,7 +1306,7 @@ fn yaml_emitter_write_tag_handle(
 }
 
 fn yaml_emitter_write_tag_content(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     value: &str,
     need_whitespace: bool,
 ) -> Result<(), EmitterError> {
@@ -1363,7 +1347,7 @@ fn yaml_emitter_write_tag_content(
 }
 
 fn yaml_emitter_write_plain_scalar(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     value: &str,
     allow_breaks: bool,
 ) -> Result<(), EmitterError> {
@@ -1407,7 +1391,7 @@ fn yaml_emitter_write_plain_scalar(
 }
 
 fn yaml_emitter_write_single_quoted_scalar(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     value: &str,
     allow_breaks: bool,
 ) -> Result<(), EmitterError> {
@@ -1465,7 +1449,7 @@ fn yaml_emitter_write_single_quoted_scalar(
 }
 
 fn yaml_emitter_write_double_quoted_scalar(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     value: &str,
     allow_breaks: bool,
 ) -> Result<(), EmitterError> {
@@ -1583,7 +1567,7 @@ fn yaml_emitter_write_double_quoted_scalar(
 }
 
 fn yaml_emitter_write_block_scalar_hints(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     string: &str,
 ) -> Result<(), EmitterError> {
     let mut chomp_hint: Option<&str> = None;
@@ -1621,7 +1605,7 @@ fn yaml_emitter_write_block_scalar_hints(
 }
 
 fn yaml_emitter_write_literal_scalar(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     value: &str,
 ) -> Result<(), EmitterError> {
     let mut breaks = true;
@@ -1649,7 +1633,7 @@ fn yaml_emitter_write_literal_scalar(
 }
 
 fn yaml_emitter_write_folded_scalar(
-    emitter: &mut yaml_emitter_t,
+    emitter: &mut Emitter,
     value: &str,
 ) -> Result<(), EmitterError> {
     let mut breaks = true;
