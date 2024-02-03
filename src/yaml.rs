@@ -33,7 +33,6 @@ pub const YAML_DEFAULT_MAPPING_TAG: &str = YAML_MAP_TAG;
 
 /// The version directive data.
 #[derive(Clone, Copy, Debug)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_version_directive_t {
     /// The major version number.
@@ -44,7 +43,6 @@ pub struct yaml_version_directive_t {
 
 /// The tag directive data.
 #[derive(Debug, Clone)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_tag_directive_t {
     /// The tag handle.
@@ -55,7 +53,6 @@ pub struct yaml_tag_directive_t {
 
 /// The stream encoding.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_encoding_t {
     /// Let the parser choose the encoding.
@@ -71,7 +68,6 @@ pub enum yaml_encoding_t {
 
 /// Line break type.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_break_t {
     /// Let the parser choose the break type.
@@ -87,7 +83,6 @@ pub enum yaml_break_t {
 
 /// The pointer position.
 #[derive(Copy, Clone, Default, Debug)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_mark_t {
     /// The position index.
@@ -100,7 +95,6 @@ pub struct yaml_mark_t {
 
 /// Scalar styles.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_scalar_style_t {
     /// Let the emitter choose the style.
@@ -120,7 +114,6 @@ pub enum yaml_scalar_style_t {
 
 /// Sequence styles.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_sequence_style_t {
     /// Let the emitter choose the style.
@@ -133,7 +126,6 @@ pub enum yaml_sequence_style_t {
 
 /// Mapping styles.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_mapping_style_t {
     /// Let the emitter choose the style.
@@ -146,7 +138,6 @@ pub enum yaml_mapping_style_t {
 
 /// Token types.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_token_type_t {
     /// An empty token.
@@ -197,7 +188,6 @@ pub enum yaml_token_type_t {
 
 /// The token structure.
 #[derive(Default)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_token_t {
     /// The token type.
@@ -394,7 +384,6 @@ impl YamlTokenData {
 
 /// The event structure.
 #[derive(Default, Debug)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_event_t {
     /// The event data.
@@ -476,7 +465,6 @@ pub enum YamlEventData {
 
 /// The node structure.
 #[derive(Clone, Default, Debug)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_node_t {
     /// The node type.
@@ -522,7 +510,6 @@ pub enum YamlNodeData {
 pub type yaml_node_item_t = i32;
 /// An element of a mapping node.
 #[derive(Copy, Clone, Default, Debug)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_node_pair_t {
     /// The key of the element.
@@ -533,7 +520,6 @@ pub struct yaml_node_pair_t {
 
 /// The document structure.
 #[derive(Clone, Debug)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_document_t {
     /// The document nodes.
@@ -565,7 +551,6 @@ pub struct yaml_document_t {
 
 /// This structure holds information about a potential simple key.
 #[derive(Copy, Clone)]
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_simple_key_t {
     /// Is a simple key possible?
@@ -580,7 +565,6 @@ pub struct yaml_simple_key_t {
 
 /// The states of the parser.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_parser_state_t {
     /// Expect STREAM-START.
@@ -635,7 +619,6 @@ pub enum yaml_parser_state_t {
 }
 
 /// This structure holds aliases data.
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_alias_data_t {
     /// The anchor.
@@ -650,7 +633,6 @@ pub struct yaml_alias_data_t {
 ///
 /// All members are internal. Manage the structure using the `yaml_parser_`
 /// family of functions.
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_parser_t<'r> {
     /// Read handler.
@@ -709,7 +691,6 @@ impl<'r> Default for yaml_parser_t<'r> {
 
 /// The emitter states.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-#[repr(u32)]
 #[non_exhaustive]
 pub enum yaml_emitter_state_t {
     /// Expect STREAM-START.
@@ -752,7 +733,6 @@ pub enum yaml_emitter_state_t {
 }
 
 #[derive(Copy, Clone, Default)]
-#[repr(C)]
 pub(crate) struct yaml_anchors_t {
     /// The number of references.
     pub references: i32,
@@ -766,7 +746,6 @@ pub(crate) struct yaml_anchors_t {
 ///
 /// All members are internal. Manage the structure using the `yaml_emitter_`
 /// family of functions.
-#[repr(C)]
 #[non_exhaustive]
 pub struct yaml_emitter_t<'w> {
     /// Write handler.
