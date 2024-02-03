@@ -20,9 +20,7 @@ use libyaml_safer::{
     yaml_emitter_set_output, yaml_emitter_set_unicode, yaml_mapping_end_event_new,
     yaml_mapping_start_event_new, yaml_scalar_event_new, yaml_sequence_end_event_new,
     yaml_sequence_start_event_new, yaml_stream_end_event_new, yaml_stream_start_event_new,
-    ScalarStyle, YAML_ANY_SCALAR_STYLE, YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE,
-    YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE,
-    YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
+    Encoding, MappingStyle, ScalarStyle, SequenceStyle,
 };
 use std::env;
 use std::error::Error;
@@ -53,7 +51,7 @@ pub(crate) fn test_main(
         let line = line_buffer.strip_suffix('\n').unwrap_or(&line_buffer);
 
         let event = if line.starts_with("+STR") {
-            yaml_stream_start_event_new(YAML_UTF8_ENCODING)
+            yaml_stream_start_event_new(Encoding::Utf8)
         } else if line.starts_with("-STR") {
             yaml_stream_end_event_new()
         } else if line.starts_with("+DOC") {
@@ -67,7 +65,7 @@ pub(crate) fn test_main(
                 get_anchor('&', line),
                 get_tag(line),
                 false,
-                YAML_BLOCK_MAPPING_STYLE,
+                MappingStyle::Block,
             )
         } else if line.starts_with("-MAP") {
             yaml_mapping_end_event_new()
@@ -76,12 +74,12 @@ pub(crate) fn test_main(
                 get_anchor('&', line),
                 get_tag(line),
                 false,
-                YAML_BLOCK_SEQUENCE_STYLE,
+                SequenceStyle::Block,
             )
         } else if line.starts_with("-SEQ") {
             yaml_sequence_end_event_new()
         } else if line.starts_with("=VAL") {
-            let mut style = YAML_ANY_SCALAR_STYLE;
+            let mut style = ScalarStyle::Any;
             let value = get_value(line, &mut value_buffer, &mut style);
             let implicit = get_tag(line).is_none();
             yaml_scalar_event_new(
@@ -132,11 +130,11 @@ fn get_value<'a>(line: &str, buffer: &'a mut String, style: &mut ScalarStyle) ->
         };
 
         *style = match tail.chars().next().expect("string should not be empty") {
-            ':' => YAML_PLAIN_SCALAR_STYLE,
-            '\'' => YAML_SINGLE_QUOTED_SCALAR_STYLE,
-            '"' => YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-            '|' => YAML_LITERAL_SCALAR_STYLE,
-            '>' => YAML_FOLDED_SCALAR_STYLE,
+            ':' => ScalarStyle::Plain,
+            '\'' => ScalarStyle::SingleQuoted,
+            '"' => ScalarStyle::DoubleQuoted,
+            '|' => ScalarStyle::Literal,
+            '>' => ScalarStyle::Folded,
             _ => {
                 // This was an anchor, move to the next space.
                 remainder = tail;

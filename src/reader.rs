@@ -2,10 +2,7 @@ use std::io::BufRead;
 
 use alloc::collections::VecDeque;
 
-use crate::{
-    Encoding, Parser, ReaderError, YAML_ANY_ENCODING, YAML_UTF16BE_ENCODING, YAML_UTF16LE_ENCODING,
-    YAML_UTF8_ENCODING,
-};
+use crate::{Encoding, Parser, ReaderError};
 
 fn yaml_parser_set_reader_error<T>(
     problem: &'static str,
@@ -36,7 +33,7 @@ fn yaml_parser_determine_encoding(
             let mut bom = [0; 3];
             reader.read_exact(&mut bom)?;
             if bom == BOM_UTF8 {
-                Ok(Some(YAML_UTF8_ENCODING))
+                Ok(Some(Encoding::Utf8))
             } else {
                 Err(ReaderError::InvalidBom)
             }
@@ -45,14 +42,14 @@ fn yaml_parser_determine_encoding(
             let mut bom = [0; 2];
             reader.read_exact(&mut bom)?;
             if bom == BOM_UTF16LE {
-                Ok(Some(YAML_UTF16LE_ENCODING))
+                Ok(Some(Encoding::Utf16Le))
             } else if bom == BOM_UTF16BE {
-                Ok(Some(YAML_UTF16BE_ENCODING))
+                Ok(Some(Encoding::Utf16Be))
             } else {
                 Err(ReaderError::InvalidBom)
             }
         }
-        _ => Ok(Some(YAML_UTF8_ENCODING)),
+        _ => Ok(Some(Encoding::Utf8)),
     }
 }
 
@@ -290,7 +287,7 @@ pub(crate) fn yaml_parser_update_buffer(
     if parser.unread >= length {
         return Ok(());
     }
-    if parser.encoding == YAML_ANY_ENCODING {
+    if parser.encoding == Encoding::Any {
         if let Some(encoding) = yaml_parser_determine_encoding(reader)? {
             parser.encoding = encoding;
         } else {
@@ -307,14 +304,12 @@ pub(crate) fn yaml_parser_update_buffer(
         let tokens_before = parser.buffer.len();
 
         let not_eof = match parser.encoding {
-            YAML_ANY_ENCODING => unreachable!(),
-            YAML_UTF8_ENCODING => {
-                read_utf8_buffered(reader, &mut parser.buffer, &mut parser.offset)?
-            }
-            YAML_UTF16LE_ENCODING => {
+            Encoding::Any => unreachable!(),
+            Encoding::Utf8 => read_utf8_buffered(reader, &mut parser.buffer, &mut parser.offset)?,
+            Encoding::Utf16Le => {
                 read_utf16_buffered::<false>(reader, &mut parser.buffer, &mut parser.offset)?
             }
-            YAML_UTF16BE_ENCODING => {
+            Encoding::Utf16Be => {
                 read_utf16_buffered::<true>(reader, &mut parser.buffer, &mut parser.offset)?
             }
         };

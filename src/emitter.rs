@@ -6,19 +6,8 @@ use crate::macros::{
 };
 use crate::yaml::EventData;
 use crate::{
-    yaml_emitter_flush, Emitter, EmitterError, Event, ScalarStyle, TagDirective, VersionDirective,
-    WriterError, YAML_ANY_BREAK, YAML_ANY_ENCODING, YAML_ANY_SCALAR_STYLE, YAML_CRLN_BREAK,
-    YAML_CR_BREAK, YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE,
-    YAML_EMIT_BLOCK_MAPPING_KEY_STATE, YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE,
-    YAML_EMIT_BLOCK_MAPPING_VALUE_STATE, YAML_EMIT_BLOCK_SEQUENCE_FIRST_ITEM_STATE,
-    YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE, YAML_EMIT_DOCUMENT_CONTENT_STATE,
-    YAML_EMIT_DOCUMENT_END_STATE, YAML_EMIT_DOCUMENT_START_STATE, YAML_EMIT_END_STATE,
-    YAML_EMIT_FIRST_DOCUMENT_START_STATE, YAML_EMIT_FLOW_MAPPING_FIRST_KEY_STATE,
-    YAML_EMIT_FLOW_MAPPING_KEY_STATE, YAML_EMIT_FLOW_MAPPING_SIMPLE_VALUE_STATE,
-    YAML_EMIT_FLOW_MAPPING_VALUE_STATE, YAML_EMIT_FLOW_SEQUENCE_FIRST_ITEM_STATE,
-    YAML_EMIT_FLOW_SEQUENCE_ITEM_STATE, YAML_EMIT_STREAM_START_STATE, YAML_FLOW_MAPPING_STYLE,
-    YAML_FLOW_SEQUENCE_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_LN_BREAK,
-    YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE, YAML_UTF8_ENCODING,
+    yaml_emitter_flush, Break, Emitter, EmitterError, EmitterState, Encoding, Event, MappingStyle,
+    ScalarStyle, SequenceStyle, TagDirective, VersionDirective, WriterError,
 };
 
 fn FLUSH(emitter: &mut Emitter) -> Result<(), WriterError> {
@@ -39,11 +28,11 @@ fn PUT(emitter: &mut Emitter, value: u8) -> Result<(), WriterError> {
 
 fn PUT_BREAK(emitter: &mut Emitter) -> Result<(), WriterError> {
     FLUSH(emitter)?;
-    if emitter.line_break == YAML_CR_BREAK {
+    if emitter.line_break == Break::Cr {
         emitter.buffer.push('\r');
-    } else if emitter.line_break == YAML_LN_BREAK {
+    } else if emitter.line_break == Break::Ln {
         emitter.buffer.push('\n');
-    } else if emitter.line_break == YAML_CRLN_BREAK {
+    } else if emitter.line_break == Break::CrLn {
         emitter.buffer.push_str("\r\n");
     };
     emitter.column = 0;
@@ -216,52 +205,50 @@ fn yaml_emitter_state_machine(
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
     match emitter.state {
-        YAML_EMIT_STREAM_START_STATE => yaml_emitter_emit_stream_start(emitter, event),
-        YAML_EMIT_FIRST_DOCUMENT_START_STATE => {
-            yaml_emitter_emit_document_start(emitter, event, true)
-        }
-        YAML_EMIT_DOCUMENT_START_STATE => yaml_emitter_emit_document_start(emitter, event, false),
-        YAML_EMIT_DOCUMENT_CONTENT_STATE => {
+        EmitterState::StreamStart => yaml_emitter_emit_stream_start(emitter, event),
+        EmitterState::FirstDocumentStart => yaml_emitter_emit_document_start(emitter, event, true),
+        EmitterState::DocumentStart => yaml_emitter_emit_document_start(emitter, event, false),
+        EmitterState::DocumentContent => {
             yaml_emitter_emit_document_content(emitter, event, analysis)
         }
-        YAML_EMIT_DOCUMENT_END_STATE => yaml_emitter_emit_document_end(emitter, event),
-        YAML_EMIT_FLOW_SEQUENCE_FIRST_ITEM_STATE => {
+        EmitterState::DocumentEnd => yaml_emitter_emit_document_end(emitter, event),
+        EmitterState::FlowSequenceFirstItem => {
             yaml_emitter_emit_flow_sequence_item(emitter, event, true, analysis)
         }
-        YAML_EMIT_FLOW_SEQUENCE_ITEM_STATE => {
+        EmitterState::FlowSequenceItem => {
             yaml_emitter_emit_flow_sequence_item(emitter, event, false, analysis)
         }
-        YAML_EMIT_FLOW_MAPPING_FIRST_KEY_STATE => {
+        EmitterState::FlowMappingFirstKey => {
             yaml_emitter_emit_flow_mapping_key(emitter, event, true, analysis)
         }
-        YAML_EMIT_FLOW_MAPPING_KEY_STATE => {
+        EmitterState::FlowMappingKey => {
             yaml_emitter_emit_flow_mapping_key(emitter, event, false, analysis)
         }
-        YAML_EMIT_FLOW_MAPPING_SIMPLE_VALUE_STATE => {
+        EmitterState::FlowMappingSimpleValue => {
             yaml_emitter_emit_flow_mapping_value(emitter, event, true, analysis)
         }
-        YAML_EMIT_FLOW_MAPPING_VALUE_STATE => {
+        EmitterState::FlowMappingValue => {
             yaml_emitter_emit_flow_mapping_value(emitter, event, false, analysis)
         }
-        YAML_EMIT_BLOCK_SEQUENCE_FIRST_ITEM_STATE => {
+        EmitterState::BlockSequenceFirstItem => {
             yaml_emitter_emit_block_sequence_item(emitter, event, true, analysis)
         }
-        YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE => {
+        EmitterState::BlockSequenceItem => {
             yaml_emitter_emit_block_sequence_item(emitter, event, false, analysis)
         }
-        YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE => {
+        EmitterState::BlockMappingFirstKey => {
             yaml_emitter_emit_block_mapping_key(emitter, event, true, analysis)
         }
-        YAML_EMIT_BLOCK_MAPPING_KEY_STATE => {
+        EmitterState::BlockMappingKey => {
             yaml_emitter_emit_block_mapping_key(emitter, event, false, analysis)
         }
-        YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE => {
+        EmitterState::BlockMappingSimpleValue => {
             yaml_emitter_emit_block_mapping_value(emitter, event, true, analysis)
         }
-        YAML_EMIT_BLOCK_MAPPING_VALUE_STATE => {
+        EmitterState::BlockMappingValue => {
             yaml_emitter_emit_block_mapping_value(emitter, event, false, analysis)
         }
-        YAML_EMIT_END_STATE => {
+        EmitterState::End => {
             yaml_emitter_set_emitter_error(emitter, "expected nothing after STREAM-END")
         }
     }
@@ -273,11 +260,11 @@ fn yaml_emitter_emit_stream_start(
 ) -> Result<(), EmitterError> {
     emitter.open_ended = 0;
     if let EventData::StreamStart { ref encoding } = event.data {
-        if emitter.encoding == YAML_ANY_ENCODING {
+        if emitter.encoding == Encoding::Any {
             emitter.encoding = *encoding;
         }
-        if emitter.encoding == YAML_ANY_ENCODING {
-            emitter.encoding = YAML_UTF8_ENCODING;
+        if emitter.encoding == Encoding::Any {
+            emitter.encoding = Encoding::Utf8;
         }
         if emitter.best_indent < 2 || emitter.best_indent > 9 {
             emitter.best_indent = 2;
@@ -288,18 +275,18 @@ fn yaml_emitter_emit_stream_start(
         if emitter.best_width < 0 {
             emitter.best_width = i32::MAX;
         }
-        if emitter.line_break == YAML_ANY_BREAK {
-            emitter.line_break = YAML_LN_BREAK;
+        if emitter.line_break == Break::Any {
+            emitter.line_break = Break::Ln;
         }
         emitter.indent = -1;
         emitter.line = 0;
         emitter.column = 0;
         emitter.whitespace = true;
         emitter.indention = true;
-        if emitter.encoding != YAML_UTF8_ENCODING {
+        if emitter.encoding != Encoding::Utf8 {
             yaml_emitter_write_bom(emitter)?;
         }
-        emitter.state = YAML_EMIT_FIRST_DOCUMENT_START_STATE;
+        emitter.state = EmitterState::FirstDocumentStart;
         return Ok(());
     }
     yaml_emitter_set_emitter_error(emitter, "expected STREAM-START")
@@ -378,7 +365,7 @@ fn yaml_emitter_emit_document_start(
                 yaml_emitter_write_indent(emitter)?;
             }
         }
-        emitter.state = YAML_EMIT_DOCUMENT_CONTENT_STATE;
+        emitter.state = EmitterState::DocumentContent;
         emitter.open_ended = 0;
         return Ok(());
     } else if let EventData::StreamEnd = &event.data {
@@ -388,7 +375,7 @@ fn yaml_emitter_emit_document_start(
             yaml_emitter_write_indent(emitter)?;
         }
         yaml_emitter_flush(emitter)?;
-        emitter.state = YAML_EMIT_END_STATE;
+        emitter.state = EmitterState::End;
         return Ok(());
     }
 
@@ -400,7 +387,7 @@ fn yaml_emitter_emit_document_content(
     event: &Event,
     analysis: &mut Analysis,
 ) -> Result<(), EmitterError> {
-    emitter.states.push(YAML_EMIT_DOCUMENT_END_STATE);
+    emitter.states.push(EmitterState::DocumentEnd);
     yaml_emitter_emit_node(emitter, event, true, false, false, false, analysis)
 }
 
@@ -419,7 +406,7 @@ fn yaml_emitter_emit_document_end(
             emitter.open_ended = 1;
         }
         yaml_emitter_flush(emitter)?;
-        emitter.state = YAML_EMIT_DOCUMENT_START_STATE;
+        emitter.state = EmitterState::DocumentStart;
         emitter.tag_directives.clear();
         return Ok(());
     }
@@ -455,7 +442,7 @@ fn yaml_emitter_emit_flow_sequence_item(
     if emitter.canonical || emitter.column > emitter.best_width {
         yaml_emitter_write_indent(emitter)?;
     }
-    emitter.states.push(YAML_EMIT_FLOW_SEQUENCE_ITEM_STATE);
+    emitter.states.push(EmitterState::FlowSequenceItem);
     yaml_emitter_emit_node(emitter, event, false, true, false, false, analysis)
 }
 
@@ -492,13 +479,11 @@ fn yaml_emitter_emit_flow_mapping_key(
         yaml_emitter_write_indent(emitter)?;
     }
     if !emitter.canonical && yaml_emitter_check_simple_key(emitter, event, analysis) {
-        emitter
-            .states
-            .push(YAML_EMIT_FLOW_MAPPING_SIMPLE_VALUE_STATE);
+        emitter.states.push(EmitterState::FlowMappingSimpleValue);
         yaml_emitter_emit_node(emitter, event, false, false, true, true, analysis)
     } else {
         yaml_emitter_write_indicator(emitter, "?", true, false, false)?;
-        emitter.states.push(YAML_EMIT_FLOW_MAPPING_VALUE_STATE);
+        emitter.states.push(EmitterState::FlowMappingValue);
         yaml_emitter_emit_node(emitter, event, false, false, true, false, analysis)
     }
 }
@@ -517,7 +502,7 @@ fn yaml_emitter_emit_flow_mapping_value(
         }
         yaml_emitter_write_indicator(emitter, ":", true, false, false)?;
     }
-    emitter.states.push(YAML_EMIT_FLOW_MAPPING_KEY_STATE);
+    emitter.states.push(EmitterState::FlowMappingKey);
     yaml_emitter_emit_node(emitter, event, false, false, true, false, analysis)
 }
 
@@ -541,7 +526,7 @@ fn yaml_emitter_emit_block_sequence_item(
     }
     yaml_emitter_write_indent(emitter)?;
     yaml_emitter_write_indicator(emitter, "-", true, false, true)?;
-    emitter.states.push(YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE);
+    emitter.states.push(EmitterState::BlockSequenceItem);
     yaml_emitter_emit_node(emitter, event, false, true, false, false, analysis)
 }
 
@@ -561,13 +546,11 @@ fn yaml_emitter_emit_block_mapping_key(
     }
     yaml_emitter_write_indent(emitter)?;
     if yaml_emitter_check_simple_key(emitter, event, analysis) {
-        emitter
-            .states
-            .push(YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE);
+        emitter.states.push(EmitterState::BlockMappingSimpleValue);
         yaml_emitter_emit_node(emitter, event, false, false, true, true, analysis)
     } else {
         yaml_emitter_write_indicator(emitter, "?", true, false, true)?;
-        emitter.states.push(YAML_EMIT_BLOCK_MAPPING_VALUE_STATE);
+        emitter.states.push(EmitterState::BlockMappingValue);
         yaml_emitter_emit_node(emitter, event, false, false, true, false, analysis)
     }
 }
@@ -584,7 +567,7 @@ fn yaml_emitter_emit_block_mapping_value(
         yaml_emitter_write_indent(emitter)?;
         yaml_emitter_write_indicator(emitter, ":", true, false, true)?;
     }
-    emitter.states.push(YAML_EMIT_BLOCK_MAPPING_KEY_STATE);
+    emitter.states.push(EmitterState::BlockMappingKey);
     yaml_emitter_emit_node(emitter, event, false, false, true, false, analysis)
 }
 
@@ -670,12 +653,12 @@ fn yaml_emitter_emit_sequence_start(
 
     if emitter.flow_level != 0
         || emitter.canonical
-        || style == YAML_FLOW_SEQUENCE_STYLE
+        || style == SequenceStyle::Flow
         || yaml_emitter_check_empty_sequence(emitter, event)
     {
-        emitter.state = YAML_EMIT_FLOW_SEQUENCE_FIRST_ITEM_STATE;
+        emitter.state = EmitterState::FlowSequenceFirstItem;
     } else {
-        emitter.state = YAML_EMIT_BLOCK_SEQUENCE_FIRST_ITEM_STATE;
+        emitter.state = EmitterState::BlockSequenceFirstItem;
     };
     Ok(())
 }
@@ -697,12 +680,12 @@ fn yaml_emitter_emit_mapping_start(
 
     if emitter.flow_level != 0
         || emitter.canonical
-        || style == YAML_FLOW_MAPPING_STYLE
+        || style == MappingStyle::Flow
         || yaml_emitter_check_empty_mapping(emitter, event)
     {
-        emitter.state = YAML_EMIT_FLOW_MAPPING_FIRST_KEY_STATE;
+        emitter.state = EmitterState::FlowMappingFirstKey;
     } else {
-        emitter.state = YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE;
+        emitter.state = EmitterState::BlockMappingFirstKey;
     }
     Ok(())
 }
@@ -794,44 +777,44 @@ fn yaml_emitter_select_scalar_style(
                 "neither tag nor implicit flags are specified",
             )?;
         }
-        if style == YAML_ANY_SCALAR_STYLE {
-            style = YAML_PLAIN_SCALAR_STYLE;
+        if style == ScalarStyle::Any {
+            style = ScalarStyle::Plain;
         }
         if emitter.canonical {
-            style = YAML_DOUBLE_QUOTED_SCALAR_STYLE;
+            style = ScalarStyle::DoubleQuoted;
         }
         if emitter.simple_key_context && scalar_analysis.multiline {
-            style = YAML_DOUBLE_QUOTED_SCALAR_STYLE;
+            style = ScalarStyle::DoubleQuoted;
         }
-        if style == YAML_PLAIN_SCALAR_STYLE {
+        if style == ScalarStyle::Plain {
             if emitter.flow_level != 0 && !scalar_analysis.flow_plain_allowed
                 || emitter.flow_level == 0 && !scalar_analysis.block_plain_allowed
             {
-                style = YAML_SINGLE_QUOTED_SCALAR_STYLE;
+                style = ScalarStyle::SingleQuoted;
             }
             if scalar_analysis.value.is_empty()
                 && (emitter.flow_level != 0 || emitter.simple_key_context)
             {
-                style = YAML_SINGLE_QUOTED_SCALAR_STYLE;
+                style = ScalarStyle::SingleQuoted;
             }
             if no_tag && !*plain_implicit {
-                style = YAML_SINGLE_QUOTED_SCALAR_STYLE;
+                style = ScalarStyle::SingleQuoted;
             }
         }
-        if style == YAML_SINGLE_QUOTED_SCALAR_STYLE {
+        if style == ScalarStyle::SingleQuoted {
             if !scalar_analysis.single_quoted_allowed {
-                style = YAML_DOUBLE_QUOTED_SCALAR_STYLE;
+                style = ScalarStyle::DoubleQuoted;
             }
         }
-        if style == YAML_LITERAL_SCALAR_STYLE || style == YAML_FOLDED_SCALAR_STYLE {
+        if style == ScalarStyle::Literal || style == ScalarStyle::Folded {
             if !scalar_analysis.block_allowed
                 || emitter.flow_level != 0
                 || emitter.simple_key_context
             {
-                style = YAML_DOUBLE_QUOTED_SCALAR_STYLE;
+                style = ScalarStyle::DoubleQuoted;
             }
         }
-        if no_tag && !*quoted_implicit && style != YAML_PLAIN_SCALAR_STYLE {
+        if no_tag && !*quoted_implicit && style != ScalarStyle::Plain {
             *tag_analysis = Some(TagAnalysis {
                 handle: "!",
                 suffix: "",
@@ -890,22 +873,22 @@ fn yaml_emitter_process_scalar(
     analysis: &ScalarAnalysis,
 ) -> Result<(), EmitterError> {
     match analysis.style {
-        YAML_PLAIN_SCALAR_STYLE => {
+        ScalarStyle::Plain => {
             yaml_emitter_write_plain_scalar(emitter, analysis.value, !emitter.simple_key_context)
         }
-        YAML_SINGLE_QUOTED_SCALAR_STYLE => yaml_emitter_write_single_quoted_scalar(
+        ScalarStyle::SingleQuoted => yaml_emitter_write_single_quoted_scalar(
             emitter,
             analysis.value,
             !emitter.simple_key_context,
         ),
-        YAML_DOUBLE_QUOTED_SCALAR_STYLE => yaml_emitter_write_double_quoted_scalar(
+        ScalarStyle::DoubleQuoted => yaml_emitter_write_double_quoted_scalar(
             emitter,
             analysis.value,
             !emitter.simple_key_context,
         ),
-        YAML_LITERAL_SCALAR_STYLE => yaml_emitter_write_literal_scalar(emitter, analysis.value),
-        YAML_FOLDED_SCALAR_STYLE => yaml_emitter_write_folded_scalar(emitter, analysis.value),
-        YAML_ANY_SCALAR_STYLE => unreachable!("No scalar style chosen"),
+        ScalarStyle::Literal => yaml_emitter_write_literal_scalar(emitter, analysis.value),
+        ScalarStyle::Folded => yaml_emitter_write_folded_scalar(emitter, analysis.value),
+        ScalarStyle::Any => unreachable!("No scalar style chosen"),
     }
 }
 
@@ -1034,7 +1017,7 @@ fn yaml_emitter_analyze_scalar<'a>(
             block_plain_allowed: true,
             single_quoted_allowed: true,
             block_allowed: false,
-            style: YAML_ANY_SCALAR_STYLE,
+            style: ScalarStyle::Any,
         });
     }
 
@@ -1135,7 +1118,7 @@ fn yaml_emitter_analyze_scalar<'a>(
         block_plain_allowed: true,
         single_quoted_allowed: true,
         block_allowed: true,
-        style: YAML_ANY_SCALAR_STYLE,
+        style: ScalarStyle::Any,
     };
 
     analysis.multiline = line_breaks;

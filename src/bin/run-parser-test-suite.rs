@@ -13,8 +13,7 @@
 
 use libyaml_safer::{
     yaml_parser_new, yaml_parser_parse, yaml_parser_reset, yaml_parser_set_input, EventData,
-    YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE,
-    YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
+    ScalarStyle,
 };
 use std::env;
 use std::error::Error;
@@ -87,11 +86,11 @@ pub(crate) fn test_main(
                     _ = write!(stdout, " <{tag}>");
                 }
                 _ = stdout.write_all(match *style {
-                    YAML_PLAIN_SCALAR_STYLE => b" :",
-                    YAML_SINGLE_QUOTED_SCALAR_STYLE => b" '",
-                    YAML_DOUBLE_QUOTED_SCALAR_STYLE => b" \"",
-                    YAML_LITERAL_SCALAR_STYLE => b" |",
-                    YAML_FOLDED_SCALAR_STYLE => b" >",
+                    ScalarStyle::Plain => b" :",
+                    ScalarStyle::SingleQuoted => b" '",
+                    ScalarStyle::DoubleQuoted => b" \"",
+                    ScalarStyle::Literal => b" |",
+                    ScalarStyle::Folded => b" >",
                     _ => process::abort(),
                 });
                 print_escaped(stdout, value);

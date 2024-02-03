@@ -77,10 +77,9 @@ pub use crate::yaml::{
 };
 #[doc(hidden)]
 pub use crate::yaml::{
-    Break::*, EmitterState::*, Encoding::*, MappingStyle::*, ParserState::*, ScalarStyle::*,
-    SequenceStyle::*, YAML_BOOL_TAG, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG,
-    YAML_DEFAULT_SEQUENCE_TAG, YAML_FLOAT_TAG, YAML_INT_TAG, YAML_MAP_TAG, YAML_NULL_TAG,
-    YAML_SEQ_TAG, YAML_STR_TAG, YAML_TIMESTAMP_TAG,
+    YAML_BOOL_TAG, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
+    YAML_FLOAT_TAG, YAML_INT_TAG, YAML_MAP_TAG, YAML_NULL_TAG, YAML_SEQ_TAG, YAML_STR_TAG,
+    YAML_TIMESTAMP_TAG,
 };
 
 #[cfg(test)]
@@ -200,7 +199,7 @@ foo: bar
         let mut output = Vec::new();
         yaml_emitter_set_output_string(&mut emitter, &mut output);
 
-        let event = yaml_stream_start_event_new(YAML_UTF8_ENCODING);
+        let event = yaml_stream_start_event_new(Encoding::Utf8);
         yaml_emitter_emit(&mut emitter, event).unwrap();
         let event = yaml_document_start_event_new(None, &[], true);
         yaml_emitter_emit(&mut emitter, event).unwrap();
@@ -210,7 +209,7 @@ foo: bar
             "1st non-empty\n2nd non-empty 3rd non-empty",
             true,
             true,
-            YAML_PLAIN_SCALAR_STYLE,
+            ScalarStyle::Plain,
         );
         yaml_emitter_emit(&mut emitter, event).unwrap();
         let event = yaml_document_end_event_new(true);

@@ -57,13 +57,13 @@ pub struct TagDirective {
 pub enum Encoding {
     /// Let the parser choose the encoding.
     #[default]
-    YAML_ANY_ENCODING = 0,
+    Any = 0,
     /// The default UTF-8 encoding.
-    YAML_UTF8_ENCODING = 1,
+    Utf8 = 1,
     /// The UTF-16-LE encoding with BOM.
-    YAML_UTF16LE_ENCODING = 2,
+    Utf16Le = 2,
     /// The UTF-16-BE encoding with BOM.
-    YAML_UTF16BE_ENCODING = 3,
+    Utf16Be = 3,
 }
 
 /// Line break type.
@@ -72,13 +72,13 @@ pub enum Encoding {
 pub enum Break {
     /// Let the parser choose the break type.
     #[default]
-    YAML_ANY_BREAK = 0,
+    Any = 0,
     /// Use CR for line breaks (Mac style).
-    YAML_CR_BREAK = 1,
+    Cr = 1,
     /// Use LN for line breaks (Unix style).
-    YAML_LN_BREAK = 2,
+    Ln = 2,
     /// Use CR LN for line breaks (DOS style).
-    YAML_CRLN_BREAK = 3,
+    CrLn = 3,
 }
 
 /// The pointer position.
@@ -99,17 +99,17 @@ pub struct Mark {
 pub enum ScalarStyle {
     /// Let the emitter choose the style.
     #[default]
-    YAML_ANY_SCALAR_STYLE = 0,
+    Any = 0,
     /// The plain scalar style.
-    YAML_PLAIN_SCALAR_STYLE = 1,
+    Plain = 1,
     /// The single-quoted scalar style.
-    YAML_SINGLE_QUOTED_SCALAR_STYLE = 2,
+    SingleQuoted = 2,
     /// The double-quoted scalar style.
-    YAML_DOUBLE_QUOTED_SCALAR_STYLE = 3,
+    DoubleQuoted = 3,
     /// The literal scalar style.
-    YAML_LITERAL_SCALAR_STYLE = 4,
+    Literal = 4,
     /// The folded scalar style.
-    YAML_FOLDED_SCALAR_STYLE = 5,
+    Folded = 5,
 }
 
 /// Sequence styles.
@@ -117,11 +117,11 @@ pub enum ScalarStyle {
 #[non_exhaustive]
 pub enum SequenceStyle {
     /// Let the emitter choose the style.
-    YAML_ANY_SEQUENCE_STYLE = 0,
+    Any = 0,
     /// The block sequence style.
-    YAML_BLOCK_SEQUENCE_STYLE = 1,
+    Block = 1,
     /// The flow sequence style.
-    YAML_FLOW_SEQUENCE_STYLE = 2,
+    Flow = 2,
 }
 
 /// Mapping styles.
@@ -129,11 +129,11 @@ pub enum SequenceStyle {
 #[non_exhaustive]
 pub enum MappingStyle {
     /// Let the emitter choose the style.
-    YAML_ANY_MAPPING_STYLE = 0,
+    Any = 0,
     /// The block mapping style.
-    YAML_BLOCK_MAPPING_STYLE = 1,
+    Block = 1,
     /// The flow mapping style.
-    YAML_FLOW_MAPPING_STYLE = 2,
+    Flow = 2,
 }
 
 /// The token structure.
@@ -520,53 +520,53 @@ pub struct SimpleKey {
 pub enum ParserState {
     /// Expect STREAM-START.
     #[default]
-    YAML_PARSE_STREAM_START_STATE = 0,
+    StreamStart = 0,
     /// Expect the beginning of an implicit document.
-    YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE = 1,
+    ImplicitDocumentStart = 1,
     /// Expect DOCUMENT-START.
-    YAML_PARSE_DOCUMENT_START_STATE = 2,
+    DocumentStart = 2,
     /// Expect the content of a document.
-    YAML_PARSE_DOCUMENT_CONTENT_STATE = 3,
+    DocumentContent = 3,
     /// Expect DOCUMENT-END.
-    YAML_PARSE_DOCUMENT_END_STATE = 4,
+    DocumentEnd = 4,
     /// Expect a block node.
-    YAML_PARSE_BLOCK_NODE_STATE = 5,
+    BlockNode = 5,
     /// Expect a block node or indentless sequence.
-    YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE = 6,
+    BlockNodeOrIndentlessSequence = 6,
     /// Expect a flow node.
-    YAML_PARSE_FLOW_NODE_STATE = 7,
+    FlowNode = 7,
     /// Expect the first entry of a block sequence.
-    YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE = 8,
+    BlockSequenceFirstEntry = 8,
     /// Expect an entry of a block sequence.
-    YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE = 9,
+    BlockSequenceEntry = 9,
     /// Expect an entry of an indentless sequence.
-    YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE = 10,
+    IndentlessSequenceEntry = 10,
     /// Expect the first key of a block mapping.
-    YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE = 11,
+    BlockMappingFirstKey = 11,
     /// Expect a block mapping key.
-    YAML_PARSE_BLOCK_MAPPING_KEY_STATE = 12,
+    BlockMappingKey = 12,
     /// Expect a block mapping value.
-    YAML_PARSE_BLOCK_MAPPING_VALUE_STATE = 13,
+    BlockMappingValue = 13,
     /// Expect the first entry of a flow sequence.
-    YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE = 14,
+    FlowSequenceFirstEntry = 14,
     /// Expect an entry of a flow sequence.
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE = 15,
+    FlowSequenceEntry = 15,
     /// Expect a key of an ordered mapping.
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE = 16,
+    FlowSequenceEntryMappingKey = 16,
     /// Expect a value of an ordered mapping.
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE = 17,
+    FlowSequenceEntryMappingValue = 17,
     /// Expect the and of an ordered mapping entry.
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE = 18,
+    FlowSequenceEntryMappingEnd = 18,
     /// Expect the first key of a flow mapping.
-    YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE = 19,
+    FlowMappingFirstKey = 19,
     /// Expect a key of a flow mapping.
-    YAML_PARSE_FLOW_MAPPING_KEY_STATE = 20,
+    FlowMappingKey = 20,
     /// Expect a value of a flow mapping.
-    YAML_PARSE_FLOW_MAPPING_VALUE_STATE = 21,
+    FlowMappingValue = 21,
     /// Expect an empty value of a flow mapping.
-    YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE = 22,
+    FlowMappingEmptyValue = 22,
     /// Expect nothing.
-    YAML_PARSE_END_STATE = 23,
+    End = 23,
 }
 
 /// This structure holds aliases data.
@@ -646,41 +646,41 @@ impl<'r> Default for Parser<'r> {
 pub enum EmitterState {
     /// Expect STREAM-START.
     #[default]
-    YAML_EMIT_STREAM_START_STATE = 0,
+    StreamStart = 0,
     /// Expect the first DOCUMENT-START or STREAM-END.
-    YAML_EMIT_FIRST_DOCUMENT_START_STATE = 1,
+    FirstDocumentStart = 1,
     /// Expect DOCUMENT-START or STREAM-END.
-    YAML_EMIT_DOCUMENT_START_STATE = 2,
+    DocumentStart = 2,
     /// Expect the content of a document.
-    YAML_EMIT_DOCUMENT_CONTENT_STATE = 3,
+    DocumentContent = 3,
     /// Expect DOCUMENT-END.
-    YAML_EMIT_DOCUMENT_END_STATE = 4,
+    DocumentEnd = 4,
     /// Expect the first item of a flow sequence.
-    YAML_EMIT_FLOW_SEQUENCE_FIRST_ITEM_STATE = 5,
+    FlowSequenceFirstItem = 5,
     /// Expect an item of a flow sequence.
-    YAML_EMIT_FLOW_SEQUENCE_ITEM_STATE = 6,
+    FlowSequenceItem = 6,
     /// Expect the first key of a flow mapping.
-    YAML_EMIT_FLOW_MAPPING_FIRST_KEY_STATE = 7,
+    FlowMappingFirstKey = 7,
     /// Expect a key of a flow mapping.
-    YAML_EMIT_FLOW_MAPPING_KEY_STATE = 8,
+    FlowMappingKey = 8,
     /// Expect a value for a simple key of a flow mapping.
-    YAML_EMIT_FLOW_MAPPING_SIMPLE_VALUE_STATE = 9,
+    FlowMappingSimpleValue = 9,
     /// Expect a value of a flow mapping.
-    YAML_EMIT_FLOW_MAPPING_VALUE_STATE = 10,
+    FlowMappingValue = 10,
     /// Expect the first item of a block sequence.
-    YAML_EMIT_BLOCK_SEQUENCE_FIRST_ITEM_STATE = 11,
+    BlockSequenceFirstItem = 11,
     /// Expect an item of a block sequence.
-    YAML_EMIT_BLOCK_SEQUENCE_ITEM_STATE = 12,
+    BlockSequenceItem = 12,
     /// Expect the first key of a block mapping.
-    YAML_EMIT_BLOCK_MAPPING_FIRST_KEY_STATE = 13,
+    BlockMappingFirstKey = 13,
     /// Expect the key of a block mapping.
-    YAML_EMIT_BLOCK_MAPPING_KEY_STATE = 14,
+    BlockMappingKey = 14,
     /// Expect a value for a simple key of a block mapping.
-    YAML_EMIT_BLOCK_MAPPING_SIMPLE_VALUE_STATE = 15,
+    BlockMappingSimpleValue = 15,
     /// Expect a value of a block mapping.
-    YAML_EMIT_BLOCK_MAPPING_VALUE_STATE = 16,
+    BlockMappingValue = 16,
     /// Expect nothing.
-    YAML_EMIT_END_STATE = 17,
+    End = 17,
 }
 
 #[derive(Copy, Clone, Default)]

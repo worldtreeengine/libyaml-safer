@@ -3,11 +3,7 @@ use alloc::string::String;
 use crate::macros::{is_blankz, is_break, vecdeque_starts_with};
 use crate::reader::yaml_parser_update_buffer;
 use crate::yaml::TokenData;
-use crate::{
-    Mark, Parser, ReaderError, ScannerError, SimpleKey, Token, YAML_DOUBLE_QUOTED_SCALAR_STYLE,
-    YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE, YAML_PLAIN_SCALAR_STYLE,
-    YAML_SINGLE_QUOTED_SCALAR_STYLE,
-};
+use crate::{Mark, Parser, ReaderError, ScalarStyle, ScannerError, SimpleKey, Token};
 
 fn CACHE(parser: &mut Parser, length: usize) -> Result<(), ReaderError> {
     if parser.unread >= length {
@@ -1372,9 +1368,9 @@ fn yaml_parser_scan_block_scalar(
         data: TokenData::Scalar {
             value: string,
             style: if literal {
-                YAML_LITERAL_SCALAR_STYLE
+                ScalarStyle::Literal
             } else {
-                YAML_FOLDED_SCALAR_STYLE
+                ScalarStyle::Folded
             },
         },
         start_mark,
@@ -1664,9 +1660,9 @@ fn yaml_parser_scan_flow_scalar(
         data: TokenData::Scalar {
             value: string,
             style: if single {
-                YAML_SINGLE_QUOTED_SCALAR_STYLE
+                ScalarStyle::SingleQuoted
             } else {
-                YAML_DOUBLE_QUOTED_SCALAR_STYLE
+                ScalarStyle::DoubleQuoted
             },
         },
         start_mark,
@@ -1799,7 +1795,7 @@ fn yaml_parser_scan_plain_scalar(
     *token = Token {
         data: TokenData::Scalar {
             value: string,
-            style: YAML_PLAIN_SCALAR_STYLE,
+            style: ScalarStyle::Plain,
         },
         start_mark,
         end_mark,

@@ -1,10 +1,9 @@
-use crate::Encoding::YAML_UTF16BE_ENCODING;
-use crate::{Emitter, WriterError, YAML_ANY_ENCODING, YAML_UTF16LE_ENCODING, YAML_UTF8_ENCODING};
+use crate::{Emitter, Encoding, WriterError};
 
 /// Flush the accumulated characters to the output.
 pub fn yaml_emitter_flush(emitter: &mut Emitter) -> Result<(), WriterError> {
     assert!((emitter.write_handler).is_some());
-    assert_ne!(emitter.encoding, YAML_ANY_ENCODING);
+    assert_ne!(emitter.encoding, Encoding::Any);
 
     if emitter.buffer.is_empty() {
         return Ok(());
@@ -13,7 +12,7 @@ pub fn yaml_emitter_flush(emitter: &mut Emitter) -> Result<(), WriterError> {
     // TODO: Support partial writes. These calls fail unless the writer is able
     // to write absolutely everything in the buffer.
 
-    if emitter.encoding == YAML_UTF8_ENCODING {
+    if emitter.encoding == Encoding::Utf8 {
         let to_emit = emitter.buffer.as_bytes();
         emitter
             .write_handler
@@ -25,9 +24,11 @@ pub fn yaml_emitter_flush(emitter: &mut Emitter) -> Result<(), WriterError> {
     }
 
     let big_endian = match emitter.encoding {
-        YAML_ANY_ENCODING | YAML_UTF8_ENCODING => unreachable!("unhandled encoding"),
-        YAML_UTF16LE_ENCODING => false,
-        YAML_UTF16BE_ENCODING => true,
+        Encoding::Any | Encoding::Utf8 => {
+            unreachable!("unhandled encoding")
+        }
+        Encoding::Utf16Le => false,
+        Encoding::Utf16Be => true,
     };
 
     for ch in emitter.buffer.encode_utf16() {

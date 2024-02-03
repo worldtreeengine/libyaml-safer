@@ -4,22 +4,8 @@ use alloc::{vec, vec::Vec};
 use crate::scanner::yaml_parser_fetch_more_tokens;
 use crate::yaml::{EventData, TokenData};
 use crate::{
-    Event, Mark, Parser, ParserError, TagDirective, Token, VersionDirective,
-    YAML_BLOCK_MAPPING_STYLE, YAML_BLOCK_SEQUENCE_STYLE, YAML_FLOW_MAPPING_STYLE,
-    YAML_FLOW_SEQUENCE_STYLE, YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE,
-    YAML_PARSE_BLOCK_MAPPING_KEY_STATE, YAML_PARSE_BLOCK_MAPPING_VALUE_STATE,
-    YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE, YAML_PARSE_BLOCK_NODE_STATE,
-    YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE, YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE,
-    YAML_PARSE_DOCUMENT_CONTENT_STATE, YAML_PARSE_DOCUMENT_END_STATE,
-    YAML_PARSE_DOCUMENT_START_STATE, YAML_PARSE_END_STATE,
-    YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE, YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE,
-    YAML_PARSE_FLOW_MAPPING_KEY_STATE, YAML_PARSE_FLOW_MAPPING_VALUE_STATE,
-    YAML_PARSE_FLOW_NODE_STATE, YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE,
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE,
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE, YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE,
-    YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE, YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE,
-    YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE, YAML_PARSE_STREAM_START_STATE,
-    YAML_PLAIN_SCALAR_STYLE,
+    Event, MappingStyle, Mark, Parser, ParserError, ParserState, ScalarStyle, SequenceStyle,
+    TagDirective, Token, VersionDirective,
 };
 
 fn PEEK_TOKEN<'a>(parser: &'a mut Parser) -> Result<&'a Token, ParserError> {
@@ -79,7 +65,7 @@ fn SKIP_TOKEN(parser: &mut Parser) {
 /// calls of yaml_parser_scan() or yaml_parser_load(). Doing this will break the
 /// parser.
 pub fn yaml_parser_parse(parser: &mut Parser) -> Result<Event, ParserError> {
-    if parser.stream_end_produced || parser.state == YAML_PARSE_END_STATE {
+    if parser.stream_end_produced || parser.state == ParserState::End {
         return Ok(Event {
             data: EventData::StreamEnd,
             ..Default::default()
@@ -114,52 +100,38 @@ fn yaml_parser_set_parser_error_context<T>(
 
 fn yaml_parser_state_machine(parser: &mut Parser) -> Result<Event, ParserError> {
     match parser.state {
-        YAML_PARSE_STREAM_START_STATE => yaml_parser_parse_stream_start(parser),
-        YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE => yaml_parser_parse_document_start(parser, true),
-        YAML_PARSE_DOCUMENT_START_STATE => yaml_parser_parse_document_start(parser, false),
-        YAML_PARSE_DOCUMENT_CONTENT_STATE => yaml_parser_parse_document_content(parser),
-        YAML_PARSE_DOCUMENT_END_STATE => yaml_parser_parse_document_end(parser),
-        YAML_PARSE_BLOCK_NODE_STATE => yaml_parser_parse_node(parser, true, false),
-        YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE => {
-            yaml_parser_parse_node(parser, true, true)
-        }
-        YAML_PARSE_FLOW_NODE_STATE => yaml_parser_parse_node(parser, false, false),
-        YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE => {
+        ParserState::StreamStart => yaml_parser_parse_stream_start(parser),
+        ParserState::ImplicitDocumentStart => yaml_parser_parse_document_start(parser, true),
+        ParserState::DocumentStart => yaml_parser_parse_document_start(parser, false),
+        ParserState::DocumentContent => yaml_parser_parse_document_content(parser),
+        ParserState::DocumentEnd => yaml_parser_parse_document_end(parser),
+        ParserState::BlockNode => yaml_parser_parse_node(parser, true, false),
+        ParserState::BlockNodeOrIndentlessSequence => yaml_parser_parse_node(parser, true, true),
+        ParserState::FlowNode => yaml_parser_parse_node(parser, false, false),
+        ParserState::BlockSequenceFirstEntry => {
             yaml_parser_parse_block_sequence_entry(parser, true)
         }
-        YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE => {
-            yaml_parser_parse_block_sequence_entry(parser, false)
-        }
-        YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE => {
-            yaml_parser_parse_indentless_sequence_entry(parser)
-        }
-        YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE => {
-            yaml_parser_parse_block_mapping_key(parser, true)
-        }
-        YAML_PARSE_BLOCK_MAPPING_KEY_STATE => yaml_parser_parse_block_mapping_key(parser, false),
-        YAML_PARSE_BLOCK_MAPPING_VALUE_STATE => yaml_parser_parse_block_mapping_value(parser),
-        YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE => {
-            yaml_parser_parse_flow_sequence_entry(parser, true)
-        }
-        YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE => {
-            yaml_parser_parse_flow_sequence_entry(parser, false)
-        }
-        YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE => {
+        ParserState::BlockSequenceEntry => yaml_parser_parse_block_sequence_entry(parser, false),
+        ParserState::IndentlessSequenceEntry => yaml_parser_parse_indentless_sequence_entry(parser),
+        ParserState::BlockMappingFirstKey => yaml_parser_parse_block_mapping_key(parser, true),
+        ParserState::BlockMappingKey => yaml_parser_parse_block_mapping_key(parser, false),
+        ParserState::BlockMappingValue => yaml_parser_parse_block_mapping_value(parser),
+        ParserState::FlowSequenceFirstEntry => yaml_parser_parse_flow_sequence_entry(parser, true),
+        ParserState::FlowSequenceEntry => yaml_parser_parse_flow_sequence_entry(parser, false),
+        ParserState::FlowSequenceEntryMappingKey => {
             yaml_parser_parse_flow_sequence_entry_mapping_key(parser)
         }
-        YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE => {
+        ParserState::FlowSequenceEntryMappingValue => {
             yaml_parser_parse_flow_sequence_entry_mapping_value(parser)
         }
-        YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE => {
+        ParserState::FlowSequenceEntryMappingEnd => {
             yaml_parser_parse_flow_sequence_entry_mapping_end(parser)
         }
-        YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE => yaml_parser_parse_flow_mapping_key(parser, true),
-        YAML_PARSE_FLOW_MAPPING_KEY_STATE => yaml_parser_parse_flow_mapping_key(parser, false),
-        YAML_PARSE_FLOW_MAPPING_VALUE_STATE => yaml_parser_parse_flow_mapping_value(parser, false),
-        YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE => {
-            yaml_parser_parse_flow_mapping_value(parser, true)
-        }
-        YAML_PARSE_END_STATE => panic!("parser end state reached unexpectedly"),
+        ParserState::FlowMappingFirstKey => yaml_parser_parse_flow_mapping_key(parser, true),
+        ParserState::FlowMappingKey => yaml_parser_parse_flow_mapping_key(parser, false),
+        ParserState::FlowMappingValue => yaml_parser_parse_flow_mapping_value(parser, false),
+        ParserState::FlowMappingEmptyValue => yaml_parser_parse_flow_mapping_value(parser, true),
+        ParserState::End => panic!("parser end state reached unexpectedly"),
     }
 }
 
@@ -174,7 +146,7 @@ fn yaml_parser_parse_stream_start(parser: &mut Parser) -> Result<Event, ParserEr
             start_mark: token.start_mark,
             end_mark: token.end_mark,
         };
-        parser.state = YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE;
+        parser.state = ParserState::ImplicitDocumentStart;
         SKIP_TOKEN(parser);
         Ok(event)
     } else {
@@ -213,8 +185,8 @@ fn yaml_parser_parse_document_start(
             end_mark: token.end_mark,
         };
         yaml_parser_process_directives(parser, None, None)?;
-        parser.states.push(YAML_PARSE_DOCUMENT_END_STATE);
-        parser.state = YAML_PARSE_BLOCK_NODE_STATE;
+        parser.states.push(ParserState::DocumentEnd);
+        parser.state = ParserState::BlockNode;
         Ok(event)
     } else if !token.data.is_stream_end() {
         let end_mark: Mark;
@@ -241,8 +213,8 @@ fn yaml_parser_parse_document_start(
                 start_mark,
                 end_mark,
             };
-            parser.states.push(YAML_PARSE_DOCUMENT_END_STATE);
-            parser.state = YAML_PARSE_DOCUMENT_CONTENT_STATE;
+            parser.states.push(ParserState::DocumentEnd);
+            parser.state = ParserState::DocumentContent;
             SKIP_TOKEN(parser);
             return Ok(event);
         }
@@ -252,7 +224,7 @@ fn yaml_parser_parse_document_start(
             start_mark: token.start_mark,
             end_mark: token.end_mark,
         };
-        parser.state = YAML_PARSE_END_STATE;
+        parser.state = ParserState::End;
         SKIP_TOKEN(parser);
         Ok(event)
     }
@@ -286,7 +258,7 @@ fn yaml_parser_parse_document_end(parser: &mut Parser) -> Result<Event, ParserEr
         implicit = false;
     }
     parser.tag_directives.clear();
-    parser.state = YAML_PARSE_DOCUMENT_START_STATE;
+    parser.state = ParserState::DocumentStart;
     Ok(Event {
         data: EventData::DocumentEnd { implicit },
         start_mark,
@@ -384,13 +356,13 @@ fn yaml_parser_parse_node(
 
     if indentless_sequence && token.data.is_block_entry() {
         end_mark = token.end_mark;
-        parser.state = YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE;
+        parser.state = ParserState::IndentlessSequenceEntry;
         let event = Event {
             data: EventData::SequenceStart {
                 anchor,
                 tag,
                 implicit,
-                style: YAML_BLOCK_SEQUENCE_STYLE,
+                style: SequenceStyle::Block,
             },
             start_mark,
             end_mark,
@@ -400,7 +372,7 @@ fn yaml_parser_parse_node(
         let mut plain_implicit = false;
         let mut quoted_implicit = false;
         end_mark = token.end_mark;
-        if *style == YAML_PLAIN_SCALAR_STYLE && tag.is_none() || tag.as_deref() == Some("!") {
+        if *style == ScalarStyle::Plain && tag.is_none() || tag.as_deref() == Some("!") {
             plain_implicit = true;
         } else if tag.is_none() {
             quoted_implicit = true;
@@ -422,13 +394,13 @@ fn yaml_parser_parse_node(
         return Ok(event);
     } else if let TokenData::FlowSequenceStart = &token.data {
         end_mark = token.end_mark;
-        parser.state = YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE;
+        parser.state = ParserState::FlowSequenceFirstEntry;
         let event = Event {
             data: EventData::SequenceStart {
                 anchor,
                 tag,
                 implicit,
-                style: YAML_FLOW_SEQUENCE_STYLE,
+                style: SequenceStyle::Flow,
             },
             start_mark,
             end_mark,
@@ -436,13 +408,13 @@ fn yaml_parser_parse_node(
         return Ok(event);
     } else if let TokenData::FlowMappingStart = &token.data {
         end_mark = token.end_mark;
-        parser.state = YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE;
+        parser.state = ParserState::FlowMappingFirstKey;
         let event = Event {
             data: EventData::MappingStart {
                 anchor,
                 tag,
                 implicit,
-                style: YAML_FLOW_MAPPING_STYLE,
+                style: MappingStyle::Flow,
             },
             start_mark,
             end_mark,
@@ -450,13 +422,13 @@ fn yaml_parser_parse_node(
         return Ok(event);
     } else if block && token.data.is_block_sequence_start() {
         end_mark = token.end_mark;
-        parser.state = YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE;
+        parser.state = ParserState::BlockSequenceFirstEntry;
         let event = Event {
             data: EventData::SequenceStart {
                 anchor,
                 tag,
                 implicit,
-                style: YAML_BLOCK_SEQUENCE_STYLE,
+                style: SequenceStyle::Block,
             },
             start_mark,
             end_mark,
@@ -464,13 +436,13 @@ fn yaml_parser_parse_node(
         return Ok(event);
     } else if block && token.data.is_block_mapping_start() {
         end_mark = token.end_mark;
-        parser.state = YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE;
+        parser.state = ParserState::BlockMappingFirstKey;
         let event = Event {
             data: EventData::MappingStart {
                 anchor,
                 tag,
                 implicit,
-                style: YAML_BLOCK_MAPPING_STYLE,
+                style: MappingStyle::Block,
             },
             start_mark,
             end_mark,
@@ -485,7 +457,7 @@ fn yaml_parser_parse_node(
                 value: String::new(),
                 plain_implicit: implicit,
                 quoted_implicit: false,
-                style: YAML_PLAIN_SCALAR_STYLE,
+                style: ScalarStyle::Plain,
             },
             start_mark,
             end_mark,
@@ -523,10 +495,10 @@ fn yaml_parser_parse_block_sequence_entry(
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_block_entry() && !token.data.is_block_end() {
-            parser.states.push(YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE);
+            parser.states.push(ParserState::BlockSequenceEntry);
             yaml_parser_parse_node(parser, true, false)
         } else {
-            parser.state = YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE;
+            parser.state = ParserState::BlockSequenceEntry;
             yaml_parser_process_empty_scalar(mark)
         }
     } else if token.data.is_block_end() {
@@ -562,12 +534,10 @@ fn yaml_parser_parse_indentless_sequence_entry(parser: &mut Parser) -> Result<Ev
             && !token.data.is_value()
             && !token.data.is_block_end()
         {
-            parser
-                .states
-                .push(YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE);
+            parser.states.push(ParserState::IndentlessSequenceEntry);
             yaml_parser_parse_node(parser, true, false)
         } else {
-            parser.state = YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE;
+            parser.state = ParserState::IndentlessSequenceEntry;
             yaml_parser_process_empty_scalar(mark)
         }
     } else {
@@ -598,10 +568,10 @@ fn yaml_parser_parse_block_mapping_key(
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_key() && !token.data.is_value() && !token.data.is_block_end() {
-            parser.states.push(YAML_PARSE_BLOCK_MAPPING_VALUE_STATE);
+            parser.states.push(ParserState::BlockMappingValue);
             yaml_parser_parse_node(parser, true, true)
         } else {
-            parser.state = YAML_PARSE_BLOCK_MAPPING_VALUE_STATE;
+            parser.state = ParserState::BlockMappingValue;
             yaml_parser_process_empty_scalar(mark)
         }
     } else if token.data.is_block_end() {
@@ -633,15 +603,15 @@ fn yaml_parser_parse_block_mapping_value(parser: &mut Parser) -> Result<Event, P
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_key() && !token.data.is_value() && !token.data.is_block_end() {
-            parser.states.push(YAML_PARSE_BLOCK_MAPPING_KEY_STATE);
+            parser.states.push(ParserState::BlockMappingKey);
             yaml_parser_parse_node(parser, true, true)
         } else {
-            parser.state = YAML_PARSE_BLOCK_MAPPING_KEY_STATE;
+            parser.state = ParserState::BlockMappingKey;
             yaml_parser_process_empty_scalar(mark)
         }
     } else {
         let mark = token.start_mark;
-        parser.state = YAML_PARSE_BLOCK_MAPPING_KEY_STATE;
+        parser.state = ParserState::BlockMappingKey;
         yaml_parser_process_empty_scalar(mark)
     }
 }
@@ -680,16 +650,16 @@ fn yaml_parser_parse_flow_sequence_entry(
                     anchor: None,
                     tag: None,
                     implicit: true,
-                    style: YAML_FLOW_MAPPING_STYLE,
+                    style: MappingStyle::Flow,
                 },
                 start_mark: token.start_mark,
                 end_mark: token.end_mark,
             };
-            parser.state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE;
+            parser.state = ParserState::FlowSequenceEntryMappingKey;
             SKIP_TOKEN(parser);
             return Ok(event);
         } else if !token.data.is_flow_sequence_end() {
-            parser.states.push(YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE);
+            parser.states.push(ParserState::FlowSequenceEntry);
             return yaml_parser_parse_node(parser, false, false);
         }
     }
@@ -711,12 +681,12 @@ fn yaml_parser_parse_flow_sequence_entry_mapping_key(
     if !token.data.is_value() && !token.data.is_flow_entry() && !token.data.is_flow_sequence_end() {
         parser
             .states
-            .push(YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE);
+            .push(ParserState::FlowSequenceEntryMappingValue);
         yaml_parser_parse_node(parser, false, false)
     } else {
         let mark: Mark = token.end_mark;
         SKIP_TOKEN(parser);
-        parser.state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE;
+        parser.state = ParserState::FlowSequenceEntryMappingValue;
         yaml_parser_process_empty_scalar(mark)
     }
 }
@@ -729,14 +699,12 @@ fn yaml_parser_parse_flow_sequence_entry_mapping_value(
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_flow_entry() && !token.data.is_flow_sequence_end() {
-            parser
-                .states
-                .push(YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE);
+            parser.states.push(ParserState::FlowSequenceEntryMappingEnd);
             return yaml_parser_parse_node(parser, false, false);
         }
     }
     let mark = token.start_mark;
-    parser.state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE;
+    parser.state = ParserState::FlowSequenceEntryMappingEnd;
     yaml_parser_process_empty_scalar(mark)
 }
 
@@ -746,7 +714,7 @@ fn yaml_parser_parse_flow_sequence_entry_mapping_end(
     let token = PEEK_TOKEN(parser)?;
     let start_mark = token.start_mark;
     let end_mark = token.end_mark;
-    parser.state = YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE;
+    parser.state = ParserState::FlowSequenceEntry;
     Ok(Event {
         data: EventData::MappingEnd,
         start_mark,
@@ -789,17 +757,15 @@ fn yaml_parser_parse_flow_mapping_key(
                 && !token.data.is_flow_entry()
                 && !token.data.is_flow_mapping_end()
             {
-                parser.states.push(YAML_PARSE_FLOW_MAPPING_VALUE_STATE);
+                parser.states.push(ParserState::FlowMappingValue);
                 return yaml_parser_parse_node(parser, false, false);
             } else {
                 let mark = token.start_mark;
-                parser.state = YAML_PARSE_FLOW_MAPPING_VALUE_STATE;
+                parser.state = ParserState::FlowMappingValue;
                 return yaml_parser_process_empty_scalar(mark);
             }
         } else if !token.data.is_flow_mapping_end() {
-            parser
-                .states
-                .push(YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE);
+            parser.states.push(ParserState::FlowMappingEmptyValue);
             return yaml_parser_parse_node(parser, false, false);
         }
     }
@@ -821,19 +787,19 @@ fn yaml_parser_parse_flow_mapping_value(
     let mut token = PEEK_TOKEN(parser)?;
     if empty {
         let mark = token.start_mark;
-        parser.state = YAML_PARSE_FLOW_MAPPING_KEY_STATE;
+        parser.state = ParserState::FlowMappingKey;
         return yaml_parser_process_empty_scalar(mark);
     }
     if token.data.is_value() {
         SKIP_TOKEN(parser);
         token = PEEK_TOKEN(parser)?;
         if !token.data.is_flow_entry() && !token.data.is_flow_mapping_end() {
-            parser.states.push(YAML_PARSE_FLOW_MAPPING_KEY_STATE);
+            parser.states.push(ParserState::FlowMappingKey);
             return yaml_parser_parse_node(parser, false, false);
         }
     }
     let mark = token.start_mark;
-    parser.state = YAML_PARSE_FLOW_MAPPING_KEY_STATE;
+    parser.state = ParserState::FlowMappingKey;
     yaml_parser_process_empty_scalar(mark)
 }
 
@@ -845,7 +811,7 @@ fn yaml_parser_process_empty_scalar(mark: Mark) -> Result<Event, ParserError> {
             value: String::new(),
             plain_implicit: true,
             quoted_implicit: false,
-            style: YAML_PLAIN_SCALAR_STYLE,
+            style: ScalarStyle::Plain,
         },
         start_mark: mark,
         end_mark: mark,

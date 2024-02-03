@@ -3,9 +3,7 @@ use std::mem::take;
 use alloc::string::String;
 use alloc::vec;
 
-use crate::yaml::{
-    Anchors, Document, Emitter, Event, EventData, Node, NodeData, YAML_ANY_ENCODING,
-};
+use crate::yaml::{Anchors, Any, Document, Emitter, Event, EventData, Node, NodeData};
 use crate::{
     yaml_emitter_emit, EmitterError, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG,
     YAML_DEFAULT_SEQUENCE_TAG,
@@ -17,9 +15,7 @@ use crate::{
 pub fn yaml_emitter_open(emitter: &mut Emitter) -> Result<(), EmitterError> {
     assert!(!emitter.opened);
     let event = Event {
-        data: EventData::StreamStart {
-            encoding: YAML_ANY_ENCODING,
-        },
+        data: EventData::StreamStart { encoding: Any },
         ..Default::default()
     };
     yaml_emitter_emit(emitter, event)?;

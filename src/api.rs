@@ -5,8 +5,7 @@ use crate::yaml::{EventData, NodeData};
 use crate::{
     Break, Document, Emitter, EmitterState, Encoding, Event, MappingStyle, Mark, Node, NodePair,
     Parser, ParserState, ScalarStyle, SequenceStyle, TagDirective, VersionDirective,
-    YAML_ANY_ENCODING, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG,
-    YAML_DEFAULT_SEQUENCE_TAG, YAML_UTF8_ENCODING,
+    YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
 };
 use std::collections::VecDeque;
 
@@ -24,7 +23,7 @@ pub fn yaml_parser_new<'r>() -> Parser<'r> {
         eof: false,
         buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
         unread: 0,
-        encoding: YAML_ANY_ENCODING,
+        encoding: Encoding::Any,
         offset: 0,
         mark: Mark::default(),
         stream_start_produced: false,
@@ -64,7 +63,7 @@ pub fn yaml_parser_set_input<'r>(parser: &mut Parser<'r>, input: &'r mut dyn std
 
 /// Set the source encoding.
 pub fn yaml_parser_set_encoding(parser: &mut Parser, encoding: Encoding) {
-    assert!(parser.encoding == YAML_ANY_ENCODING);
+    assert!(parser.encoding == Encoding::Any);
     parser.encoding = encoding;
 }
 
@@ -74,7 +73,7 @@ pub fn yaml_emitter_new<'w>() -> Emitter<'w> {
         write_handler: None,
         buffer: String::with_capacity(OUTPUT_BUFFER_SIZE),
         raw_buffer: Vec::with_capacity(OUTPUT_BUFFER_SIZE),
-        encoding: YAML_ANY_ENCODING,
+        encoding: Encoding::Any,
         canonical: false,
         best_indent: 0,
         best_width: 0,
@@ -113,9 +112,9 @@ pub fn yaml_emitter_reset(emitter: &mut Emitter) {
 /// The emitter will write the output characters to the `output` buffer.
 pub fn yaml_emitter_set_output_string<'w>(emitter: &mut Emitter<'w>, output: &'w mut Vec<u8>) {
     assert!(emitter.write_handler.is_none());
-    if emitter.encoding == YAML_ANY_ENCODING {
-        yaml_emitter_set_encoding(emitter, YAML_UTF8_ENCODING);
-    } else if emitter.encoding != YAML_UTF8_ENCODING {
+    if emitter.encoding == Encoding::Any {
+        yaml_emitter_set_encoding(emitter, Encoding::Utf8);
+    } else if emitter.encoding != Encoding::Utf8 {
         panic!("cannot output UTF-16 to String")
     }
     output.clear();
@@ -130,7 +129,7 @@ pub fn yaml_emitter_set_output<'w>(emitter: &mut Emitter<'w>, handler: &'w mut d
 
 /// Set the output encoding.
 pub fn yaml_emitter_set_encoding(emitter: &mut Emitter, encoding: Encoding) {
-    assert_eq!(emitter.encoding, YAML_ANY_ENCODING);
+    assert_eq!(emitter.encoding, Encoding::Any);
     emitter.encoding = encoding;
 }
 
