@@ -5,7 +5,7 @@ use crate::yaml::{EventData, NodeData};
 use crate::{
     Break, Document, Emitter, EmitterState, Encoding, Event, MappingStyle, Mark, Node, NodePair,
     Parser, ParserState, ScalarStyle, SequenceStyle, TagDirective, VersionDirective,
-    YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
+    DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
 };
 use std::collections::VecDeque;
 
@@ -405,7 +405,7 @@ pub fn yaml_document_add_scalar(
         line: 0_u64,
         column: 0_u64,
     };
-    let tag = tag.unwrap_or(YAML_DEFAULT_SCALAR_TAG);
+    let tag = tag.unwrap_or(DEFAULT_SCALAR_TAG);
     let tag_copy = String::from(tag);
     let value_copy = String::from(value);
     let node = Node {
@@ -439,7 +439,7 @@ pub fn yaml_document_add_sequence(
     };
 
     let items = Vec::with_capacity(16);
-    let tag = tag.unwrap_or(YAML_DEFAULT_SEQUENCE_TAG);
+    let tag = tag.unwrap_or(DEFAULT_SEQUENCE_TAG);
     let tag_copy = String::from(tag);
     let node = Node {
         data: NodeData::Sequence { items, style },
@@ -468,7 +468,7 @@ pub fn yaml_document_add_mapping(
         column: 0_u64,
     };
     let pairs = Vec::with_capacity(16);
-    let tag = tag.unwrap_or(YAML_DEFAULT_MAPPING_TAG);
+    let tag = tag.unwrap_or(DEFAULT_MAPPING_TAG);
     let tag_copy = String::from(tag);
 
     let node = Node {

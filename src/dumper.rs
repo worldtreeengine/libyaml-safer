@@ -5,8 +5,7 @@ use alloc::vec;
 
 use crate::yaml::{Anchors, Any, Document, Emitter, Event, EventData, Node, NodeData};
 use crate::{
-    yaml_emitter_emit, EmitterError, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG,
-    YAML_DEFAULT_SEQUENCE_TAG,
+    yaml_emitter_emit, EmitterError, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
 };
 
 /// Start a YAML stream.
@@ -162,8 +161,8 @@ fn yaml_emitter_dump_scalar(
     node: Node,
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
-    let plain_implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SCALAR_TAG);
-    let quoted_implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SCALAR_TAG); // TODO: Why compare twice?! (even the C code does this)
+    let plain_implicit = node.tag.as_deref() == Some(DEFAULT_SCALAR_TAG);
+    let quoted_implicit = node.tag.as_deref() == Some(DEFAULT_SCALAR_TAG); // TODO: Why compare twice?! (even the C code does this)
 
     if let NodeData::Scalar { value, style } = node.data {
         let event = Event {
@@ -189,7 +188,7 @@ fn yaml_emitter_dump_sequence(
     node: Node,
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
-    let implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SEQUENCE_TAG);
+    let implicit = node.tag.as_deref() == Some(DEFAULT_SEQUENCE_TAG);
 
     if let NodeData::Sequence { items, style } = node.data {
         let event = Event {
@@ -222,7 +221,7 @@ fn yaml_emitter_dump_mapping(
     node: Node,
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
-    let implicit = node.tag.as_deref() == Some(YAML_DEFAULT_MAPPING_TAG);
+    let implicit = node.tag.as_deref() == Some(DEFAULT_MAPPING_TAG);
 
     if let NodeData::Mapping { pairs, style } = node.data {
         let event = Event {

@@ -7,29 +7,29 @@ use crate::{api::yaml_parser_new, yaml_emitter_new};
 pub use self::Encoding::*;
 
 /// The tag @c !!null with the only possible value: @c null.
-pub const YAML_NULL_TAG: &str = "tag:yaml.org,2002:null";
+pub const NULL_TAG: &str = "tag:yaml.org,2002:null";
 /// The tag @c !!bool with the values: @c true and @c false.
-pub const YAML_BOOL_TAG: &str = "tag:yaml.org,2002:bool";
+pub const BOOL_TAG: &str = "tag:yaml.org,2002:bool";
 /// The tag @c !!str for string values.
-pub const YAML_STR_TAG: &str = "tag:yaml.org,2002:str";
+pub const STR_TAG: &str = "tag:yaml.org,2002:str";
 /// The tag @c !!int for integer values.
-pub const YAML_INT_TAG: &str = "tag:yaml.org,2002:int";
+pub const INT_TAG: &str = "tag:yaml.org,2002:int";
 /// The tag @c !!float for float values.
-pub const YAML_FLOAT_TAG: &str = "tag:yaml.org,2002:float";
+pub const FLOAT_TAG: &str = "tag:yaml.org,2002:float";
 /// The tag @c !!timestamp for date and time values.
-pub const YAML_TIMESTAMP_TAG: &str = "tag:yaml.org,2002:timestamp";
+pub const TIMESTAMP_TAG: &str = "tag:yaml.org,2002:timestamp";
 
 /// The tag @c !!seq is used to denote sequences.
-pub const YAML_SEQ_TAG: &str = "tag:yaml.org,2002:seq";
+pub const SEQ_TAG: &str = "tag:yaml.org,2002:seq";
 /// The tag @c !!map is used to denote mapping.
-pub const YAML_MAP_TAG: &str = "tag:yaml.org,2002:map";
+pub const MAP_TAG: &str = "tag:yaml.org,2002:map";
 
 /// The default scalar tag is @c !!str.
-pub const YAML_DEFAULT_SCALAR_TAG: &str = YAML_STR_TAG;
+pub const DEFAULT_SCALAR_TAG: &str = STR_TAG;
 /// The default sequence tag is @c !!seq.
-pub const YAML_DEFAULT_SEQUENCE_TAG: &str = YAML_SEQ_TAG;
+pub const DEFAULT_SEQUENCE_TAG: &str = SEQ_TAG;
 /// The default mapping tag is @c !!map.
-pub const YAML_DEFAULT_MAPPING_TAG: &str = YAML_MAP_TAG;
+pub const DEFAULT_MAPPING_TAG: &str = MAP_TAG;
 
 /// The version directive data.
 #[derive(Clone, Copy, Debug)]
