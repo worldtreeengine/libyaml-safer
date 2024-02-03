@@ -5,6 +5,7 @@ use crate::yaml::{YamlEventData, YamlNodeData};
 use crate::{
     yaml_alias_data_t, yaml_document_new, yaml_document_t, yaml_event_t, yaml_mark_t,
     yaml_node_pair_t, yaml_node_t, yaml_parser_parse, yaml_parser_t, ComposerError,
+    YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
 };
 
 /// Parse the input stream and produce the next YAML document.
@@ -264,7 +265,7 @@ fn yaml_parser_load_scalar(
     };
 
     if tag.is_none() || tag.as_deref() == Some("!") {
-        tag = Some(String::from("tag:yaml.org,2002:str"));
+        tag = Some(String::from(YAML_DEFAULT_SCALAR_TAG));
     }
     let node = yaml_node_t {
         data: YamlNodeData::Scalar { value, style },
@@ -297,7 +298,7 @@ fn yaml_parser_load_sequence(
     let mut items = Vec::with_capacity(16);
 
     if tag.is_none() || tag.as_deref() == Some("!") {
-        tag = Some(String::from("tag:yaml.org,2002:seq"));
+        tag = Some(String::from(YAML_DEFAULT_SEQUENCE_TAG));
     }
 
     let node = yaml_node_t {
@@ -354,7 +355,7 @@ fn yaml_parser_load_mapping(
     let mut pairs = Vec::with_capacity(16);
 
     if tag.is_none() || tag.as_deref() == Some("!") {
-        tag = Some(String::from("tag:yaml.org,2002:map"));
+        tag = Some(String::from(YAML_DEFAULT_MAPPING_TAG));
     }
     let node = yaml_node_t {
         data: YamlNodeData::Mapping {

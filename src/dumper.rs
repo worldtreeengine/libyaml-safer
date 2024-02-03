@@ -5,7 +5,10 @@ use crate::yaml::{
     yaml_anchors_t, yaml_document_t, yaml_emitter_t, yaml_event_t, yaml_node_t, YamlEventData,
     YamlNodeData, YAML_ANY_ENCODING,
 };
-use crate::{yaml_document_delete, yaml_emitter_emit, EmitterError};
+use crate::{
+    yaml_document_delete, yaml_emitter_emit, EmitterError, YAML_DEFAULT_MAPPING_TAG,
+    YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
+};
 
 /// Start a YAML stream.
 ///
@@ -195,9 +198,8 @@ fn yaml_emitter_dump_scalar(
     node: yaml_node_t,
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
-    // TODO: Extract this constant as `YAML_DEFAULT_SCALAR_TAG` (source: dumper.c)
-    let plain_implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:str");
-    let quoted_implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:str"); // TODO: Why compare twice?! (even the C code does this)
+    let plain_implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SCALAR_TAG);
+    let quoted_implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SCALAR_TAG); // TODO: Why compare twice?! (even the C code does this)
 
     if let YamlNodeData::Scalar { value, style } = node.data {
         let event = yaml_event_t {
@@ -223,8 +225,7 @@ fn yaml_emitter_dump_sequence(
     node: yaml_node_t,
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
-    // TODO: YAML_DEFAULT_SEQUENCE_TAG
-    let implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:seq");
+    let implicit = node.tag.as_deref() == Some(YAML_DEFAULT_SEQUENCE_TAG);
 
     if let YamlNodeData::Sequence { items, style } = node.data {
         let event = yaml_event_t {
@@ -258,7 +259,7 @@ fn yaml_emitter_dump_mapping(
     anchor: Option<String>,
 ) -> Result<(), EmitterError> {
     // TODO: YAML_DEFAULT_MAPPING_TAG
-    let implicit = node.tag.as_deref() == Some("tag:yaml.org,2002:map");
+    let implicit = node.tag.as_deref() == Some(YAML_DEFAULT_MAPPING_TAG);
 
     if let YamlNodeData::Mapping { pairs, style } = node.data {
         let event = yaml_event_t {

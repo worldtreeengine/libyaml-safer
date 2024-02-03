@@ -6,7 +6,8 @@ use crate::{
     yaml_break_t, yaml_document_t, yaml_emitter_state_t, yaml_emitter_t, yaml_encoding_t,
     yaml_event_t, yaml_mapping_style_t, yaml_mark_t, yaml_node_pair_t, yaml_node_t,
     yaml_parser_state_t, yaml_parser_t, yaml_scalar_style_t, yaml_sequence_style_t,
-    yaml_tag_directive_t, yaml_version_directive_t, YAML_ANY_ENCODING, YAML_UTF8_ENCODING,
+    yaml_tag_directive_t, yaml_version_directive_t, YAML_ANY_ENCODING, YAML_DEFAULT_MAPPING_TAG,
+    YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG, YAML_UTF8_ENCODING,
 };
 use core::ptr;
 use std::collections::VecDeque;
@@ -451,7 +452,7 @@ pub fn yaml_document_add_scalar(
         line: 0_u64,
         column: 0_u64,
     };
-    let tag = tag.unwrap_or("tag:yaml.org,2002:str");
+    let tag = tag.unwrap_or(YAML_DEFAULT_SCALAR_TAG);
     let tag_copy = String::from(tag);
     let value_copy = String::from(value);
     let node = yaml_node_t {
@@ -485,7 +486,7 @@ pub fn yaml_document_add_sequence(
     };
 
     let items = Vec::with_capacity(16);
-    let tag = tag.unwrap_or("tag:yaml.org,2002:seq");
+    let tag = tag.unwrap_or(YAML_DEFAULT_SEQUENCE_TAG);
     let tag_copy = String::from(tag);
     let node = yaml_node_t {
         data: YamlNodeData::Sequence { items, style },
@@ -514,7 +515,7 @@ pub fn yaml_document_add_mapping(
         column: 0_u64,
     };
     let pairs = Vec::with_capacity(16);
-    let tag = tag.unwrap_or("tag:yaml.org,2002:map");
+    let tag = tag.unwrap_or(YAML_DEFAULT_MAPPING_TAG);
     let tag_copy = String::from(tag);
 
     let node = yaml_node_t {

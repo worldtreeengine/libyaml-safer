@@ -81,6 +81,9 @@ pub use crate::yaml::{
 pub use crate::yaml::{
     yaml_break_t::*, yaml_emitter_state_t::*, yaml_encoding_t::*, yaml_mapping_style_t::*,
     yaml_parser_state_t::*, yaml_scalar_style_t::*, yaml_sequence_style_t::*, yaml_token_type_t::*,
+    YAML_BOOL_TAG, YAML_DEFAULT_MAPPING_TAG, YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG,
+    YAML_FLOAT_TAG, YAML_INT_TAG, YAML_MAP_TAG, YAML_NULL_TAG, YAML_SEQ_TAG, YAML_STR_TAG,
+    YAML_TIMESTAMP_TAG,
 };
 
 #[cfg(test)]
