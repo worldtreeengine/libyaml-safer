@@ -94,9 +94,9 @@ fn read_utf8_buffered(
 
             match err.error_len() {
                 Some(_invalid_len) => {
-                    return Err(ReaderError::InvalidUtf8 {
+                    Err(ReaderError::InvalidUtf8 {
                         value: available[valid_bytes],
-                    });
+                    })
                 }
                 None => {
                     if valid_bytes != 0 {
@@ -195,7 +195,7 @@ fn read_utf16_buffered<const BIG_ENDIAN: bool>(
         *offset += used;
         Ok(true)
     } else {
-        debug_assert!(available.len() != 0 && available.len() < 2);
+        debug_assert!(!available.is_empty() && available.len() < 2);
         read_utf16_char_unbuffered::<BIG_ENDIAN>(reader, out, offset)?;
         Ok(true)
     }

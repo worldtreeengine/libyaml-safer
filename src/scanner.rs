@@ -283,7 +283,7 @@ fn yaml_parser_stale_simple_keys(parser: &mut Parser) -> Result<(), ScannerError
 }
 
 fn yaml_parser_save_simple_key(parser: &mut Parser) -> Result<(), ScannerError> {
-    let required = parser.flow_level == 0 && parser.indent as u64 == parser.mark.column as u64;
+    let required = parser.flow_level == 0 && parser.indent as u64 == parser.mark.column;
     if parser.simple_key_allowed {
         let simple_key = SimpleKey {
             possible: true,
@@ -364,7 +364,7 @@ fn yaml_parser_roll_indent(
             parser.tokens.push_back(token);
         } else {
             parser.tokens.insert(
-                (number as usize).wrapping_sub(parser.tokens_parsed) as usize,
+                (number as usize).wrapping_sub(parser.tokens_parsed),
                 token,
             );
         }
@@ -587,7 +587,7 @@ fn yaml_parser_fetch_value(parser: &mut Parser) -> Result<(), ScannerError> {
             end_mark: simple_key.mark,
         };
         parser.tokens.insert(
-            simple_key.token_number.wrapping_sub(parser.tokens_parsed) as usize,
+            simple_key.token_number.wrapping_sub(parser.tokens_parsed),
             token,
         );
         let mark_column = simple_key.mark.column as _;
@@ -1573,7 +1573,7 @@ fn yaml_parser_scan_flow_scalar(
                             let mut k = 0;
                             CACHE(parser, code_length)?;
                             while k < code_length {
-                                if !IS_HEX_AT!(parser.buffer, k as usize) {
+                                if !IS_HEX_AT!(parser.buffer, k) {
                                     return yaml_parser_set_scanner_error(
                                         parser,
                                         "while parsing a quoted scalar",
@@ -1581,7 +1581,7 @@ fn yaml_parser_scan_flow_scalar(
                                         "did not find expected hexdecimal number",
                                     );
                                 } else {
-                                    value = (value << 4) + AS_HEX_AT!(parser.buffer, k as usize);
+                                    value = (value << 4) + AS_HEX_AT!(parser.buffer, k);
                                     k += 1;
                                 }
                             }
