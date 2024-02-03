@@ -6,29 +6,29 @@ use crate::{api::yaml_parser_new, yaml_emitter_new};
 
 pub use self::Encoding::*;
 
-/// The tag @c !!null with the only possible value: @c null.
+/// The tag `!!null`` with the only possible value: `null`.
 pub const NULL_TAG: &str = "tag:yaml.org,2002:null";
-/// The tag @c !!bool with the values: @c true and @c false.
+/// The tag `!!bool`` with the values: `true` and `false`.
 pub const BOOL_TAG: &str = "tag:yaml.org,2002:bool";
-/// The tag @c !!str for string values.
+/// The tag `!!str`` for string values.
 pub const STR_TAG: &str = "tag:yaml.org,2002:str";
-/// The tag @c !!int for integer values.
+/// The tag `!!int`` for integer values.
 pub const INT_TAG: &str = "tag:yaml.org,2002:int";
-/// The tag @c !!float for float values.
+/// The tag `!!float`` for float values.
 pub const FLOAT_TAG: &str = "tag:yaml.org,2002:float";
-/// The tag @c !!timestamp for date and time values.
+/// The tag `!!timestamp`` for date and time values.
 pub const TIMESTAMP_TAG: &str = "tag:yaml.org,2002:timestamp";
 
-/// The tag @c !!seq is used to denote sequences.
+/// The tag `!!seq`` is used to denote sequences.
 pub const SEQ_TAG: &str = "tag:yaml.org,2002:seq";
-/// The tag @c !!map is used to denote mapping.
+/// The tag `!!map`` is used to denote mapping.
 pub const MAP_TAG: &str = "tag:yaml.org,2002:map";
 
-/// The default scalar tag is @c !!str.
+/// The default scalar tag is `!!str``.
 pub const DEFAULT_SCALAR_TAG: &str = STR_TAG;
-/// The default sequence tag is @c !!seq.
+/// The default sequence tag is `!!seq``.
 pub const DEFAULT_SEQUENCE_TAG: &str = SEQ_TAG;
-/// The default mapping tag is @c !!map.
+/// The default mapping tag is `!!map``.
 pub const DEFAULT_MAPPING_TAG: &str = MAP_TAG;
 
 /// The version directive data.
