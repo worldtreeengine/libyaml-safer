@@ -17,18 +17,13 @@ pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), WriterErro
 
     if emitter.encoding == YAML_UTF8_ENCODING {
         let to_emit = emitter.buffer.as_bytes();
-        if emitter
+        emitter
             .write_handler
             .as_mut()
             .expect("non-null writer")
-            .write(to_emit)?
-            == to_emit.len()
-        {
-            emitter.buffer.clear();
-            return Ok(());
-        } else {
-            return Err(WriterError::Incomplete);
-        }
+            .write_all(to_emit)?;
+        emitter.buffer.clear();
+        return Ok(());
     }
 
     let big_endian = match emitter.encoding {
@@ -48,17 +43,12 @@ pub fn yaml_emitter_flush(emitter: &mut yaml_emitter_t) -> Result<(), WriterErro
 
     let to_emit = emitter.raw_buffer.as_slice();
 
-    if emitter
+    emitter
         .write_handler
         .as_mut()
         .expect("non-null function pointer")
-        .write(to_emit)?
-        == to_emit.len()
-    {
-        emitter.buffer.clear();
-        emitter.raw_buffer.clear();
-        Ok(())
-    } else {
-        Err(WriterError::Incomplete)
-    }
+        .write_all(to_emit)?;
+    emitter.buffer.clear();
+    emitter.raw_buffer.clear();
+    Ok(())
 }

@@ -10,8 +10,6 @@ pub enum EmitterError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum WriterError {
-    #[error("writer could not flush the entire buffer")]
-    Incomplete,
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
