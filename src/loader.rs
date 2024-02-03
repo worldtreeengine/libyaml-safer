@@ -190,7 +190,7 @@ fn yaml_parser_register_anchor(
 
 fn yaml_parser_load_node_add(
     document: &mut Document,
-    ctx: &mut Vec<i32>,
+    ctx: &[i32],
     index: i32,
 ) -> Result<(), ComposerError> {
     if ctx.is_empty() {
@@ -229,7 +229,7 @@ fn yaml_parser_load_alias(
     parser: &mut Parser,
     event: Event,
     document: &mut Document,
-    ctx: &mut Vec<i32>,
+    ctx: &[i32],
 ) -> Result<(), ComposerError> {
     let anchor: &str = if let EventData::Alias { anchor } = &event.data {
         anchor
@@ -250,7 +250,7 @@ fn yaml_parser_load_scalar(
     parser: &mut Parser,
     event: Event,
     document: &mut Document,
-    ctx: &mut Vec<i32>,
+    ctx: &[i32],
 ) -> Result<(), ComposerError> {
     let EventData::Scalar {
         mut tag,
