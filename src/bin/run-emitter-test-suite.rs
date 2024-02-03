@@ -11,7 +11,8 @@
     clippy::ptr_as_ptr,
     clippy::single_match_else,
     clippy::too_many_lines,
-    clippy::unreadable_literal
+    clippy::unreadable_literal,
+    clippy::manual_strip
 )]
 
 use libyaml_safer::{

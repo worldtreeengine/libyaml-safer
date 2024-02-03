@@ -83,12 +83,13 @@ fn READ_LINE_STRING(parser: &mut Parser, string: &mut String) {
 /// Scan the input stream and produce the next token.
 ///
 /// Call the function subsequently to produce a sequence of tokens corresponding
-/// to the input stream. The initial token has the type YAML_STREAM_START_TOKEN
-/// while the ending token has the type YAML_STREAM_END_TOKEN.
+/// to the input stream. The initial token has the type
+/// [`TokenData::StreamStart`] while the ending token has the type
+/// [`TokenData::StreamEnd`].
 ///
-/// An application must not alternate the calls of yaml_parser_scan() with the
-/// calls of yaml_parser_parse() or yaml_parser_load(). Doing this will break
-/// the parser.
+/// An application must not alternate the calls of [`yaml_parser_scan()`] with
+/// the calls of [`yaml_parser_parse()`] or [`yaml_parser_load()`]. Doing this
+/// will break the parser.
 pub fn yaml_parser_scan(parser: &mut Parser) -> Result<Token, ScannerError> {
     if parser.stream_end_produced {
         return Ok(Token {
@@ -327,7 +328,7 @@ fn yaml_parser_increase_flow_level(parser: &mut Parser) -> Result<(), ScannerErr
     };
     parser.simple_keys.push(empty_simple_key);
     assert!(
-        !(parser.flow_level == i32::MAX),
+        parser.flow_level != i32::MAX,
         "parser.flow_level integer overflow"
     );
     parser.flow_level += 1;
@@ -353,7 +354,7 @@ fn yaml_parser_roll_indent(
     }
     if parser.indent < column as i32 {
         parser.indents.push(parser.indent);
-        assert!(!(column > i32::MAX as i64), "integer overflow");
+        assert!(column <= i32::MAX as i64, "integer overflow");
         parser.indent = column as i32;
         let token = Token {
             data,
@@ -363,10 +364,9 @@ fn yaml_parser_roll_indent(
         if number == -1_i64 {
             parser.tokens.push_back(token);
         } else {
-            parser.tokens.insert(
-                (number as usize).wrapping_sub(parser.tokens_parsed),
-                token,
-            );
+            parser
+                .tokens
+                .insert((number as usize).wrapping_sub(parser.tokens_parsed), token);
         }
     }
     Ok(())
@@ -764,19 +764,19 @@ fn yaml_parser_scan_directive(parser: &mut Parser, token: &mut Token) -> Result<
         }
     }
 
-    if !IS_BREAKZ!(parser.buffer) {
+    if IS_BREAKZ!(parser.buffer) {
+        if IS_BREAK!(parser.buffer) {
+            CACHE(parser, 2)?;
+            SKIP_LINE(parser);
+        }
+        Ok(())
+    } else {
         yaml_parser_set_scanner_error(
             parser,
             "while scanning a directive",
             start_mark,
             "did not find expected comment or line break",
         )
-    } else {
-        if IS_BREAK!(parser.buffer) {
-            CACHE(parser, 2)?;
-            SKIP_LINE(parser);
-        }
-        Ok(())
     }
 }
 
@@ -897,26 +897,25 @@ fn yaml_parser_scan_tag_directive_value(
                     start_mark,
                     "did not find expected whitespace",
                 );
-            } else {
-                while IS_BLANK!(parser.buffer) {
-                    SKIP(parser);
-                    CACHE(parser, 1)?;
-                }
-
-                let prefix_value = yaml_parser_scan_tag_uri(parser, true, true, None, start_mark)?;
-                CACHE(parser, 1)?;
-
-                if !IS_BLANKZ!(parser.buffer) {
-                    return yaml_parser_set_scanner_error(
-                        parser,
-                        "while scanning a %TAG directive",
-                        start_mark,
-                        "did not find expected whitespace or line break",
-                    );
-                } else {
-                    return Ok((handle_value, prefix_value));
-                }
             }
+
+            while IS_BLANK!(parser.buffer) {
+                SKIP(parser);
+                CACHE(parser, 1)?;
+            }
+
+            let prefix_value = yaml_parser_scan_tag_uri(parser, true, true, None, start_mark)?;
+            CACHE(parser, 1)?;
+
+            if !IS_BLANKZ!(parser.buffer) {
+                return yaml_parser_set_scanner_error(
+                    parser,
+                    "while scanning a %TAG directive",
+                    start_mark,
+                    "did not find expected whitespace or line break",
+                );
+            }
+            return Ok((handle_value, prefix_value));
         }
     }
 }
@@ -955,10 +954,10 @@ fn yaml_parser_scan_anchor(
     {
         yaml_parser_set_scanner_error(
             parser,
-            if !scan_alias_instead_of_anchor {
-                "while scanning an anchor"
-            } else {
+            if scan_alias_instead_of_anchor {
                 "while scanning an alias"
+            } else {
+                "while scanning an anchor"
             },
             start_mark,
             "did not find expected alphabetic or numeric character",
@@ -998,9 +997,8 @@ fn yaml_parser_scan_tag(parser: &mut Parser, token: &mut Token) -> Result<(), Sc
                 start_mark,
                 "did not find the expected '>'",
             );
-        } else {
-            SKIP(parser);
         }
+        SKIP(parser);
     } else {
         handle = yaml_parser_scan_tag_handle(parser, false, start_mark)?;
         if handle.starts_with('!') && handle.len() > 1 && handle.ends_with('!') {
@@ -1023,9 +1021,8 @@ fn yaml_parser_scan_tag(parser: &mut Parser, token: &mut Token) -> Result<(), Sc
                 start_mark,
                 "did not find expected whitespace or line break",
             );
-        } else {
-            panic!("TODO: What is expected here?");
         }
+        panic!("TODO: What is expected here?");
     }
 
     let end_mark: Mark = parser.mark;
@@ -1211,7 +1208,7 @@ fn yaml_parser_scan_uri_escapes(
         SKIP(parser);
         SKIP(parser);
         width -= 1;
-        if !(width != 0) {
+        if width == 0 {
             break;
         }
     }
@@ -1248,10 +1245,9 @@ fn yaml_parser_scan_block_scalar(
                     start_mark,
                     "found an indentation indicator equal to 0",
                 );
-            } else {
-                increment = AS_DIGIT!(parser.buffer) as i32;
-                SKIP(parser);
             }
+            increment = AS_DIGIT!(parser.buffer) as i32;
+            SKIP(parser);
         }
     } else if IS_DIGIT!(parser.buffer) {
         if CHECK!(parser.buffer, '0') {
@@ -1261,14 +1257,13 @@ fn yaml_parser_scan_block_scalar(
                 start_mark,
                 "found an indentation indicator equal to 0",
             );
-        } else {
-            increment = AS_DIGIT!(parser.buffer) as i32;
+        }
+        increment = AS_DIGIT!(parser.buffer) as i32;
+        SKIP(parser);
+        CACHE(parser, 1)?;
+        if CHECK!(parser.buffer, '+') || CHECK!(parser.buffer, '-') {
+            chomping = if CHECK!(parser.buffer, '+') { 1 } else { -1 };
             SKIP(parser);
-            CACHE(parser, 1)?;
-            if CHECK!(parser.buffer, '+') || CHECK!(parser.buffer, '-') {
-                chomping = if CHECK!(parser.buffer, '+') { 1 } else { -1 };
-                SKIP(parser);
-            }
         }
     }
 
@@ -1324,7 +1319,7 @@ fn yaml_parser_scan_block_scalar(
     CACHE(parser, 1)?;
 
     loop {
-        if !(parser.mark.column as i32 == indent && !IS_Z!(parser.buffer)) {
+        if parser.mark.column as i32 != indent || IS_Z!(parser.buffer) {
             break;
         }
         trailing_blank = IS_BLANK!(parser.buffer) as i32;
@@ -1463,194 +1458,191 @@ fn yaml_parser_scan_flow_scalar(
                 start_mark,
                 "found unexpected end of stream",
             );
-        } else {
-            CACHE(parser, 2)?;
-            leading_blanks = false;
-            while !IS_BLANKZ!(parser.buffer) {
-                if single && CHECK_AT!(parser.buffer, '\'', 0) && CHECK_AT!(parser.buffer, '\'', 1)
-                {
-                    string.push('\'');
+        }
+        CACHE(parser, 2)?;
+        leading_blanks = false;
+        while !IS_BLANKZ!(parser.buffer) {
+            if single && CHECK_AT!(parser.buffer, '\'', 0) && CHECK_AT!(parser.buffer, '\'', 1) {
+                string.push('\'');
+                SKIP(parser);
+                SKIP(parser);
+            } else {
+                if CHECK!(parser.buffer, if single { '\'' } else { '"' }) {
+                    break;
+                }
+                if !single && CHECK!(parser.buffer, '\\') && IS_BREAK_AT!(parser.buffer, 1) {
+                    CACHE(parser, 3)?;
                     SKIP(parser);
-                    SKIP(parser);
-                } else {
-                    if CHECK!(parser.buffer, if single { '\'' } else { '"' }) {
-                        break;
-                    }
-                    if !single && CHECK!(parser.buffer, '\\') && IS_BREAK_AT!(parser.buffer, 1) {
-                        CACHE(parser, 3)?;
-                        SKIP(parser);
-                        SKIP_LINE(parser);
-                        leading_blanks = true;
-                        break;
-                    } else if !single && CHECK!(parser.buffer, '\\') {
-                        let mut code_length = 0usize;
-                        match parser.buffer.get(1).copied().unwrap() {
-                            '0' => {
-                                string.push('\0');
-                            }
-                            'a' => {
-                                string.push('\x07');
-                            }
-                            'b' => {
-                                string.push('\x08');
-                            }
-                            't' | '\t' => {
-                                string.push('\t');
-                            }
-                            'n' => {
-                                string.push('\n');
-                            }
-                            'v' => {
-                                string.push('\x0B');
-                            }
-                            'f' => {
-                                string.push('\x0C');
-                            }
-                            'r' => {
-                                string.push('\r');
-                            }
-                            'e' => {
-                                string.push('\x1B');
-                            }
-                            ' ' => {
-                                string.push(' ');
-                            }
-                            '"' => {
-                                string.push('"');
-                            }
-                            '/' => {
-                                string.push('/');
-                            }
-                            '\\' => {
-                                string.push('\\');
-                            }
-                            // NEL (#x85)
-                            'N' => {
-                                string.push('\u{0085}');
-                            }
-                            // #xA0
-                            '_' => {
-                                string.push('\u{00a0}');
-                                // string.push('\xC2');
-                                // string.push('\xA0');
-                            }
-                            // LS (#x2028)
-                            'L' => {
-                                string.push('\u{2028}');
-                                // string.push('\xE2');
-                                // string.push('\x80');
-                                // string.push('\xA8');
-                            }
-                            // PS (#x2029)
-                            'P' => {
-                                string.push('\u{2029}');
-                                // string.push('\xE2');
-                                // string.push('\x80');
-                                // string.push('\xA9');
-                            }
-                            'x' => {
-                                code_length = 2;
-                            }
-                            'u' => {
-                                code_length = 4;
-                            }
-                            'U' => {
-                                code_length = 8;
-                            }
-                            _ => {
-                                return yaml_parser_set_scanner_error(
-                                    parser,
-                                    "while parsing a quoted scalar",
-                                    start_mark,
-                                    "found unknown escape character",
-                                );
-                            }
+                    SKIP_LINE(parser);
+                    leading_blanks = true;
+                    break;
+                } else if !single && CHECK!(parser.buffer, '\\') {
+                    let mut code_length = 0usize;
+                    match parser.buffer.get(1).copied().unwrap() {
+                        '0' => {
+                            string.push('\0');
                         }
-                        SKIP(parser);
-                        SKIP(parser);
-                        if code_length != 0 {
-                            let mut value: u32 = 0;
-                            let mut k = 0;
-                            CACHE(parser, code_length)?;
-                            while k < code_length {
-                                if !IS_HEX_AT!(parser.buffer, k) {
-                                    return yaml_parser_set_scanner_error(
-                                        parser,
-                                        "while parsing a quoted scalar",
-                                        start_mark,
-                                        "did not find expected hexdecimal number",
-                                    );
-                                } else {
-                                    value = (value << 4) + AS_HEX_AT!(parser.buffer, k);
-                                    k += 1;
-                                }
-                            }
-                            if let Some(ch) = char::from_u32(value) {
-                                string.push(ch);
-                            } else {
+                        'a' => {
+                            string.push('\x07');
+                        }
+                        'b' => {
+                            string.push('\x08');
+                        }
+                        't' | '\t' => {
+                            string.push('\t');
+                        }
+                        'n' => {
+                            string.push('\n');
+                        }
+                        'v' => {
+                            string.push('\x0B');
+                        }
+                        'f' => {
+                            string.push('\x0C');
+                        }
+                        'r' => {
+                            string.push('\r');
+                        }
+                        'e' => {
+                            string.push('\x1B');
+                        }
+                        ' ' => {
+                            string.push(' ');
+                        }
+                        '"' => {
+                            string.push('"');
+                        }
+                        '/' => {
+                            string.push('/');
+                        }
+                        '\\' => {
+                            string.push('\\');
+                        }
+                        // NEL (#x85)
+                        'N' => {
+                            string.push('\u{0085}');
+                        }
+                        // #xA0
+                        '_' => {
+                            string.push('\u{00a0}');
+                            // string.push('\xC2');
+                            // string.push('\xA0');
+                        }
+                        // LS (#x2028)
+                        'L' => {
+                            string.push('\u{2028}');
+                            // string.push('\xE2');
+                            // string.push('\x80');
+                            // string.push('\xA8');
+                        }
+                        // PS (#x2029)
+                        'P' => {
+                            string.push('\u{2029}');
+                            // string.push('\xE2');
+                            // string.push('\x80');
+                            // string.push('\xA9');
+                        }
+                        'x' => {
+                            code_length = 2;
+                        }
+                        'u' => {
+                            code_length = 4;
+                        }
+                        'U' => {
+                            code_length = 8;
+                        }
+                        _ => {
+                            return yaml_parser_set_scanner_error(
+                                parser,
+                                "while parsing a quoted scalar",
+                                start_mark,
+                                "found unknown escape character",
+                            );
+                        }
+                    }
+                    SKIP(parser);
+                    SKIP(parser);
+                    if code_length != 0 {
+                        let mut value: u32 = 0;
+                        let mut k = 0;
+                        CACHE(parser, code_length)?;
+                        while k < code_length {
+                            if !IS_HEX_AT!(parser.buffer, k) {
                                 return yaml_parser_set_scanner_error(
                                     parser,
                                     "while parsing a quoted scalar",
                                     start_mark,
-                                    "found invalid Unicode character escape code",
+                                    "did not find expected hexdecimal number",
                                 );
                             }
+                            value = (value << 4) + AS_HEX_AT!(parser.buffer, k);
+                            k += 1;
+                        }
+                        if let Some(ch) = char::from_u32(value) {
+                            string.push(ch);
+                        } else {
+                            return yaml_parser_set_scanner_error(
+                                parser,
+                                "while parsing a quoted scalar",
+                                start_mark,
+                                "found invalid Unicode character escape code",
+                            );
+                        }
 
-                            k = 0;
-                            while k < code_length {
-                                SKIP(parser);
-                                k += 1;
-                            }
+                        k = 0;
+                        while k < code_length {
+                            SKIP(parser);
+                            k += 1;
                         }
-                    } else {
-                        READ_STRING(parser, &mut string);
-                    }
-                }
-                CACHE(parser, 2)?;
-            }
-            CACHE(parser, 1)?;
-            if CHECK!(parser.buffer, if single { '\'' } else { '"' }) {
-                break;
-            }
-            CACHE(parser, 1)?;
-            while IS_BLANK!(parser.buffer) || IS_BREAK!(parser.buffer) {
-                if IS_BLANK!(parser.buffer) {
-                    if !leading_blanks {
-                        READ_STRING(parser, &mut whitespaces);
-                    } else {
-                        SKIP(parser);
                     }
                 } else {
-                    CACHE(parser, 2)?;
-                    if !leading_blanks {
-                        whitespaces.clear();
-                        READ_LINE_STRING(parser, &mut leading_break);
-                        leading_blanks = true;
-                    } else {
-                        READ_LINE_STRING(parser, &mut trailing_breaks);
-                    }
+                    READ_STRING(parser, &mut string);
                 }
-                CACHE(parser, 1)?;
             }
-            if leading_blanks {
-                if leading_break.starts_with('\n') {
-                    if trailing_breaks.is_empty() {
-                        string.push(' ');
-                    } else {
-                        string.push_str(&trailing_breaks);
-                        trailing_breaks.clear();
-                    }
-                    leading_break.clear();
+            CACHE(parser, 2)?;
+        }
+        CACHE(parser, 1)?;
+        if CHECK!(parser.buffer, if single { '\'' } else { '"' }) {
+            break;
+        }
+        CACHE(parser, 1)?;
+        while IS_BLANK!(parser.buffer) || IS_BREAK!(parser.buffer) {
+            if IS_BLANK!(parser.buffer) {
+                if leading_blanks {
+                    SKIP(parser);
                 } else {
-                    string.push_str(&leading_break);
-                    string.push_str(&trailing_breaks);
-                    leading_break.clear();
-                    trailing_breaks.clear();
+                    READ_STRING(parser, &mut whitespaces);
                 }
             } else {
-                string.push_str(&whitespaces);
-                whitespaces.clear();
+                CACHE(parser, 2)?;
+                if leading_blanks {
+                    READ_LINE_STRING(parser, &mut trailing_breaks);
+                } else {
+                    whitespaces.clear();
+                    READ_LINE_STRING(parser, &mut leading_break);
+                    leading_blanks = true;
+                }
             }
+            CACHE(parser, 1)?;
+        }
+        if leading_blanks {
+            if leading_break.starts_with('\n') {
+                if trailing_breaks.is_empty() {
+                    string.push(' ');
+                } else {
+                    string.push_str(&trailing_breaks);
+                    trailing_breaks.clear();
+                }
+                leading_break.clear();
+            } else {
+                string.push_str(&leading_break);
+                string.push_str(&trailing_breaks);
+                leading_break.clear();
+                trailing_breaks.clear();
+            }
+        } else {
+            string.push_str(&whitespaces);
+            whitespaces.clear();
         }
     }
 
@@ -1716,43 +1708,43 @@ fn yaml_parser_scan_plain_scalar(
                     start_mark,
                     "found unexpected ':'",
                 );
-            } else {
-                if CHECK!(parser.buffer, ':') && IS_BLANKZ_AT!(parser.buffer, 1)
-                    || parser.flow_level != 0
-                        && (CHECK!(parser.buffer, ',')
-                            || CHECK!(parser.buffer, '[')
-                            || CHECK!(parser.buffer, ']')
-                            || CHECK!(parser.buffer, '{')
-                            || CHECK!(parser.buffer, '}'))
-                {
-                    break;
-                }
-                if leading_blanks || !whitespaces.is_empty() {
-                    if leading_blanks {
-                        if leading_break.starts_with('\n') {
-                            if trailing_breaks.is_empty() {
-                                string.push(' ');
-                            } else {
-                                string.push_str(&trailing_breaks);
-                                trailing_breaks.clear();
-                            }
-                            leading_break.clear();
+            }
+
+            if CHECK!(parser.buffer, ':') && IS_BLANKZ_AT!(parser.buffer, 1)
+                || parser.flow_level != 0
+                    && (CHECK!(parser.buffer, ',')
+                        || CHECK!(parser.buffer, '[')
+                        || CHECK!(parser.buffer, ']')
+                        || CHECK!(parser.buffer, '{')
+                        || CHECK!(parser.buffer, '}'))
+            {
+                break;
+            }
+            if leading_blanks || !whitespaces.is_empty() {
+                if leading_blanks {
+                    if leading_break.starts_with('\n') {
+                        if trailing_breaks.is_empty() {
+                            string.push(' ');
                         } else {
-                            string.push_str(&leading_break);
                             string.push_str(&trailing_breaks);
-                            leading_break.clear();
                             trailing_breaks.clear();
                         }
-                        leading_blanks = false;
+                        leading_break.clear();
                     } else {
-                        string.push_str(&whitespaces);
-                        whitespaces.clear();
+                        string.push_str(&leading_break);
+                        string.push_str(&trailing_breaks);
+                        leading_break.clear();
+                        trailing_breaks.clear();
                     }
+                    leading_blanks = false;
+                } else {
+                    string.push_str(&whitespaces);
+                    whitespaces.clear();
                 }
-                READ_STRING(parser, &mut string);
-                end_mark = parser.mark;
-                CACHE(parser, 2)?;
             }
+            READ_STRING(parser, &mut string);
+            end_mark = parser.mark;
+            CACHE(parser, 2)?;
         }
         if !(IS_BLANK!(parser.buffer) || IS_BREAK!(parser.buffer)) {
             break;
@@ -1777,12 +1769,12 @@ fn yaml_parser_scan_plain_scalar(
             } else {
                 CACHE(parser, 2)?;
 
-                if !leading_blanks {
+                if leading_blanks {
+                    READ_LINE_STRING(parser, &mut trailing_breaks);
+                } else {
                     whitespaces.clear();
                     READ_LINE_STRING(parser, &mut leading_break);
                     leading_blanks = true;
-                } else {
-                    READ_LINE_STRING(parser, &mut trailing_breaks);
                 }
             }
             CACHE(parser, 1)?;

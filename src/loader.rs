@@ -15,9 +15,9 @@ use crate::{
 /// If the produced document has no root node, it means that the document end
 /// has been reached.
 ///
-/// An application must not alternate the calls of yaml_parser_load() with the
-/// calls of yaml_parser_scan() or yaml_parser_parse(). Doing this will break
-/// the parser.
+/// An application must not alternate the calls of [`yaml_parser_load()`] with
+/// the calls of [`yaml_parser_scan()`] or [`yaml_parser_parse()`]. Doing this
+/// will break the parser.
 pub fn yaml_parser_load(parser: &mut Parser) -> Result<Document, ComposerError> {
     let mut document = yaml_document_new(None, &[], false, false);
     document.nodes.reserve(16);

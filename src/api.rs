@@ -13,10 +13,7 @@ pub(crate) const INPUT_RAW_BUFFER_SIZE: usize = 16384;
 pub(crate) const INPUT_BUFFER_SIZE: usize = INPUT_RAW_BUFFER_SIZE;
 pub(crate) const OUTPUT_BUFFER_SIZE: usize = 16384;
 
-/// Initialize a parser.
-///
-/// This function creates a new parser object. An application is responsible
-/// for destroying the object using the yaml_parser_delete() function.
+/// Create a parser.
 pub fn yaml_parser_new<'r>() -> Parser<'r> {
     Parser {
         read_handler: None,
@@ -184,7 +181,7 @@ pub fn yaml_document_start_event_new(
     tag_directives_in: &[TagDirective],
     implicit: bool,
 ) -> Event {
-    let tag_directives = Vec::from_iter(tag_directives_in.iter().cloned());
+    let tag_directives = tag_directives_in.to_vec();
 
     Event {
         data: EventData::DocumentStart {
@@ -350,7 +347,7 @@ pub fn yaml_document_new(
     end_implicit: bool,
 ) -> Document {
     let nodes = Vec::with_capacity(16);
-    let tag_directives = Vec::from_iter(tag_directives_in.iter().cloned());
+    let tag_directives = tag_directives_in.to_vec();
 
     Document {
         nodes,

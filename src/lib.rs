@@ -11,27 +11,19 @@
     clippy::cast_lossless,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
-    // clippy::cast_ptr_alignment,
     clippy::cast_sign_loss,
-    clippy::collapsible_if,
-    clippy::doc_markdown,
     clippy::fn_params_excessive_bools,
-    clippy::if_not_else,
-    clippy::items_after_statements,
-    clippy::let_underscore_untyped,
     clippy::manual_range_contains,
     clippy::missing_panics_doc,
-    clippy::missing_safety_doc,
     clippy::missing_errors_doc,
     clippy::module_name_repetitions,
     clippy::must_use_candidate,
     clippy::needless_pass_by_value,
-    clippy::nonminimal_bool,
-    clippy::similar_names,
     clippy::struct_excessive_bools,
     clippy::too_many_arguments,
     clippy::too_many_lines,
-    clippy::unnecessary_wraps
+    clippy::unnecessary_wraps,
+    clippy::match_wildcard_for_single_variants
 )]
 
 extern crate alloc;
@@ -89,9 +81,6 @@ mod tests {
 
     #[test]
     fn sanity() {
-        let mut parser = yaml_parser_new();
-        // const SANITY_INPUT: &'static str =
-        //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
         const SANITY_INPUT: &str = r#"
 unicode: "Sosa did fine.\u263A"
 control: "\b1998\t1999\t2000\n"
@@ -101,6 +90,9 @@ single: '"Howdy!" he cried.'
 quoted: ' # Not a ''comment''.'
 tie-fighter: '|\-*-/|'
 "#;
+        let mut parser = yaml_parser_new();
+        // const SANITY_INPUT: &'static str =
+        //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
         let mut read_in = SANITY_INPUT.as_bytes();
         yaml_parser_set_input_string(&mut parser, &mut read_in);
         let _doc = yaml_parser_load(&mut parser).unwrap();

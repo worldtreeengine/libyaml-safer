@@ -126,17 +126,16 @@ pub(crate) fn is_ascii(ch: char) -> bool {
 
 pub(crate) fn is_printable(ch: char) -> bool {
     match ch {
+        '\u{feff}' | '\u{fffe}' | '\u{ffff}' => false,
         // ASCII
-        '\x0a' | '\x20'..='\x7e' => true,
-        '\u{00a0}'..='\u{00bf}' => true,
-        '\u{00c0}'..='\u{cfff}' => true,
-        '\u{d000}'..='\u{d7ff}' => true,
-        '\u{e000}'..='\u{efff}' => true,
-        '\u{feff}' => false,
-        '\u{fffe}' => false,
-        '\u{ffff}' => false,
-        '\u{f000}'..='\u{fffd}' => true,
-        '\u{10000}'..='\u{10ffff}' => true,
+        '\x0a'
+        | '\x20'..='\x7e'
+        | '\u{00a0}'..='\u{00bf}'
+        | '\u{00c0}'..='\u{cfff}'
+        | '\u{d000}'..='\u{d7ff}'
+        | '\u{e000}'..='\u{efff}'
+        | '\u{f000}'..='\u{fffd}'
+        | '\u{10000}'..='\u{10ffff}' => true,
         _ => false,
     }
 }
@@ -225,10 +224,10 @@ macro_rules! IS_BREAK_AT {
 }
 
 pub(crate) fn is_break(ch: impl Into<Option<char>>) -> bool {
-    match ch.into() {
-        Some('\r' | '\n' | '\u{0085}' | '\u{2028}' | '\u{2029}') => true,
-        _ => false,
-    }
+    matches!(
+        ch.into(),
+        Some('\r' | '\n' | '\u{0085}' | '\u{2028}' | '\u{2029}')
+    )
 }
 
 pub(crate) fn is_breakz(ch: impl Into<Option<char>>) -> bool {

@@ -20,7 +20,7 @@ fn FLUSH(emitter: &mut Emitter) -> Result<(), WriterError> {
 
 fn PUT(emitter: &mut Emitter, value: u8) -> Result<(), WriterError> {
     FLUSH(emitter)?;
-    let ch = char::try_from(value).expect("invalid char");
+    let ch = char::from(value);
     emitter.buffer.push(ch);
     emitter.column += 1;
     Ok(())
@@ -111,7 +111,7 @@ fn yaml_emitter_set_emitter_error<T>(
 
 /// Emit an event.
 ///
-/// The event object may be generated using the yaml_parser_parse() function.
+/// The event object may be generated using the [`yaml_parser_parse()`] function.
 /// The emitter takes the responsibility for the event object and destroys its
 /// content after it is emitted. The event object is destroyed even if the
 /// function fails.
@@ -801,18 +801,15 @@ fn yaml_emitter_select_scalar_style(
                 style = ScalarStyle::SingleQuoted;
             }
         }
-        if style == ScalarStyle::SingleQuoted {
-            if !scalar_analysis.single_quoted_allowed {
-                style = ScalarStyle::DoubleQuoted;
-            }
+        if style == ScalarStyle::SingleQuoted && !scalar_analysis.single_quoted_allowed {
+            style = ScalarStyle::DoubleQuoted;
         }
-        if style == ScalarStyle::Literal || style == ScalarStyle::Folded {
-            if !scalar_analysis.block_allowed
+        if (style == ScalarStyle::Literal || style == ScalarStyle::Folded)
+            && (!scalar_analysis.block_allowed
                 || emitter.flow_level != 0
-                || emitter.simple_key_context
-            {
-                style = ScalarStyle::DoubleQuoted;
-            }
+                || emitter.simple_key_context)
+        {
+            style = ScalarStyle::DoubleQuoted;
         }
         if no_tag && !*quoted_implicit && style != ScalarStyle::Plain {
             *tag_analysis = Some(TagAnalysis {
@@ -855,15 +852,15 @@ fn yaml_emitter_process_tag(
     if analysis.handle.is_empty() && analysis.suffix.is_empty() {
         return Ok(());
     }
-    if !analysis.handle.is_empty() {
+    if analysis.handle.is_empty() {
+        yaml_emitter_write_indicator(emitter, "!<", true, false, false)?;
+        yaml_emitter_write_tag_content(emitter, analysis.suffix, false)?;
+        yaml_emitter_write_indicator(emitter, ">", false, false, false)?;
+    } else {
         yaml_emitter_write_tag_handle(emitter, analysis.handle)?;
         if !analysis.suffix.is_empty() {
             yaml_emitter_write_tag_content(emitter, analysis.suffix, false)?;
         }
-    } else {
-        yaml_emitter_write_indicator(emitter, "!<", true, false, false)?;
-        yaml_emitter_write_tag_content(emitter, analysis.suffix, false)?;
-        yaml_emitter_write_indicator(emitter, ">", false, false, false)?;
     }
     Ok(())
 }
@@ -1526,7 +1523,7 @@ fn yaml_emitter_write_double_quoted_scalar(
                 && !spaces
                 && emitter.column > emitter.best_width
                 && !first
-                && !chars.clone().next().is_none()
+                && chars.clone().next().is_some()
             {
                 yaml_emitter_write_indent(emitter)?;
                 if is_space(chars.clone().next()) {

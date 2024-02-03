@@ -58,12 +58,13 @@ fn SKIP_TOKEN(parser: &mut Parser) {
 /// Parse the input stream and produce the next parsing event.
 ///
 /// Call the function subsequently to produce a sequence of events corresponding
-/// to the input stream. The initial event has the type YAML_STREAM_START_EVENT
-/// while the ending event has the type YAML_STREAM_END_EVENT.
+/// to the input stream. The initial event has the type
+/// [`EventData::StreamStart`] while the ending event has the type
+/// [`EventData::StreamEnd`].
 ///
-/// An application must not alternate the calls of yaml_parser_parse() with the
-/// calls of yaml_parser_scan() or yaml_parser_load(). Doing this will break the
-/// parser.
+/// An application must not alternate the calls of [`yaml_parser_parse()`] with
+/// the calls of [`yaml_parser_scan()`] or [`yaml_parser_load()`]. Doing this
+/// will break the parser.
 pub fn yaml_parser_parse(parser: &mut Parser) -> Result<Event, ParserError> {
     if parser.stream_end_produced || parser.state == ParserState::End {
         return Ok(Event {
@@ -197,12 +198,7 @@ fn yaml_parser_parse_document_start(
             Some(&mut tag_directives),
         )?;
         token = PEEK_TOKEN(parser)?;
-        if !token.data.is_document_start() {
-            return yaml_parser_set_parser_error(
-                "did not find expected <document start>",
-                token.start_mark,
-            );
-        } else {
+        if token.data.is_document_start() {
             end_mark = token.end_mark;
             let event = Event {
                 data: EventData::DocumentStart {
@@ -216,7 +212,9 @@ fn yaml_parser_parse_document_start(
             parser.states.push(ParserState::DocumentEnd);
             parser.state = ParserState::DocumentContent;
             SKIP_TOKEN(parser);
-            return Ok(event);
+            Ok(event)
+        } else {
+            yaml_parser_set_parser_error("did not find expected <document start>", token.start_mark)
         }
     } else {
         let event = Event {
@@ -759,11 +757,10 @@ fn yaml_parser_parse_flow_mapping_key(
             {
                 parser.states.push(ParserState::FlowMappingValue);
                 return yaml_parser_parse_node(parser, false, false);
-            } else {
-                let mark = token.start_mark;
-                parser.state = ParserState::FlowMappingValue;
-                return yaml_parser_process_empty_scalar(mark);
             }
+            let mark = token.start_mark;
+            parser.state = ParserState::FlowMappingValue;
+            return yaml_parser_process_empty_scalar(mark);
         } else if !token.data.is_flow_mapping_end() {
             parser.states.push(ParserState::FlowMappingEmptyValue);
             return yaml_parser_parse_node(parser, false, false);
@@ -851,12 +848,11 @@ fn yaml_parser_process_directives(
                 return yaml_parser_set_parser_error("found duplicate %YAML directive", mark);
             } else if *major != 1 || *minor != 1 && *minor != 2 {
                 return yaml_parser_set_parser_error("found incompatible YAML document", mark);
-            } else {
-                version_directive = Some(VersionDirective {
-                    major: *major,
-                    minor: *minor,
-                });
             }
+            version_directive = Some(VersionDirective {
+                major: *major,
+                minor: *minor,
+            });
         } else if let TokenData::TagDirective { handle, prefix } = &token.data {
             let value = TagDirective {
                 // TODO: Get rid of these clones by consuming tokens by value.
