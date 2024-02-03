@@ -55,11 +55,11 @@ pub use crate::api::{
     yaml_document_add_sequence, yaml_document_append_mapping_pair,
     yaml_document_append_sequence_item, yaml_document_delete, yaml_document_end_event_new,
     yaml_document_get_node, yaml_document_get_root_node, yaml_document_new,
-    yaml_document_start_event_new, yaml_emitter_delete, yaml_emitter_new, yaml_emitter_set_break,
+    yaml_document_start_event_new, yaml_emitter_new, yaml_emitter_reset, yaml_emitter_set_break,
     yaml_emitter_set_canonical, yaml_emitter_set_encoding, yaml_emitter_set_indent,
     yaml_emitter_set_output, yaml_emitter_set_output_string, yaml_emitter_set_unicode,
     yaml_emitter_set_width, yaml_mapping_end_event_new, yaml_mapping_start_event_new,
-    yaml_parser_delete, yaml_parser_new, yaml_parser_set_encoding, yaml_parser_set_input,
+    yaml_parser_new, yaml_parser_reset, yaml_parser_set_encoding, yaml_parser_set_input,
     yaml_parser_set_input_string, yaml_scalar_event_new, yaml_sequence_end_event_new,
     yaml_sequence_start_event_new, yaml_stream_end_event_new, yaml_stream_start_event_new,
 };

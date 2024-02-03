@@ -47,15 +47,9 @@ pub fn yaml_parser_new<'r>() -> yaml_parser_t<'r> {
     }
 }
 
-/// Destroy a parser.
-pub fn yaml_parser_delete(parser: &mut yaml_parser_t) {
-    parser.buffer.clear();
-    parser.tokens.clear();
-    parser.indents.clear();
-    parser.simple_keys.clear();
-    parser.states.clear();
-    parser.marks.clear();
-    parser.tag_directives.clear();
+/// Reset the parser state.
+pub fn yaml_parser_reset(parser: &mut yaml_parser_t) {
+    *parser = yaml_parser_new();
 }
 
 /// Set a string input.
@@ -121,15 +115,9 @@ pub fn yaml_emitter_new<'w>() -> yaml_emitter_t<'w> {
     }
 }
 
-/// Destroy an emitter.
-pub fn yaml_emitter_delete(emitter: &mut yaml_emitter_t) {
-    emitter.buffer.clear();
-    emitter.raw_buffer.clear();
-    emitter.states.clear();
-    emitter.events.clear();
-    emitter.indents.clear();
-    emitter.tag_directives.clear();
-    *emitter = yaml_emitter_t::default();
+/// Reset the emitter state.
+pub fn yaml_emitter_reset(emitter: &mut yaml_emitter_t) {
+    *emitter = yaml_emitter_new();
 }
 
 /// Set a string output.

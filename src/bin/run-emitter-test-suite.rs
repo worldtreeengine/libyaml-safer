@@ -16,7 +16,7 @@
 
 use libyaml_safer::{
     yaml_alias_event_new, yaml_document_end_event_new, yaml_document_start_event_new,
-    yaml_emitter_delete, yaml_emitter_emit, yaml_emitter_new, yaml_emitter_set_canonical,
+    yaml_emitter_emit, yaml_emitter_new, yaml_emitter_reset, yaml_emitter_set_canonical,
     yaml_emitter_set_output, yaml_emitter_set_unicode, yaml_mapping_end_event_new,
     yaml_mapping_start_event_new, yaml_scalar_event_new, yaml_scalar_style_t,
     yaml_sequence_end_event_new, yaml_sequence_start_event_new, yaml_stream_end_event_new,
@@ -104,7 +104,7 @@ pub(crate) fn test_main(
         }
     };
 
-    yaml_emitter_delete(&mut emitter);
+    yaml_emitter_reset(&mut emitter);
     result
 }
 

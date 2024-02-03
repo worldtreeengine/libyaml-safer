@@ -12,7 +12,7 @@
 )]
 
 use libyaml_safer::{
-    yaml_parser_delete, yaml_parser_new, yaml_parser_parse, yaml_parser_set_input, YamlEventData,
+    yaml_parser_new, yaml_parser_parse, yaml_parser_reset, yaml_parser_set_input, YamlEventData,
     YAML_DOUBLE_QUOTED_SCALAR_STYLE, YAML_FOLDED_SCALAR_STYLE, YAML_LITERAL_SCALAR_STYLE,
     YAML_PLAIN_SCALAR_STYLE, YAML_SINGLE_QUOTED_SCALAR_STYLE,
 };
@@ -36,7 +36,7 @@ pub(crate) fn test_main(
         let event = match yaml_parser_parse(&mut parser) {
             Err(err) => {
                 let error = format!("Parse error: {err}");
-                yaml_parser_delete(&mut parser);
+                yaml_parser_reset(&mut parser);
                 return Err(error.into());
             }
             Ok(event) => event,
@@ -129,7 +129,7 @@ pub(crate) fn test_main(
             break;
         }
     }
-    yaml_parser_delete(&mut parser);
+    yaml_parser_reset(&mut parser);
     Ok(())
 }
 
