@@ -9,7 +9,6 @@ use crate::{
     yaml_tag_directive_t, yaml_version_directive_t, YAML_ANY_ENCODING, YAML_DEFAULT_MAPPING_TAG,
     YAML_DEFAULT_SCALAR_TAG, YAML_DEFAULT_SEQUENCE_TAG, YAML_UTF8_ENCODING,
 };
-use core::ptr;
 use std::collections::VecDeque;
 
 pub(crate) const INPUT_RAW_BUFFER_SIZE: usize = 16384;
@@ -53,10 +52,6 @@ pub fn yaml_parser_reset(parser: &mut yaml_parser_t) {
 }
 
 /// Set a string input.
-///
-/// Note that the `input` pointer must be valid while the `parser` object
-/// exists. The application is responsible for destroying `input` after
-/// destroying the `parser`.
 pub fn yaml_parser_set_input_string<'r>(parser: &mut yaml_parser_t<'r>, input: &'r mut &[u8]) {
     assert!((parser.read_handler).is_none());
     parser.read_handler = Some(input);
@@ -77,10 +72,7 @@ pub fn yaml_parser_set_encoding(parser: &mut yaml_parser_t, encoding: yaml_encod
     parser.encoding = encoding;
 }
 
-/// Initialize an emitter.
-///
-/// This function creates a new emitter object. An application is responsible
-/// for destroying the object using the yaml_emitter_delete() function.
+/// Create an emitter.
 pub fn yaml_emitter_new<'w>() -> yaml_emitter_t<'w> {
     yaml_emitter_t {
         write_handler: None,
@@ -122,10 +114,7 @@ pub fn yaml_emitter_reset(emitter: &mut yaml_emitter_t) {
 
 /// Set a string output.
 ///
-/// The emitter will write the output characters to the `output` buffer of the
-/// size `size`. The emitter will set `size_written` to the number of written
-/// bytes. If the buffer is smaller than required, the emitter produces the
-/// YAML_WRITE_ERROR error.
+/// The emitter will write the output characters to the `output` buffer.
 pub fn yaml_emitter_set_output_string<'w>(
     emitter: &mut yaml_emitter_t<'w>,
     output: &'w mut Vec<u8>,
@@ -394,33 +383,23 @@ pub fn yaml_document_delete(document: &mut yaml_document_t) {
 
 /// Get a node of a YAML document.
 ///
-/// The pointer returned by this function is valid until any of the functions
-/// modifying the documents are called.
-///
-/// Returns the node object or NULL if `index` is out of range.
-pub fn yaml_document_get_node(document: &mut yaml_document_t, index: i32) -> *mut yaml_node_t {
-    if index > 0 && index as usize <= document.nodes.len() {
-        return std::ptr::addr_of_mut!(document.nodes[index as usize - 1]);
-    }
-    ptr::null_mut()
+/// Returns the node object or `None` if `index` is out of range.
+pub fn yaml_document_get_node(
+    document: &mut yaml_document_t,
+    index: i32,
+) -> Option<&mut yaml_node_t> {
+    document.nodes.get_mut(index as usize - 1)
 }
 
 /// Get the root of a YAML document node.
 ///
 /// The root object is the first object added to the document.
 ///
-/// The pointer returned by this function is valid until any of the functions
-/// modifying the documents are called.
-///
 /// An empty document produced by the parser signifies the end of a YAML stream.
 ///
-/// Returns the node object or NULL if the document is empty.
-pub fn yaml_document_get_root_node(document: &mut yaml_document_t) -> *mut yaml_node_t {
-    if let Some(root) = document.nodes.get_mut(0) {
-        root as _
-    } else {
-        ptr::null_mut()
-    }
+/// Returns the node object or `None` if the document is empty.
+pub fn yaml_document_get_root_node(document: &mut yaml_document_t) -> Option<&mut yaml_node_t> {
+    document.nodes.get_mut(0)
 }
 
 /// Create a SCALAR node and attach it to the document.
@@ -460,7 +439,7 @@ pub fn yaml_document_add_scalar(
 ///
 /// The `style` argument may be ignored by the emitter.
 ///
-/// Returns the node id or 0 on error.
+/// Returns the node id, which is a nonzero integer.
 #[must_use]
 pub fn yaml_document_add_sequence(
     document: &mut yaml_document_t,
@@ -490,7 +469,7 @@ pub fn yaml_document_add_sequence(
 ///
 /// The `style` argument may be ignored by the emitter.
 ///
-/// Returns the node id or 0 on error.
+/// Returns the node id, which is a nonzero integer.
 #[must_use]
 pub fn yaml_document_add_mapping(
     document: &mut yaml_document_t,

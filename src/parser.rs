@@ -75,9 +75,6 @@ fn SKIP_TOKEN(parser: &mut yaml_parser_t) {
 /// to the input stream. The initial event has the type YAML_STREAM_START_EVENT
 /// while the ending event has the type YAML_STREAM_END_EVENT.
 ///
-/// An application is responsible for freeing any buffers associated with the
-/// produced event object using the yaml_event_delete() function.
-///
 /// An application must not alternate the calls of yaml_parser_parse() with the
 /// calls of yaml_parser_scan() or yaml_parser_load(). Doing this will break the
 /// parser.
@@ -315,7 +312,6 @@ fn yaml_parser_parse_node(
         line: 0,
         column: 0,
     };
-    
 
     let mut token = PEEK_TOKEN_MUT(parser)?;
 

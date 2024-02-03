@@ -90,9 +90,6 @@ fn READ_LINE_STRING(parser: &mut yaml_parser_t, string: &mut String) {
 /// to the input stream. The initial token has the type YAML_STREAM_START_TOKEN
 /// while the ending token has the type YAML_STREAM_END_TOKEN.
 ///
-/// An application is responsible for freeing any buffers associated with the
-/// produced token object using the yaml_token_delete function.
-///
 /// An application must not alternate the calls of yaml_parser_scan() with the
 /// calls of yaml_parser_parse() or yaml_parser_load(). Doing this will break
 /// the parser.
