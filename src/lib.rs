@@ -5,7 +5,7 @@
 //! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs
 
 #![doc(html_root_url = "https://docs.rs/unsafe-libyaml/0.2.10")]
-#![allow(non_camel_case_types, non_snake_case, unsafe_op_in_unsafe_fn)]
+#![allow(non_snake_case)]
 #![warn(clippy::pedantic)]
 #![allow(
     clippy::cast_lossless,
