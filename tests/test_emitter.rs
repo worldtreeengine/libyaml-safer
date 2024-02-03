@@ -22,7 +22,7 @@ fn test(id: &str) {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    eprint!("{}", stderr);
+    eprint!("{stderr}");
 
     let out = if dir.join("out.yaml").exists() {
         dir.join("out.yaml")

@@ -22,8 +22,8 @@ fn test(id: &str) {
     if output.success {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        eprint!("{}", stdout);
-        eprint!("{}", stderr);
+        eprint!("{stdout}");
+        eprint!("{stderr}");
         panic!("expected parse to fail");
     }
 }

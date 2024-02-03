@@ -22,7 +22,7 @@ fn test(id: &str) {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    eprint!("{}", stderr);
+    eprint!("{stderr}");
 
     let expected = fs::read_to_string(dir.join("test.event")).unwrap();
     pretty_assertions::assert_str_eq!(expected, stdout);
