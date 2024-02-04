@@ -88,64 +88,6 @@ impl<'a> Default for Emitter<'a> {
     }
 }
 
-fn FLUSH(emitter: &mut Emitter) -> Result<(), WriterError> {
-    if emitter.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
-        Ok(())
-    } else {
-        emitter.flush()
-    }
-}
-
-fn PUT(emitter: &mut Emitter, value: u8) -> Result<(), WriterError> {
-    FLUSH(emitter)?;
-    let ch = char::from(value);
-    emitter.buffer.push(ch);
-    emitter.column += 1;
-    Ok(())
-}
-
-fn PUT_BREAK(emitter: &mut Emitter) -> Result<(), WriterError> {
-    FLUSH(emitter)?;
-    if emitter.line_break == Break::Cr {
-        emitter.buffer.push('\r');
-    } else if emitter.line_break == Break::Ln {
-        emitter.buffer.push('\n');
-    } else if emitter.line_break == Break::CrLn {
-        emitter.buffer.push_str("\r\n");
-    };
-    emitter.column = 0;
-    emitter.line += 1;
-    Ok(())
-}
-
-/// Write UTF-8 charanters from `string` to `emitter` and increment
-/// `emitter.column` the appropriate number of times.
-fn WRITE_STR(emitter: &mut Emitter, string: &str) -> Result<(), WriterError> {
-    for ch in string.chars() {
-        WRITE_CHAR(emitter, ch)?;
-    }
-    Ok(())
-}
-
-fn WRITE_CHAR(emitter: &mut Emitter, ch: char) -> Result<(), WriterError> {
-    FLUSH(emitter)?;
-    emitter.buffer.push(ch);
-    emitter.column += 1;
-    Ok(())
-}
-
-fn WRITE_BREAK_CHAR(emitter: &mut Emitter, ch: char) -> Result<(), WriterError> {
-    FLUSH(emitter)?;
-    if ch == '\n' {
-        _ = PUT_BREAK(emitter);
-    } else {
-        WRITE_CHAR(emitter, ch)?;
-        emitter.column = 0;
-        emitter.line += 1;
-    }
-    Ok(())
-}
-
 /// The emitter states.
 #[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[non_exhaustive]
@@ -376,6 +318,69 @@ impl<'w> Emitter<'w> {
             if self.tag_directives.is_empty() {
                 self.tag_directives = tag_directives;
             }
+        }
+        Ok(())
+    }
+
+    /// Equivalent of the libyaml `FLUSH` macro.
+    fn flush_if_needed(&mut self) -> Result<(), WriterError> {
+        if self.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
+            Ok(())
+        } else {
+            self.flush()
+        }
+    }
+
+    /// Equivalent of the libyaml `PUT` macro.
+    fn put(&mut self, value: u8) -> Result<(), WriterError> {
+        self.flush_if_needed()?;
+        let ch = char::from(value);
+        self.buffer.push(ch);
+        self.column += 1;
+        Ok(())
+    }
+
+    /// Equivalent of the libyaml `PUT_BREAK` macro.
+    fn put_break(&mut self) -> Result<(), WriterError> {
+        self.flush_if_needed()?;
+        if self.line_break == Break::Cr {
+            self.buffer.push('\r');
+        } else if self.line_break == Break::Ln {
+            self.buffer.push('\n');
+        } else if self.line_break == Break::CrLn {
+            self.buffer.push_str("\r\n");
+        };
+        self.column = 0;
+        self.line += 1;
+        Ok(())
+    }
+
+    /// Write UTF-8 charanters from `string` to `emitter` and increment
+    /// `emitter.column` the appropriate number of times.
+    fn write_str(&mut self, string: &str) -> Result<(), WriterError> {
+        for ch in string.chars() {
+            self.write_char(ch)?;
+        }
+        Ok(())
+    }
+
+    /// Equivalent of the libyaml `WRITE` macro.
+    fn write_char(&mut self, ch: char) -> Result<(), WriterError> {
+        self.flush_if_needed()?;
+        self.buffer.push(ch);
+        self.column += 1;
+        Ok(())
+    }
+
+    /// Equivalent of the libyaml `WRITE_BREAK` macro.
+    fn write_break(&mut self, ch: char) -> Result<(), WriterError> {
+        self.flush_if_needed()?;
+        if ch == '\n' {
+            self.put_break()?;
+        } else {
+            self.write_char(ch)?;
+            self.column = 0;
+            self.line += 1;
         }
         Ok(())
     }
@@ -817,7 +822,7 @@ impl<'w> Emitter<'w> {
     ) -> Result<(), EmitterError> {
         self.process_anchor(analysis)?;
         if self.simple_key_context {
-            PUT(self, b' ')?;
+            self.put(b' ')?;
         }
         self.state = self.states.pop().unwrap();
         Ok(())
@@ -1374,7 +1379,7 @@ impl<'w> Emitter<'w> {
     }
 
     fn write_bom(&mut self) -> Result<(), EmitterError> {
-        FLUSH(self)?;
+        self.flush_if_needed()?;
         self.buffer.push('\u{feff}');
         Ok(())
     }
@@ -1382,10 +1387,10 @@ impl<'w> Emitter<'w> {
     fn write_indent(&mut self) -> Result<(), EmitterError> {
         let indent = if self.indent >= 0 { self.indent } else { 0 };
         if !self.indention || self.column > indent || self.column == indent && !self.whitespace {
-            PUT_BREAK(self)?;
+            self.put_break()?;
         }
         while self.column < indent {
-            PUT(self, b' ')?;
+            self.put(b' ')?;
         }
         self.whitespace = true;
         self.indention = true;
@@ -1400,16 +1405,16 @@ impl<'w> Emitter<'w> {
         is_indention: bool,
     ) -> Result<(), EmitterError> {
         if need_whitespace && !self.whitespace {
-            PUT(self, b' ')?;
+            self.put(b' ')?;
         }
-        WRITE_STR(self, indicator)?;
+        self.write_str(indicator)?;
         self.whitespace = is_whitespace;
         self.indention = self.indention && is_indention;
         Ok(())
     }
 
     fn write_anchor(&mut self, value: &str) -> Result<(), EmitterError> {
-        WRITE_STR(self, value)?;
+        self.write_str(value)?;
         self.whitespace = false;
         self.indention = false;
         Ok(())
@@ -1417,9 +1422,9 @@ impl<'w> Emitter<'w> {
 
     fn write_tag_handle(&mut self, value: &str) -> Result<(), EmitterError> {
         if !self.whitespace {
-            PUT(self, b' ')?;
+            self.put(b' ')?;
         }
-        WRITE_STR(self, value)?;
+        self.write_str(value)?;
         self.whitespace = false;
         self.indention = false;
         Ok(())
@@ -1431,19 +1436,19 @@ impl<'w> Emitter<'w> {
         need_whitespace: bool,
     ) -> Result<(), EmitterError> {
         if need_whitespace && !self.whitespace {
-            PUT(self, b' ')?;
+            self.put(b' ')?;
         }
 
         for ch in value.chars() {
             if is_alpha(ch) {
-                WRITE_CHAR(self, ch)?;
+                self.write_char(ch)?;
                 continue;
             }
 
             match ch {
                 ';' | '/' | '?' | ':' | '@' | '&' | '=' | '+' | '$' | ',' | '_' | '.' | '~'
                 | '*' | '\'' | '(' | ')' | '[' | ']' => {
-                    WRITE_CHAR(self, ch)?;
+                    self.write_char(ch)?;
                     continue;
                 }
                 _ => {}
@@ -1455,9 +1460,9 @@ impl<'w> Emitter<'w> {
             for value in encoded_char.bytes() {
                 let upper = (value >> 4) + if (value >> 4) < 10 { b'0' } else { b'A' - 10 };
                 let lower = (value & 0x0F) + if (value & 0x0F) < 10 { b'0' } else { b'A' - 10 };
-                PUT(self, b'%')?;
-                PUT(self, upper)?;
-                PUT(self, lower)?;
+                self.put(b'%')?;
+                self.put(upper)?;
+                self.put(lower)?;
             }
         }
 
@@ -1470,7 +1475,7 @@ impl<'w> Emitter<'w> {
         let mut spaces = false;
         let mut breaks = false;
         if !self.whitespace && (!value.is_empty() || self.flow_level != 0) {
-            PUT(self, b' ')?;
+            self.put(b' ')?;
         }
 
         let mut chars = value.chars();
@@ -1481,21 +1486,21 @@ impl<'w> Emitter<'w> {
                 if allow_breaks && !spaces && self.column > self.best_width && !is_space(next) {
                     self.write_indent()?;
                 } else {
-                    WRITE_CHAR(self, ch)?;
+                    self.write_char(ch)?;
                 }
                 spaces = true;
             } else if is_break(ch) {
                 if !breaks && ch == '\n' {
-                    PUT_BREAK(self)?;
+                    self.put_break()?;
                 }
-                WRITE_BREAK_CHAR(self, ch)?;
+                self.write_break(ch)?;
                 self.indention = true;
                 breaks = true;
             } else {
                 if breaks {
                     self.write_indent()?;
                 }
-                WRITE_CHAR(self, ch)?;
+                self.write_char(ch)?;
                 self.indention = false;
                 spaces = false;
                 breaks = false;
@@ -1530,14 +1535,14 @@ impl<'w> Emitter<'w> {
                 {
                     self.write_indent()?;
                 } else {
-                    WRITE_CHAR(self, ch)?;
+                    self.write_char(ch)?;
                 }
                 spaces = true;
             } else if is_break(ch) {
                 if !breaks && ch == '\n' {
-                    PUT_BREAK(self)?;
+                    self.put_break()?;
                 }
-                WRITE_BREAK_CHAR(self, ch)?;
+                self.write_break(ch)?;
                 self.indention = true;
                 breaks = true;
             } else {
@@ -1545,9 +1550,9 @@ impl<'w> Emitter<'w> {
                     self.write_indent()?;
                 }
                 if ch == '\'' {
-                    PUT(self, b'\'')?;
+                    self.put(b'\'')?;
                 }
-                WRITE_CHAR(self, ch)?;
+                self.write_char(ch)?;
                 self.indention = false;
                 spaces = false;
                 breaks = false;
@@ -1581,53 +1586,53 @@ impl<'w> Emitter<'w> {
                 || ch == '"'
                 || ch == '\\'
             {
-                PUT(self, b'\\')?;
+                self.put(b'\\')?;
                 match ch {
                     // TODO: Double check these character mappings.
                     '\0' => {
-                        PUT(self, b'0')?;
+                        self.put(b'0')?;
                     }
                     '\x07' => {
-                        PUT(self, b'a')?;
+                        self.put(b'a')?;
                     }
                     '\x08' => {
-                        PUT(self, b'b')?;
+                        self.put(b'b')?;
                     }
                     '\x09' => {
-                        PUT(self, b't')?;
+                        self.put(b't')?;
                     }
                     '\x0A' => {
-                        PUT(self, b'n')?;
+                        self.put(b'n')?;
                     }
                     '\x0B' => {
-                        PUT(self, b'v')?;
+                        self.put(b'v')?;
                     }
                     '\x0C' => {
-                        PUT(self, b'f')?;
+                        self.put(b'f')?;
                     }
                     '\x0D' => {
-                        PUT(self, b'r')?;
+                        self.put(b'r')?;
                     }
                     '\x1B' => {
-                        PUT(self, b'e')?;
+                        self.put(b'e')?;
                     }
                     '\x22' => {
-                        PUT(self, b'"')?;
+                        self.put(b'"')?;
                     }
                     '\x5C' => {
-                        PUT(self, b'\\')?;
+                        self.put(b'\\')?;
                     }
                     '\u{0085}' => {
-                        PUT(self, b'N')?;
+                        self.put(b'N')?;
                     }
                     '\u{00A0}' => {
-                        PUT(self, b'_')?;
+                        self.put(b'_')?;
                     }
                     '\u{2028}' => {
-                        PUT(self, b'L')?;
+                        self.put(b'L')?;
                     }
                     '\u{2029}' => {
-                        PUT(self, b'P')?;
+                        self.put(b'P')?;
                     }
                     _ => {
                         let (prefix, width) = if ch <= '\u{00ff}' {
@@ -1637,7 +1642,7 @@ impl<'w> Emitter<'w> {
                         } else {
                             (b'U', 8)
                         };
-                        PUT(self, prefix)?;
+                        self.put(prefix)?;
                         let mut k = (width - 1) * 4;
                         let value_0 = ch as u32;
                         while k >= 0 {
@@ -1648,7 +1653,7 @@ impl<'w> Emitter<'w> {
                             // The libyaml emitter encodes unicode sequences as uppercase hex.
                             let digit_char = digit_char.to_ascii_uppercase();
                             let digit_byte = digit_char as u8;
-                            PUT(self, digit_byte)?;
+                            self.put(digit_byte)?;
                             k -= 4;
                         }
                     }
@@ -1663,14 +1668,14 @@ impl<'w> Emitter<'w> {
                 {
                     self.write_indent()?;
                     if is_space(chars.clone().next()) {
-                        PUT(self, b'\\')?;
+                        self.put(b'\\')?;
                     }
                 } else {
-                    WRITE_CHAR(self, ch)?;
+                    self.write_char(ch)?;
                 }
                 spaces = true;
             } else {
-                WRITE_CHAR(self, ch)?;
+                self.write_char(ch)?;
                 spaces = false;
             }
 
@@ -1721,20 +1726,20 @@ impl<'w> Emitter<'w> {
         let mut breaks = true;
         self.write_indicator("|", true, false, false)?;
         self.write_block_scalar_hints(value)?;
-        PUT_BREAK(self)?;
+        self.put_break()?;
         self.indention = true;
         self.whitespace = true;
         let chars = value.chars();
         for ch in chars {
             if is_break(ch) {
-                WRITE_BREAK_CHAR(self, ch)?;
+                self.write_break(ch)?;
                 self.indention = true;
                 breaks = true;
             } else {
                 if breaks {
                     self.write_indent()?;
                 }
-                WRITE_CHAR(self, ch)?;
+                self.write_char(ch)?;
                 self.indention = false;
                 breaks = false;
             }
@@ -1747,7 +1752,7 @@ impl<'w> Emitter<'w> {
         let mut leading_spaces = true;
         self.write_indicator(">", true, false, false)?;
         self.write_block_scalar_hints(value)?;
-        PUT_BREAK(self)?;
+        self.put_break()?;
         self.indention = true;
         self.whitespace = true;
 
@@ -1759,10 +1764,10 @@ impl<'w> Emitter<'w> {
                     let mut skip_breaks = chars.clone();
                     while is_break(skip_breaks.next()) {}
                     if !is_blankz(skip_breaks.next()) {
-                        PUT_BREAK(self)?;
+                        self.put_break()?;
                     }
                 }
-                WRITE_BREAK_CHAR(self, ch)?;
+                self.write_break(ch)?;
                 self.indention = true;
                 breaks = true;
             } else {
@@ -1777,7 +1782,7 @@ impl<'w> Emitter<'w> {
                 {
                     self.write_indent()?;
                 } else {
-                    WRITE_CHAR(self, ch)?;
+                    self.write_char(ch)?;
                 }
                 self.indention = false;
                 breaks = false;
