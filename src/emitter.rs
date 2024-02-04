@@ -6,8 +6,8 @@ use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_breakz, is_printable, is_space,
 };
 use crate::{
-    yaml_emitter_flush, Break, EmitterError, Encoding, Event, EventData, MappingStyle, ScalarStyle,
-    SequenceStyle, TagDirective, VersionDirective, WriterError, OUTPUT_BUFFER_SIZE,
+    Break, EmitterError, Encoding, Event, EventData, MappingStyle, ScalarStyle, SequenceStyle,
+    TagDirective, VersionDirective, WriterError, OUTPUT_BUFFER_SIZE,
 };
 
 /// The emitter structure.
@@ -92,7 +92,7 @@ fn FLUSH(emitter: &mut Emitter) -> Result<(), WriterError> {
     if emitter.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
         Ok(())
     } else {
-        yaml_emitter_flush(emitter)
+        emitter.flush()
     }
 }
 
@@ -606,7 +606,7 @@ impl<'w> Emitter<'w> {
                 self.open_ended = 0;
                 self.write_indent()?;
             }
-            yaml_emitter_flush(self)?;
+            self.flush()?;
             self.state = EmitterState::End;
             return Ok(());
         }
@@ -634,7 +634,7 @@ impl<'w> Emitter<'w> {
             } else if self.open_ended == 0 {
                 self.open_ended = 1;
             }
-            yaml_emitter_flush(self)?;
+            self.flush()?;
             self.state = EmitterState::DocumentStart;
             self.tag_directives.clear();
             return Ok(());
@@ -1791,6 +1791,53 @@ impl<'w> Emitter<'w> {
                 breaks = false;
             }
         }
+        Ok(())
+    }
+
+    /// Flush the accumulated characters to the output.
+    pub fn flush(&mut self) -> Result<(), WriterError> {
+        assert!((self.write_handler).is_some());
+        assert_ne!(self.encoding, Encoding::Any);
+
+        if self.buffer.is_empty() {
+            return Ok(());
+        }
+
+        if self.encoding == Encoding::Utf8 {
+            let to_emit = self.buffer.as_bytes();
+            self.write_handler
+                .as_mut()
+                .expect("non-null writer")
+                .write_all(to_emit)?;
+            self.buffer.clear();
+            return Ok(());
+        }
+
+        let big_endian = match self.encoding {
+            Encoding::Any | Encoding::Utf8 => {
+                unreachable!("unhandled encoding")
+            }
+            Encoding::Utf16Le => false,
+            Encoding::Utf16Be => true,
+        };
+
+        for ch in self.buffer.encode_utf16() {
+            let bytes = if big_endian {
+                ch.to_be_bytes()
+            } else {
+                ch.to_le_bytes()
+            };
+            self.raw_buffer.extend(bytes);
+        }
+
+        let to_emit = self.raw_buffer.as_slice();
+
+        self.write_handler
+            .as_mut()
+            .expect("non-null function pointer")
+            .write_all(to_emit)?;
+        self.buffer.clear();
+        self.raw_buffer.clear();
         Ok(())
     }
 

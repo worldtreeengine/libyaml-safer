@@ -35,7 +35,6 @@ mod parser;
 mod reader;
 mod scanner;
 mod token;
-mod writer;
 
 pub use crate::document::*;
 pub use crate::emitter::*;
@@ -44,7 +43,6 @@ pub use crate::event::*;
 pub use crate::parser::*;
 pub use crate::scanner::*;
 pub use crate::token::*;
-pub use crate::writer::yaml_emitter_flush;
 
 pub(crate) const INPUT_RAW_BUFFER_SIZE: usize = 16384;
 pub(crate) const INPUT_BUFFER_SIZE: usize = INPUT_RAW_BUFFER_SIZE;
