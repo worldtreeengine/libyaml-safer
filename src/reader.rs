@@ -2,7 +2,7 @@ use std::io::BufRead;
 
 use alloc::collections::VecDeque;
 
-use crate::{Encoding, Parser, ReaderError};
+use crate::{scanner::Scanner, Encoding, ReaderError};
 
 fn yaml_parser_set_reader_error<T>(
     problem: &'static str,
@@ -279,7 +279,7 @@ fn push_char(out: &mut VecDeque<char>, ch: char, offset: usize) -> Result<(), Re
 }
 
 pub(crate) fn yaml_parser_update_buffer(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     length: usize,
 ) -> Result<(), ReaderError> {
     let reader = parser.read_handler.as_deref_mut().expect("no read handler");

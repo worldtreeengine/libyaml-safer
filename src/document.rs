@@ -265,7 +265,7 @@ impl Document {
         let mut document = Document::new(None, &[], false, false);
         document.nodes.reserve(16);
 
-        if !parser.stream_start_produced {
+        if !parser.scanner.stream_start_produced {
             match parser.parse() {
                 Ok(Event {
                     data: EventData::StreamStart { .. },
@@ -278,7 +278,7 @@ impl Document {
                 }
             }
         }
-        if parser.stream_end_produced {
+        if parser.scanner.stream_end_produced {
             return Ok(document);
         }
         let err: ComposerError;

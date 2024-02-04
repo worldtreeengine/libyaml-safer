@@ -1,10 +1,102 @@
+use std::collections::VecDeque;
+
 use alloc::string::String;
 
 use crate::macros::{is_blankz, is_break, vecdeque_starts_with};
 use crate::reader::yaml_parser_update_buffer;
-use crate::{Mark, Parser, ReaderError, ScalarStyle, ScannerError, SimpleKey, Token, TokenData};
+use crate::{
+    Encoding, Mark, ReaderError, ScalarStyle, ScannerError, SimpleKey, Token, TokenData,
+    INPUT_BUFFER_SIZE,
+};
 
-fn CACHE(parser: &mut Parser, length: usize) -> Result<(), ReaderError> {
+pub struct Scanner<'r> {
+    /// Read handler.
+    pub(crate) read_handler: Option<&'r mut dyn std::io::BufRead>,
+    /// EOF flag
+    pub(crate) eof: bool,
+    /// The working buffer.
+    ///
+    /// This always contains valid UTF-8.
+    pub(crate) buffer: VecDeque<char>,
+    /// The number of unread characters in the buffer.
+    pub(crate) unread: usize,
+    /// The input encoding.
+    pub(crate) encoding: Encoding,
+    /// The offset of the current position (in bytes).
+    pub(crate) offset: usize,
+    /// The mark of the current position.
+    pub(crate) mark: Mark,
+    /// Have we started to scan the input stream?
+    pub(crate) stream_start_produced: bool,
+    /// Have we reached the end of the input stream?
+    pub(crate) stream_end_produced: bool,
+    /// The number of unclosed '[' and '{' indicators.
+    pub(crate) flow_level: i32,
+    /// The tokens queue.
+    pub(crate) tokens: VecDeque<Token>,
+    /// The number of tokens fetched from the queue.
+    pub(crate) tokens_parsed: usize,
+    /// Does the tokens queue contain a token ready for dequeueing.
+    pub(crate) token_available: bool,
+    /// The indentation levels stack.
+    pub(crate) indents: Vec<i32>,
+    /// The current indentation level.
+    pub(crate) indent: i32,
+    /// May a simple key occur at the current position?
+    pub(crate) simple_key_allowed: bool,
+    /// The stack of simple keys.
+    pub(crate) simple_keys: Vec<SimpleKey>,
+}
+
+impl<'r> Scanner<'r> {
+    pub fn new() -> Scanner<'r> {
+        Self {
+            read_handler: None,
+            eof: false,
+            buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
+            unread: 0,
+            encoding: Encoding::Any,
+            offset: 0,
+            mark: Mark::default(),
+            stream_start_produced: false,
+            stream_end_produced: false,
+            flow_level: 0,
+            tokens: VecDeque::with_capacity(16),
+            tokens_parsed: 0,
+            token_available: false,
+            indents: Vec::with_capacity(16),
+            indent: 0,
+            simple_key_allowed: false,
+            simple_keys: Vec::with_capacity(16),
+        }
+    }
+
+    /// Set a string input.
+    pub fn set_input_string(&mut self, input: &'r mut &[u8]) {
+        assert!((self.read_handler).is_none());
+        self.read_handler = Some(input);
+    }
+
+    /// Set a generic input handler.
+    pub fn set_input(&mut self, input: &'r mut dyn std::io::BufRead) {
+        assert!((self.read_handler).is_none());
+        self.read_handler = Some(input);
+    }
+
+    /// Set the source encoding.
+    pub fn set_encoding(&mut self, encoding: Encoding) {
+        assert!(self.encoding == Encoding::Any);
+        self.encoding = encoding;
+    }
+}
+
+impl<'r> Default for Scanner<'r> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn CACHE(parser: &mut Scanner, length: usize) -> Result<(), ReaderError> {
     if parser.unread >= length {
         Ok(())
     } else {
@@ -12,7 +104,7 @@ fn CACHE(parser: &mut Parser, length: usize) -> Result<(), ReaderError> {
     }
 }
 
-fn SKIP(parser: &mut Parser) {
+fn SKIP(parser: &mut Scanner) {
     let popped = parser.buffer.pop_front().expect("unexpected end of tokens");
     let width = popped.len_utf8();
     parser.mark.index += width as u64;
@@ -20,7 +112,7 @@ fn SKIP(parser: &mut Parser) {
     parser.unread -= 1;
 }
 
-fn SKIP_LINE(parser: &mut Parser) {
+fn SKIP_LINE(parser: &mut Scanner) {
     if vecdeque_starts_with(&parser.buffer, &['\r', '\n']) {
         parser.mark.index += 2;
         parser.mark.column = 0;
@@ -39,7 +131,7 @@ fn SKIP_LINE(parser: &mut Parser) {
     }
 }
 
-fn READ_STRING(parser: &mut Parser, string: &mut String) {
+fn READ_STRING(parser: &mut Scanner, string: &mut String) {
     if let Some(popped) = parser.buffer.pop_front() {
         string.push(popped);
         parser.mark.index = popped.len_utf8() as u64;
@@ -50,7 +142,7 @@ fn READ_STRING(parser: &mut Parser, string: &mut String) {
     }
 }
 
-fn READ_LINE_STRING(parser: &mut Parser, string: &mut String) {
+fn READ_LINE_STRING(parser: &mut Scanner, string: &mut String) {
     if vecdeque_starts_with(&parser.buffer, &['\r', '\n']) {
         string.push('\n');
         parser.buffer.drain(0..2);
@@ -90,7 +182,7 @@ fn READ_LINE_STRING(parser: &mut Parser, string: &mut String) {
 /// [`yaml_parser_scan()`](crate::yaml_parser_scan) with the calls of
 /// [`Parser::parse()`] or [`Document::load()`](crate::Document::load). Doing
 /// this will break the parser.
-pub fn yaml_parser_scan(parser: &mut Parser) -> Result<Token, ScannerError> {
+pub fn yaml_parser_scan(parser: &mut Scanner) -> Result<Token, ScannerError> {
     if parser.stream_end_produced {
         return Ok(Token {
             data: TokenData::StreamEnd,
@@ -113,7 +205,7 @@ pub fn yaml_parser_scan(parser: &mut Parser) -> Result<Token, ScannerError> {
 }
 
 fn yaml_parser_set_scanner_error<T>(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     context: &'static str,
     context_mark: Mark,
     problem: &'static str,
@@ -126,7 +218,7 @@ fn yaml_parser_set_scanner_error<T>(
     })
 }
 
-pub(crate) fn yaml_parser_fetch_more_tokens(parser: &mut Parser) -> Result<(), ScannerError> {
+pub(crate) fn yaml_parser_fetch_more_tokens(parser: &mut Scanner) -> Result<(), ScannerError> {
     let mut need_more_tokens;
     loop {
         need_more_tokens = false;
@@ -150,7 +242,7 @@ pub(crate) fn yaml_parser_fetch_more_tokens(parser: &mut Parser) -> Result<(), S
     Ok(())
 }
 
-fn yaml_parser_fetch_next_token(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_next_token(parser: &mut Scanner) -> Result<(), ScannerError> {
     CACHE(parser, 1)?;
     if !parser.stream_start_produced {
         yaml_parser_fetch_stream_start(parser);
@@ -262,7 +354,7 @@ fn yaml_parser_fetch_next_token(parser: &mut Parser) -> Result<(), ScannerError>
     )
 }
 
-fn yaml_parser_stale_simple_keys(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_stale_simple_keys(parser: &mut Scanner) -> Result<(), ScannerError> {
     for simple_key in &mut parser.simple_keys {
         let mark = simple_key.mark;
         if simple_key.possible
@@ -283,7 +375,7 @@ fn yaml_parser_stale_simple_keys(parser: &mut Parser) -> Result<(), ScannerError
     Ok(())
 }
 
-fn yaml_parser_save_simple_key(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_save_simple_key(parser: &mut Scanner) -> Result<(), ScannerError> {
     let required = parser.flow_level == 0 && parser.indent as u64 == parser.mark.column;
     if parser.simple_key_allowed {
         let simple_key = SimpleKey {
@@ -298,7 +390,7 @@ fn yaml_parser_save_simple_key(parser: &mut Parser) -> Result<(), ScannerError> 
     Ok(())
 }
 
-fn yaml_parser_remove_simple_key(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_remove_simple_key(parser: &mut Scanner) -> Result<(), ScannerError> {
     let simple_key: &mut SimpleKey = parser.simple_keys.last_mut().unwrap();
     if simple_key.possible {
         let mark = simple_key.mark;
@@ -315,7 +407,7 @@ fn yaml_parser_remove_simple_key(parser: &mut Parser) -> Result<(), ScannerError
     Ok(())
 }
 
-fn yaml_parser_increase_flow_level(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_increase_flow_level(parser: &mut Scanner) -> Result<(), ScannerError> {
     let empty_simple_key = SimpleKey {
         possible: false,
         required: false,
@@ -335,7 +427,7 @@ fn yaml_parser_increase_flow_level(parser: &mut Parser) -> Result<(), ScannerErr
     Ok(())
 }
 
-fn yaml_parser_decrease_flow_level(parser: &mut Parser) {
+fn yaml_parser_decrease_flow_level(parser: &mut Scanner) {
     if parser.flow_level != 0 {
         parser.flow_level -= 1;
         let _ = parser.simple_keys.pop();
@@ -343,7 +435,7 @@ fn yaml_parser_decrease_flow_level(parser: &mut Parser) {
 }
 
 fn yaml_parser_roll_indent(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     column: i64,
     number: i64,
     data: TokenData,
@@ -372,7 +464,7 @@ fn yaml_parser_roll_indent(
     Ok(())
 }
 
-fn yaml_parser_unroll_indent(parser: &mut Parser, column: i64) {
+fn yaml_parser_unroll_indent(parser: &mut Scanner, column: i64) {
     if parser.flow_level != 0 {
         return;
     }
@@ -387,7 +479,7 @@ fn yaml_parser_unroll_indent(parser: &mut Parser, column: i64) {
     }
 }
 
-fn yaml_parser_fetch_stream_start(parser: &mut Parser) {
+fn yaml_parser_fetch_stream_start(parser: &mut Scanner) {
     let simple_key = SimpleKey {
         possible: false,
         required: false,
@@ -412,7 +504,7 @@ fn yaml_parser_fetch_stream_start(parser: &mut Parser) {
     parser.tokens.push_back(token);
 }
 
-fn yaml_parser_fetch_stream_end(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_stream_end(parser: &mut Scanner) -> Result<(), ScannerError> {
     if parser.mark.column != 0_u64 {
         parser.mark.column = 0_u64;
         parser.mark.line += 1;
@@ -429,7 +521,7 @@ fn yaml_parser_fetch_stream_end(parser: &mut Parser) -> Result<(), ScannerError>
     Ok(())
 }
 
-fn yaml_parser_fetch_directive(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_directive(parser: &mut Scanner) -> Result<(), ScannerError> {
     let mut token = Token::default();
     yaml_parser_unroll_indent(parser, -1_i64);
     yaml_parser_remove_simple_key(parser)?;
@@ -440,7 +532,7 @@ fn yaml_parser_fetch_directive(parser: &mut Parser) -> Result<(), ScannerError> 
 }
 
 fn yaml_parser_fetch_document_indicator(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     data: TokenData,
 ) -> Result<(), ScannerError> {
     yaml_parser_unroll_indent(parser, -1_i64);
@@ -462,7 +554,7 @@ fn yaml_parser_fetch_document_indicator(
 }
 
 fn yaml_parser_fetch_flow_collection_start(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     data: TokenData,
 ) -> Result<(), ScannerError> {
     yaml_parser_save_simple_key(parser)?;
@@ -481,7 +573,7 @@ fn yaml_parser_fetch_flow_collection_start(
 }
 
 fn yaml_parser_fetch_flow_collection_end(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     data: TokenData,
 ) -> Result<(), ScannerError> {
     yaml_parser_remove_simple_key(parser)?;
@@ -499,7 +591,7 @@ fn yaml_parser_fetch_flow_collection_end(
     Ok(())
 }
 
-fn yaml_parser_fetch_flow_entry(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_flow_entry(parser: &mut Scanner) -> Result<(), ScannerError> {
     yaml_parser_remove_simple_key(parser)?;
     parser.simple_key_allowed = true;
     let start_mark: Mark = parser.mark;
@@ -514,7 +606,7 @@ fn yaml_parser_fetch_flow_entry(parser: &mut Parser) -> Result<(), ScannerError>
     Ok(())
 }
 
-fn yaml_parser_fetch_block_entry(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_block_entry(parser: &mut Scanner) -> Result<(), ScannerError> {
     if parser.flow_level == 0 {
         if !parser.simple_key_allowed {
             return yaml_parser_set_scanner_error(
@@ -546,7 +638,7 @@ fn yaml_parser_fetch_block_entry(parser: &mut Parser) -> Result<(), ScannerError
     Ok(())
 }
 
-fn yaml_parser_fetch_key(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_key(parser: &mut Scanner) -> Result<(), ScannerError> {
     if parser.flow_level == 0 {
         if !parser.simple_key_allowed {
             return yaml_parser_set_scanner_error(
@@ -578,7 +670,7 @@ fn yaml_parser_fetch_key(parser: &mut Parser) -> Result<(), ScannerError> {
     Ok(())
 }
 
-fn yaml_parser_fetch_value(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_value(parser: &mut Scanner) -> Result<(), ScannerError> {
     let simple_key: &mut SimpleKey = parser.simple_keys.last_mut().unwrap();
     if simple_key.possible {
         let token = Token {
@@ -635,7 +727,7 @@ fn yaml_parser_fetch_value(parser: &mut Parser) -> Result<(), ScannerError> {
 }
 
 fn yaml_parser_fetch_anchor(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     fetch_alias_instead_of_anchor: bool,
 ) -> Result<(), ScannerError> {
     let mut token = Token::default();
@@ -646,7 +738,7 @@ fn yaml_parser_fetch_anchor(
     Ok(())
 }
 
-fn yaml_parser_fetch_tag(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_tag(parser: &mut Scanner) -> Result<(), ScannerError> {
     let mut token = Token::default();
     yaml_parser_save_simple_key(parser)?;
     parser.simple_key_allowed = false;
@@ -655,7 +747,7 @@ fn yaml_parser_fetch_tag(parser: &mut Parser) -> Result<(), ScannerError> {
     Ok(())
 }
 
-fn yaml_parser_fetch_block_scalar(parser: &mut Parser, literal: bool) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_block_scalar(parser: &mut Scanner, literal: bool) -> Result<(), ScannerError> {
     let mut token = Token::default();
     yaml_parser_remove_simple_key(parser)?;
     parser.simple_key_allowed = true;
@@ -664,7 +756,7 @@ fn yaml_parser_fetch_block_scalar(parser: &mut Parser, literal: bool) -> Result<
     Ok(())
 }
 
-fn yaml_parser_fetch_flow_scalar(parser: &mut Parser, single: bool) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_flow_scalar(parser: &mut Scanner, single: bool) -> Result<(), ScannerError> {
     let mut token = Token::default();
     yaml_parser_save_simple_key(parser)?;
     parser.simple_key_allowed = false;
@@ -673,7 +765,7 @@ fn yaml_parser_fetch_flow_scalar(parser: &mut Parser, single: bool) -> Result<()
     Ok(())
 }
 
-fn yaml_parser_fetch_plain_scalar(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_fetch_plain_scalar(parser: &mut Scanner) -> Result<(), ScannerError> {
     let mut token = Token::default();
     yaml_parser_save_simple_key(parser)?;
     parser.simple_key_allowed = false;
@@ -682,7 +774,7 @@ fn yaml_parser_fetch_plain_scalar(parser: &mut Parser) -> Result<(), ScannerErro
     Ok(())
 }
 
-fn yaml_parser_scan_to_next_token(parser: &mut Parser) -> Result<(), ScannerError> {
+fn yaml_parser_scan_to_next_token(parser: &mut Scanner) -> Result<(), ScannerError> {
     loop {
         CACHE(parser, 1)?;
         if parser.mark.column == 0 && IS_BOM!(parser.buffer) {
@@ -713,7 +805,7 @@ fn yaml_parser_scan_to_next_token(parser: &mut Parser) -> Result<(), ScannerErro
     Ok(())
 }
 
-fn yaml_parser_scan_directive(parser: &mut Parser, token: &mut Token) -> Result<(), ScannerError> {
+fn yaml_parser_scan_directive(parser: &mut Scanner, token: &mut Token) -> Result<(), ScannerError> {
     let end_mark: Mark;
     let mut major: i32 = 0;
     let mut minor: i32 = 0;
@@ -781,7 +873,7 @@ fn yaml_parser_scan_directive(parser: &mut Parser, token: &mut Token) -> Result<
 }
 
 fn yaml_parser_scan_directive_name(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     start_mark: Mark,
 ) -> Result<String, ScannerError> {
     let mut string = String::new();
@@ -815,7 +907,7 @@ fn yaml_parser_scan_directive_name(
 }
 
 fn yaml_parser_scan_version_directive_value(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     start_mark: Mark,
     major: &mut i32,
     minor: &mut i32,
@@ -841,7 +933,7 @@ fn yaml_parser_scan_version_directive_value(
 const MAX_NUMBER_LENGTH: u64 = 9_u64;
 
 fn yaml_parser_scan_version_directive_number(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     start_mark: Mark,
     number: &mut i32,
 ) -> Result<(), ScannerError> {
@@ -876,7 +968,7 @@ fn yaml_parser_scan_version_directive_number(
 
 // Returns (handle, prefix)
 fn yaml_parser_scan_tag_directive_value(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     start_mark: Mark,
 ) -> Result<(String, String), ScannerError> {
     CACHE(parser, 1)?;
@@ -921,7 +1013,7 @@ fn yaml_parser_scan_tag_directive_value(
 }
 
 fn yaml_parser_scan_anchor(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     token: &mut Token,
     scan_alias_instead_of_anchor: bool,
 ) -> Result<(), ScannerError> {
@@ -976,7 +1068,7 @@ fn yaml_parser_scan_anchor(
     }
 }
 
-fn yaml_parser_scan_tag(parser: &mut Parser, token: &mut Token) -> Result<(), ScannerError> {
+fn yaml_parser_scan_tag(parser: &mut Scanner, token: &mut Token) -> Result<(), ScannerError> {
     let mut handle;
     let mut suffix;
 
@@ -1036,7 +1128,7 @@ fn yaml_parser_scan_tag(parser: &mut Parser, token: &mut Token) -> Result<(), Sc
 }
 
 fn yaml_parser_scan_tag_handle(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     directive: bool,
     start_mark: Mark,
 ) -> Result<String, ScannerError> {
@@ -1079,7 +1171,7 @@ fn yaml_parser_scan_tag_handle(
 }
 
 fn yaml_parser_scan_tag_uri(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     uri_char: bool,
     directive: bool,
     head: Option<&str>,
@@ -1142,7 +1234,7 @@ fn yaml_parser_scan_tag_uri(
 }
 
 fn yaml_parser_scan_uri_escapes(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     directive: bool,
     start_mark: Mark,
     string: &mut String,
@@ -1216,7 +1308,7 @@ fn yaml_parser_scan_uri_escapes(
 }
 
 fn yaml_parser_scan_block_scalar(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     token: &mut Token,
     literal: bool,
 ) -> Result<(), ScannerError> {
@@ -1376,7 +1468,7 @@ fn yaml_parser_scan_block_scalar(
 }
 
 fn yaml_parser_scan_block_scalar_breaks(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     indent: &mut i32,
     breaks: &mut String,
     start_mark: Mark,
@@ -1421,7 +1513,7 @@ fn yaml_parser_scan_block_scalar_breaks(
 }
 
 fn yaml_parser_scan_flow_scalar(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     token: &mut Token,
     single: bool,
 ) -> Result<(), ScannerError> {
@@ -1664,7 +1756,7 @@ fn yaml_parser_scan_flow_scalar(
 }
 
 fn yaml_parser_scan_plain_scalar(
-    parser: &mut Parser,
+    parser: &mut Scanner,
     token: &mut Token,
 ) -> Result<(), ScannerError> {
     let mut end_mark: Mark;

@@ -1,53 +1,16 @@
-use std::collections::VecDeque;
-
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
 
-use crate::scanner::yaml_parser_fetch_more_tokens;
+use crate::scanner::{yaml_parser_fetch_more_tokens, Scanner};
 use crate::{
     Encoding, Event, EventData, MappingStyle, Mark, ParserError, ScalarStyle, SequenceStyle,
-    TagDirective, Token, TokenData, VersionDirective, INPUT_BUFFER_SIZE,
+    TagDirective, Token, TokenData, VersionDirective,
 };
 
 /// The parser structure.
 #[non_exhaustive]
 pub struct Parser<'r> {
-    /// Read handler.
-    pub(crate) read_handler: Option<&'r mut dyn std::io::BufRead>,
-    /// EOF flag
-    pub(crate) eof: bool,
-    /// The working buffer.
-    ///
-    /// This always contains valid UTF-8.
-    pub(crate) buffer: VecDeque<char>,
-    /// The number of unread characters in the buffer.
-    pub(crate) unread: usize,
-    /// The input encoding.
-    pub(crate) encoding: Encoding,
-    /// The offset of the current position (in bytes).
-    pub(crate) offset: usize,
-    /// The mark of the current position.
-    pub(crate) mark: Mark,
-    /// Have we started to scan the input stream?
-    pub(crate) stream_start_produced: bool,
-    /// Have we reached the end of the input stream?
-    pub(crate) stream_end_produced: bool,
-    /// The number of unclosed '[' and '{' indicators.
-    pub(crate) flow_level: i32,
-    /// The tokens queue.
-    pub(crate) tokens: VecDeque<Token>,
-    /// The number of tokens fetched from the queue.
-    pub(crate) tokens_parsed: usize,
-    /// Does the tokens queue contain a token ready for dequeueing.
-    pub(crate) token_available: bool,
-    /// The indentation levels stack.
-    pub(crate) indents: Vec<i32>,
-    /// The current indentation level.
-    pub(crate) indent: i32,
-    /// May a simple key occur at the current position?
-    pub(crate) simple_key_allowed: bool,
-    /// The stack of simple keys.
-    pub(crate) simple_keys: Vec<SimpleKey>,
+    pub(crate) scanner: Scanner<'r>,
     /// The parser states stack.
     pub(crate) states: Vec<ParserState>,
     /// The current parser state.
@@ -147,44 +110,52 @@ pub struct AliasData {
 }
 
 fn PEEK_TOKEN<'a>(parser: &'a mut Parser) -> Result<&'a Token, ParserError> {
-    if parser.token_available {
+    if parser.scanner.token_available {
         return Ok(parser
+            .scanner
             .tokens
             .front()
             .expect("token_available is true, but token queue is empty"));
     }
-    yaml_parser_fetch_more_tokens(parser)?;
-    if !parser.token_available {
+    yaml_parser_fetch_more_tokens(&mut parser.scanner)?;
+    if !parser.scanner.token_available {
         return Err(ParserError::UnexpectedEof);
     }
     Ok(parser
+        .scanner
         .tokens
         .front()
         .expect("token_available is true, but token queue is empty"))
 }
 
 fn PEEK_TOKEN_MUT<'a>(parser: &'a mut Parser) -> Result<&'a mut Token, ParserError> {
-    if parser.token_available {
+    if parser.scanner.token_available {
         return Ok(parser
+            .scanner
             .tokens
             .front_mut()
             .expect("token_available is true, but token queue is empty"));
     }
-    yaml_parser_fetch_more_tokens(parser)?;
-    if !parser.token_available {
+    yaml_parser_fetch_more_tokens(&mut parser.scanner)?;
+    if !parser.scanner.token_available {
         return Err(ParserError::UnexpectedEof);
     }
     Ok(parser
+        .scanner
         .tokens
         .front_mut()
         .expect("token_available is true, but token queue is empty"))
 }
 
 fn SKIP_TOKEN(parser: &mut Parser) {
-    parser.token_available = false;
-    parser.tokens_parsed = parser.tokens_parsed.wrapping_add(1);
-    let skipped = parser.tokens.pop_front().expect("SKIP_TOKEN but EOF");
-    parser.stream_end_produced = matches!(
+    parser.scanner.token_available = false;
+    parser.scanner.tokens_parsed = parser.scanner.tokens_parsed.wrapping_add(1);
+    let skipped = parser
+        .scanner
+        .tokens
+        .pop_front()
+        .expect("SKIP_TOKEN but EOF");
+    parser.scanner.stream_end_produced = matches!(
         skipped,
         Token {
             data: TokenData::StreamEnd,
@@ -197,23 +168,7 @@ impl<'r> Parser<'r> {
     /// Create a parser.
     pub fn new() -> Parser<'r> {
         Parser {
-            read_handler: None,
-            eof: false,
-            buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
-            unread: 0,
-            encoding: Encoding::Any,
-            offset: 0,
-            mark: Mark::default(),
-            stream_start_produced: false,
-            stream_end_produced: false,
-            flow_level: 0,
-            tokens: VecDeque::with_capacity(16),
-            tokens_parsed: 0,
-            token_available: false,
-            indents: Vec::with_capacity(16),
-            indent: 0,
-            simple_key_allowed: false,
-            simple_keys: Vec::with_capacity(16),
+            scanner: Scanner::new(),
             states: Vec::with_capacity(16),
             state: ParserState::default(),
             marks: Vec::with_capacity(16),
@@ -229,20 +184,17 @@ impl<'r> Parser<'r> {
 
     /// Set a string input.
     pub fn set_input_string(&mut self, input: &'r mut &[u8]) {
-        assert!((self.read_handler).is_none());
-        self.read_handler = Some(input);
+        self.scanner.set_input_string(input);
     }
 
     /// Set a generic input handler.
     pub fn set_input(&mut self, input: &'r mut dyn std::io::BufRead) {
-        assert!((self.read_handler).is_none());
-        self.read_handler = Some(input);
+        self.scanner.set_input(input);
     }
 
     /// Set the source encoding.
     pub fn set_encoding(&mut self, encoding: Encoding) {
-        assert!(self.encoding == Encoding::Any);
-        self.encoding = encoding;
+        self.scanner.set_encoding(encoding);
     }
 
     /// Parse the input stream and produce the next parsing event.
@@ -258,7 +210,7 @@ impl<'r> Parser<'r> {
     /// [`Document::load()`](crate::Document::load). Doing this will break the
     /// parser.
     pub fn parse(&mut self) -> Result<Event, ParserError> {
-        if self.stream_end_produced || self.state == ParserState::End {
+        if self.scanner.stream_end_produced || self.state == ParserState::End {
             return Ok(Event {
                 data: EventData::StreamEnd,
                 ..Default::default()
