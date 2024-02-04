@@ -1,6 +1,7 @@
 use crate::{
-    MappingStyle, Mark, ScalarStyle, SequenceStyle, TagDirective, VersionDirective,
-    DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
+    AliasData, ComposerError, Event, EventData, MappingStyle, Mark, Parser, ScalarStyle,
+    SequenceStyle, TagDirective, VersionDirective, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG,
+    DEFAULT_SEQUENCE_TAG,
 };
 
 /// The document structure.
@@ -247,5 +248,362 @@ impl Document {
         {
             pairs.push(pair);
         }
+    }
+
+    /// Parse the input stream and produce the next YAML document.
+    ///
+    /// Call this function subsequently to produce a sequence of documents
+    /// constituting the input stream.
+    ///
+    /// If the produced document has no root node, it means that the document end
+    /// has been reached.
+    ///
+    /// An application must not alternate the calls of
+    /// [`yaml_parser_load()`](crate::yaml_parser_load) with the calls of
+    /// [`yaml_parser_scan()`](crate::yaml_parser_scan) or
+    /// [`yaml_parser_parse()`](crate::yaml_parser_parse). Doing this will break the
+    /// parser.
+    pub fn load(parser: &mut Parser) -> Result<Document, ComposerError> {
+        let mut document = Document::new(None, &[], false, false);
+        document.nodes.reserve(16);
+
+        if !parser.stream_start_produced {
+            match parser.parse() {
+                Ok(Event {
+                    data: EventData::StreamStart { .. },
+                    ..
+                }) => (),
+                Ok(_) => panic!("expected stream start"),
+                Err(err) => {
+                    parser.delete_aliases();
+                    return Err(err.into());
+                }
+            }
+        }
+        if parser.stream_end_produced {
+            return Ok(document);
+        }
+        let err: ComposerError;
+        match parser.parse() {
+            Ok(event) => {
+                if let EventData::StreamEnd = &event.data {
+                    return Ok(document);
+                }
+                parser.aliases.reserve(16);
+                match document.load_document(parser, event) {
+                    Ok(()) => {
+                        parser.delete_aliases();
+                        return Ok(document);
+                    }
+                    Err(e) => err = e,
+                }
+            }
+            Err(e) => err = e.into(),
+        }
+        parser.delete_aliases();
+        Err(err)
+    }
+
+    fn set_composer_error<T>(
+        problem: &'static str,
+        problem_mark: Mark,
+    ) -> Result<T, ComposerError> {
+        Err(ComposerError::Problem {
+            problem,
+            mark: problem_mark,
+        })
+    }
+
+    fn set_composer_error_context<T>(
+        context: &'static str,
+        context_mark: Mark,
+        problem: &'static str,
+        problem_mark: Mark,
+    ) -> Result<T, ComposerError> {
+        Err(ComposerError::ProblemWithContext {
+            context,
+            context_mark,
+            problem,
+            mark: problem_mark,
+        })
+    }
+
+    fn load_document(&mut self, parser: &mut Parser, event: Event) -> Result<(), ComposerError> {
+        let mut ctx = vec![];
+        if let EventData::DocumentStart {
+            version_directive,
+            tag_directives,
+            implicit,
+        } = event.data
+        {
+            self.version_directive = version_directive;
+            self.tag_directives = tag_directives;
+            self.start_implicit = implicit;
+            self.start_mark = event.start_mark;
+            ctx.reserve(16);
+            if let Err(err) = self.load_nodes(parser, &mut ctx) {
+                ctx.clear();
+                return Err(err);
+            }
+            ctx.clear();
+            Ok(())
+        } else {
+            panic!("Expected YAML_DOCUMENT_START_EVENT")
+        }
+    }
+
+    fn load_nodes(&mut self, parser: &mut Parser, ctx: &mut Vec<i32>) -> Result<(), ComposerError> {
+        let end_implicit;
+        let end_mark;
+
+        loop {
+            let event = parser.parse()?;
+            match event.data {
+                EventData::NoEvent => panic!("empty event"),
+                EventData::StreamStart { .. } => panic!("unexpected stream start event"),
+                EventData::StreamEnd => panic!("unexpected stream end event"),
+                EventData::DocumentStart { .. } => panic!("unexpected document start event"),
+                EventData::DocumentEnd { implicit } => {
+                    end_implicit = implicit;
+                    end_mark = event.end_mark;
+                    break;
+                }
+                EventData::Alias { .. } => {
+                    self.load_alias(parser, event, ctx)?;
+                }
+                EventData::Scalar { .. } => {
+                    self.load_scalar(parser, event, ctx)?;
+                }
+                EventData::SequenceStart { .. } => {
+                    self.load_sequence(parser, event, ctx)?;
+                }
+                EventData::SequenceEnd => {
+                    self.load_sequence_end(event, ctx)?;
+                }
+                EventData::MappingStart { .. } => {
+                    self.load_mapping(parser, event, ctx)?;
+                }
+                EventData::MappingEnd => {
+                    self.load_mapping_end(event, ctx)?;
+                }
+            }
+        }
+        self.end_implicit = end_implicit;
+        self.end_mark = end_mark;
+        Ok(())
+    }
+
+    fn register_anchor(
+        &mut self,
+        parser: &mut Parser,
+        index: i32,
+        anchor: Option<String>,
+    ) -> Result<(), ComposerError> {
+        let Some(anchor) = anchor else {
+            return Ok(());
+        };
+        let data = AliasData {
+            anchor,
+            index,
+            mark: self.nodes[index as usize - 1].start_mark,
+        };
+        for alias_data in &parser.aliases {
+            if alias_data.anchor == data.anchor {
+                return Self::set_composer_error_context(
+                    "found duplicate anchor; first occurrence",
+                    alias_data.mark,
+                    "second occurrence",
+                    data.mark,
+                );
+            }
+        }
+        parser.aliases.push(data);
+        Ok(())
+    }
+
+    fn load_node_add(&mut self, ctx: &[i32], index: i32) -> Result<(), ComposerError> {
+        if ctx.is_empty() {
+            return Ok(());
+        }
+        let parent_index: i32 = *ctx.last().unwrap();
+        let parent = &mut self.nodes[parent_index as usize - 1];
+        match parent.data {
+            NodeData::Sequence { ref mut items, .. } => {
+                items.push(index);
+            }
+            NodeData::Mapping { ref mut pairs, .. } => {
+                let mut pair = NodePair::default();
+                let mut do_push = true;
+                if !pairs.is_empty() {
+                    let p: &mut NodePair = pairs.last_mut().unwrap();
+                    if p.key != 0 && p.value == 0 {
+                        p.value = index;
+                        do_push = false;
+                    }
+                }
+                if do_push {
+                    pair.key = index;
+                    pair.value = 0;
+                    pairs.push(pair);
+                }
+            }
+            _ => {
+                panic!("document parent node is not a sequence or a mapping")
+            }
+        }
+        Ok(())
+    }
+
+    fn load_alias(
+        &mut self,
+        parser: &mut Parser,
+        event: Event,
+        ctx: &[i32],
+    ) -> Result<(), ComposerError> {
+        let EventData::Alias { anchor } = &event.data else {
+            unreachable!()
+        };
+
+        for alias_data in &parser.aliases {
+            if alias_data.anchor == *anchor {
+                return self.load_node_add(ctx, alias_data.index);
+            }
+        }
+
+        Self::set_composer_error("found undefined alias", event.start_mark)
+    }
+
+    fn load_scalar(
+        &mut self,
+        parser: &mut Parser,
+        event: Event,
+        ctx: &[i32],
+    ) -> Result<(), ComposerError> {
+        let EventData::Scalar {
+            mut tag,
+            value,
+            style,
+            anchor,
+            ..
+        } = event.data
+        else {
+            unreachable!()
+        };
+
+        if tag.is_none() || tag.as_deref() == Some("!") {
+            tag = Some(String::from(DEFAULT_SCALAR_TAG));
+        }
+        let node = Node {
+            data: NodeData::Scalar { value, style },
+            tag,
+            start_mark: event.start_mark,
+            end_mark: event.end_mark,
+        };
+        self.nodes.push(node);
+        let index: i32 = self.nodes.len() as i32;
+        self.register_anchor(parser, index, anchor)?;
+        self.load_node_add(ctx, index)
+    }
+
+    fn load_sequence(
+        &mut self,
+        parser: &mut Parser,
+        event: Event,
+        ctx: &mut Vec<i32>,
+    ) -> Result<(), ComposerError> {
+        let EventData::SequenceStart {
+            anchor,
+            mut tag,
+            style,
+            ..
+        } = event.data
+        else {
+            unreachable!()
+        };
+
+        let mut items = Vec::with_capacity(16);
+
+        if tag.is_none() || tag.as_deref() == Some("!") {
+            tag = Some(String::from(DEFAULT_SEQUENCE_TAG));
+        }
+
+        let node = Node {
+            data: NodeData::Sequence {
+                items: core::mem::take(&mut items),
+                style,
+            },
+            tag,
+            start_mark: event.start_mark,
+            end_mark: event.end_mark,
+        };
+
+        self.nodes.push(node);
+        let index: i32 = self.nodes.len() as i32;
+        self.register_anchor(parser, index, anchor)?;
+        self.load_node_add(ctx, index)?;
+        ctx.push(index);
+        Ok(())
+    }
+
+    fn load_sequence_end(&mut self, event: Event, ctx: &mut Vec<i32>) -> Result<(), ComposerError> {
+        assert!(!ctx.is_empty());
+        let index: i32 = *ctx.last().unwrap();
+        assert!(matches!(
+            self.nodes[index as usize - 1].data,
+            NodeData::Sequence { .. }
+        ));
+        self.nodes[index as usize - 1].end_mark = event.end_mark;
+        _ = ctx.pop();
+        Ok(())
+    }
+
+    fn load_mapping(
+        &mut self,
+        parser: &mut Parser,
+        event: Event,
+        ctx: &mut Vec<i32>,
+    ) -> Result<(), ComposerError> {
+        let EventData::MappingStart {
+            anchor,
+            mut tag,
+            style,
+            ..
+        } = event.data
+        else {
+            unreachable!()
+        };
+
+        let mut pairs = Vec::with_capacity(16);
+
+        if tag.is_none() || tag.as_deref() == Some("!") {
+            tag = Some(String::from(DEFAULT_MAPPING_TAG));
+        }
+        let node = Node {
+            data: NodeData::Mapping {
+                pairs: core::mem::take(&mut pairs),
+                style,
+            },
+            tag,
+            start_mark: event.start_mark,
+            end_mark: event.end_mark,
+        };
+        self.nodes.push(node);
+        let index: i32 = self.nodes.len() as i32;
+        self.register_anchor(parser, index, anchor)?;
+        self.load_node_add(ctx, index)?;
+        ctx.push(index);
+        Ok(())
+    }
+
+    fn load_mapping_end(&mut self, event: Event, ctx: &mut Vec<i32>) -> Result<(), ComposerError> {
+        assert!(!ctx.is_empty());
+        let index: i32 = *ctx.last().unwrap();
+        assert!(matches!(
+            self.nodes[index as usize - 1].data,
+            NodeData::Mapping { .. }
+        ));
+        self.nodes[index as usize - 1].end_mark = event.end_mark;
+        _ = ctx.pop();
+        Ok(())
     }
 }

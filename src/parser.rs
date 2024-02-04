@@ -1081,4 +1081,8 @@ impl<'r> Parser<'r> {
         self.tag_directives.push(value);
         Ok(())
     }
+
+    pub(crate) fn delete_aliases(&mut self) {
+        self.aliases.clear();
+    }
 }

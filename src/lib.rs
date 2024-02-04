@@ -32,7 +32,6 @@ mod dumper;
 mod emitter;
 mod error;
 mod event;
-mod loader;
 mod parser;
 mod reader;
 mod scanner;
@@ -44,7 +43,6 @@ pub use crate::dumper::{yaml_emitter_close, yaml_emitter_dump, yaml_emitter_open
 pub use crate::emitter::*;
 pub use crate::error::*;
 pub use crate::event::*;
-pub use crate::loader::yaml_parser_load;
 pub use crate::parser::*;
 pub use crate::scanner::yaml_parser_scan;
 pub use crate::token::*;
@@ -194,7 +192,7 @@ tie-fighter: '|\-*-/|'
         //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
         let mut read_in = SANITY_INPUT.as_bytes();
         parser.set_input_string(&mut read_in);
-        let _doc = yaml_parser_load(&mut parser).unwrap();
+        let _doc = Document::load(&mut parser).unwrap();
         // let mut doc = doc.assume_init();
 
         // let mut emitter = core::mem::MaybeUninit::uninit();
@@ -228,7 +226,7 @@ foo: bar
         let mut parser = Parser::new();
         let mut input = TEST_CASE_QF4Y.as_bytes();
         parser.set_input_string(&mut input);
-        let _doc = yaml_parser_load(&mut parser).unwrap();
+        let _doc = Document::load(&mut parser).unwrap();
     }
 
     // #[test]
