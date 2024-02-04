@@ -64,7 +64,7 @@ pub use crate::scanner::yaml_parser_scan;
 pub use crate::writer::yaml_emitter_flush;
 pub use crate::yaml::{
     AliasData, Break, Document, Emitter, EmitterState, Encoding, Event, EventData, MappingStyle,
-    Mark, Node, NodeItem, NodePair, Parser, ParserState, ScalarStyle, SequenceStyle, SimpleKey,
+    Node, NodeItem, NodePair, Parser, ParserState, ScalarStyle, SequenceStyle, SimpleKey,
     TagDirective, Token, TokenData, VersionDirective,
 };
 #[doc(hidden)]

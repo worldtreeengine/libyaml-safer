@@ -1,4 +1,20 @@
-use crate::Mark;
+/// The pointer position.
+#[derive(Copy, Clone, Default, Debug)]
+#[non_exhaustive]
+pub struct Mark {
+    /// The position index.
+    pub index: u64,
+    /// The position line.
+    pub line: u64,
+    /// The position column.
+    pub column: u64,
+}
+
+impl std::fmt::Display for Mark {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "line {} column {}", self.line, self.column)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmitterError {

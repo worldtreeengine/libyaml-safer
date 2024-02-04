@@ -2,7 +2,7 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::{api::yaml_parser_new, yaml_emitter_new};
+use crate::{api::yaml_parser_new, yaml_emitter_new, Mark};
 
 pub use self::Encoding::*;
 
@@ -79,18 +79,6 @@ pub enum Break {
     Ln = 2,
     /// Use CR LN for line breaks (DOS style).
     CrLn = 3,
-}
-
-/// The pointer position.
-#[derive(Copy, Clone, Default, Debug)]
-#[non_exhaustive]
-pub struct Mark {
-    /// The position index.
-    pub index: u64,
-    /// The position line.
-    pub line: u64,
-    /// The position column.
-    pub column: u64,
 }
 
 /// Scalar styles.
