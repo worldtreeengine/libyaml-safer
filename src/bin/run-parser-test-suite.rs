@@ -11,10 +11,7 @@
     clippy::too_many_lines
 )]
 
-use libyaml_safer::{
-    yaml_parser_new, yaml_parser_parse, yaml_parser_reset, yaml_parser_set_input, EventData,
-    ScalarStyle,
-};
+use libyaml_safer::{EventData, Parser, ScalarStyle};
 use std::env;
 use std::error::Error;
 use std::fs::File;
@@ -26,16 +23,15 @@ pub(crate) fn test_main(
     stdin: &mut dyn Read,
     stdout: &mut dyn Write,
 ) -> Result<(), Box<dyn Error>> {
-    let mut parser = yaml_parser_new();
+    let mut parser = Parser::new();
 
     let mut stdin = std::io::BufReader::new(stdin);
-    yaml_parser_set_input(&mut parser, &mut stdin);
+    parser.set_input(&mut stdin);
 
     loop {
-        let event = match yaml_parser_parse(&mut parser) {
+        let event = match parser.parse() {
             Err(err) => {
                 let error = format!("Parse error: {err}");
-                yaml_parser_reset(&mut parser);
                 return Err(error.into());
             }
             Ok(event) => event,
@@ -56,14 +52,14 @@ pub(crate) fn test_main(
             }
             EventData::DocumentStart { implicit, .. } => {
                 _ = write!(stdout, "+DOC");
-                if !*implicit {
+                if !implicit {
                     _ = write!(stdout, " ---");
                 }
                 _ = writeln!(stdout);
             }
             EventData::DocumentEnd { implicit } => {
                 _ = write!(stdout, "-DOC");
-                if !*implicit {
+                if !implicit {
                     _ = write!(stdout, " ...");
                 }
                 _ = writeln!(stdout);
@@ -85,7 +81,7 @@ pub(crate) fn test_main(
                 if let Some(tag) = tag {
                     _ = write!(stdout, " <{tag}>");
                 }
-                _ = stdout.write_all(match *style {
+                _ = stdout.write_all(match style {
                     ScalarStyle::Plain => b" :",
                     ScalarStyle::SingleQuoted => b" '",
                     ScalarStyle::DoubleQuoted => b" \"",
@@ -93,7 +89,7 @@ pub(crate) fn test_main(
                     ScalarStyle::Folded => b" >",
                     _ => process::abort(),
                 });
-                print_escaped(stdout, value);
+                print_escaped(stdout, &value);
                 _ = writeln!(stdout);
             }
             EventData::SequenceStart { anchor, tag, .. } => {
@@ -128,7 +124,6 @@ pub(crate) fn test_main(
             break;
         }
     }
-    yaml_parser_reset(&mut parser);
     Ok(())
 }
 

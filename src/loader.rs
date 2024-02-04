@@ -2,8 +2,8 @@ use alloc::string::String;
 use alloc::{vec, vec::Vec};
 
 use crate::{
-    yaml_parser_parse, AliasData, ComposerError, Document, Event, EventData, Mark, Node, NodeData,
-    NodePair, Parser, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
+    AliasData, ComposerError, Document, Event, EventData, Mark, Node, NodeData, NodePair, Parser,
+    DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
 };
 
 /// Parse the input stream and produce the next YAML document.
@@ -24,7 +24,7 @@ pub fn yaml_parser_load(parser: &mut Parser) -> Result<Document, ComposerError> 
     document.nodes.reserve(16);
 
     if !parser.stream_start_produced {
-        match yaml_parser_parse(parser) {
+        match parser.parse() {
             Ok(Event {
                 data: EventData::StreamStart { .. },
                 ..
@@ -40,7 +40,7 @@ pub fn yaml_parser_load(parser: &mut Parser) -> Result<Document, ComposerError> 
         return Ok(document);
     }
     let err: ComposerError;
-    match yaml_parser_parse(parser) {
+    match parser.parse() {
         Ok(event) => {
             if let EventData::StreamEnd = &event.data {
                 return Ok(document);
@@ -125,7 +125,7 @@ fn yaml_parser_load_nodes(
     let end_mark;
 
     loop {
-        let event = yaml_parser_parse(parser)?;
+        let event = parser.parse()?;
         match event.data {
             EventData::NoEvent => panic!("empty event"),
             EventData::StreamStart { .. } => panic!("unexpected stream start event"),

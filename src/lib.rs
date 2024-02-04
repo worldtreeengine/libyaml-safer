@@ -189,11 +189,11 @@ single: '"Howdy!" he cried.'
 quoted: ' # Not a ''comment''.'
 tie-fighter: '|\-*-/|'
 "#;
-        let mut parser = yaml_parser_new();
+        let mut parser = Parser::new();
         // const SANITY_INPUT: &'static str =
         //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
         let mut read_in = SANITY_INPUT.as_bytes();
-        yaml_parser_set_input_string(&mut parser, &mut read_in);
+        parser.set_input_string(&mut read_in);
         let _doc = yaml_parser_load(&mut parser).unwrap();
         // let mut doc = doc.assume_init();
 
@@ -225,9 +225,9 @@ foo: bar
 
     #[test]
     fn test_case() {
-        let mut parser = yaml_parser_new();
+        let mut parser = Parser::new();
         let mut input = TEST_CASE_QF4Y.as_bytes();
-        yaml_parser_set_input_string(&mut parser, &mut input);
+        parser.set_input_string(&mut input);
         let _doc = yaml_parser_load(&mut parser).unwrap();
     }
 
