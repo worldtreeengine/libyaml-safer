@@ -1,7 +1,6 @@
 use crate::{Encoding, Mark, ScalarStyle};
 
 /// The token structure.
-#[derive(Default)]
 #[non_exhaustive]
 pub struct Token {
     /// The token type.
@@ -12,11 +11,7 @@ pub struct Token {
     pub end_mark: Mark,
 }
 
-#[derive(Default)]
 pub enum TokenData {
-    /// An empty token.
-    #[default]
-    NoToken,
     /// A STREAM-START token.
     StreamStart {
         /// The stream encoding.

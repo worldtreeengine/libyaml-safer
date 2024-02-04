@@ -1095,7 +1095,7 @@ impl<'w> Emitter<'w> {
         if tag_directive.handle.len() > 2 {
             let tag_content = &tag_directive.handle[1..tag_directive.handle.len() - 1];
             for ch in tag_content.chars() {
-                if !IS_ALPHA_CHAR!(ch) {
+                if !is_alpha(ch) {
                     return Self::set_emitter_error(
                         "tag handle must contain alphanumerical characters only",
                     );
@@ -1120,7 +1120,7 @@ impl<'w> Emitter<'w> {
         }
 
         for ch in anchor.chars() {
-            if !IS_ALPHA_CHAR!(ch) {
+            if !is_alpha(ch) {
                 Self::set_emitter_error(if alias {
                     "alias value must contain alphanumerical characters only"
                 } else {

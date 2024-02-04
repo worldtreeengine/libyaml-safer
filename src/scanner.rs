@@ -205,7 +205,8 @@ impl<'r> Scanner<'r> {
         if self.stream_end_produced {
             return Ok(Token {
                 data: TokenData::StreamEnd,
-                ..Default::default()
+                start_mark: Mark::default(),
+                end_mark: Mark::default(),
             });
         }
         if !self.token_available {
@@ -537,11 +538,10 @@ impl<'r> Scanner<'r> {
     }
 
     fn fetch_directive(&mut self) -> Result<(), ScannerError> {
-        let mut token = Token::default();
         self.unroll_indent(-1_i64);
         self.remove_simple_key()?;
         self.simple_key_allowed = false;
-        self.scan_directive(&mut token)?;
+        let token = self.scan_directive()?;
         self.tokens.push_back(token);
         Ok(())
     }
@@ -726,46 +726,41 @@ impl<'r> Scanner<'r> {
     }
 
     fn fetch_anchor(&mut self, fetch_alias_instead_of_anchor: bool) -> Result<(), ScannerError> {
-        let mut token = Token::default();
         self.save_simple_key()?;
         self.simple_key_allowed = false;
-        self.scan_anchor(&mut token, fetch_alias_instead_of_anchor)?;
+        let token = self.scan_anchor(fetch_alias_instead_of_anchor)?;
         self.tokens.push_back(token);
         Ok(())
     }
 
     fn fetch_tag(&mut self) -> Result<(), ScannerError> {
-        let mut token = Token::default();
         self.save_simple_key()?;
         self.simple_key_allowed = false;
-        self.scan_tag(&mut token)?;
+        let token = self.scan_tag()?;
         self.tokens.push_back(token);
         Ok(())
     }
 
     fn fetch_block_scalar(&mut self, literal: bool) -> Result<(), ScannerError> {
-        let mut token = Token::default();
         self.remove_simple_key()?;
         self.simple_key_allowed = true;
-        self.scan_block_scalar(&mut token, literal)?;
+        let token = self.scan_block_scalar(literal)?;
         self.tokens.push_back(token);
         Ok(())
     }
 
     fn fetch_flow_scalar(&mut self, single: bool) -> Result<(), ScannerError> {
-        let mut token = Token::default();
         self.save_simple_key()?;
         self.simple_key_allowed = false;
-        self.scan_flow_scalar(&mut token, single)?;
+        let token = self.scan_flow_scalar(single)?;
         self.tokens.push_back(token);
         Ok(())
     }
 
     fn fetch_plain_scalar(&mut self) -> Result<(), ScannerError> {
-        let mut token = Token::default();
         self.save_simple_key()?;
         self.simple_key_allowed = false;
-        self.scan_plain_scalar(&mut token)?;
+        let token = self.scan_plain_scalar()?;
         self.tokens.push_back(token);
         Ok(())
     }
@@ -801,37 +796,37 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn scan_directive(&mut self, token: &mut Token) -> Result<(), ScannerError> {
+    fn scan_directive(&mut self) -> Result<Token, ScannerError> {
         let end_mark: Mark;
         let mut major: i32 = 0;
         let mut minor: i32 = 0;
         let start_mark: Mark = self.mark;
         SKIP(self);
         let name = self.scan_directive_name(start_mark)?;
-        if name == "YAML" {
+        let token = if name == "YAML" {
             self.scan_version_directive_value(start_mark, &mut major, &mut minor)?;
 
             end_mark = self.mark;
-            *token = Token {
+            Token {
                 data: TokenData::VersionDirective { major, minor },
                 start_mark,
                 end_mark,
-            };
+            }
         } else if name == "TAG" {
             let (handle, prefix) = self.scan_tag_directive_value(start_mark)?;
             end_mark = self.mark;
-            *token = Token {
+            Token {
                 data: TokenData::TagDirective { handle, prefix },
                 start_mark,
                 end_mark,
-            };
+            }
         } else {
             return self.set_scanner_error(
                 "while scanning a directive",
                 start_mark,
                 "found unknown directive name",
             );
-        }
+        };
         CACHE(self, 1)?;
         loop {
             if !IS_BLANK!(self.buffer) {
@@ -856,7 +851,7 @@ impl<'r> Scanner<'r> {
                 CACHE(self, 2)?;
                 SKIP_LINE(self);
             }
-            Ok(())
+            Ok(token)
         } else {
             self.set_scanner_error(
                 "while scanning a directive",
@@ -994,11 +989,7 @@ impl<'r> Scanner<'r> {
         }
     }
 
-    fn scan_anchor(
-        &mut self,
-        token: &mut Token,
-        scan_alias_instead_of_anchor: bool,
-    ) -> Result<(), ScannerError> {
+    fn scan_anchor(&mut self, scan_alias_instead_of_anchor: bool) -> Result<Token, ScannerError> {
         let mut length: i32 = 0;
 
         let mut string = String::new();
@@ -1036,7 +1027,7 @@ impl<'r> Scanner<'r> {
                 "did not find expected alphabetic or numeric character",
             )
         } else {
-            *token = Token {
+            Ok(Token {
                 data: if scan_alias_instead_of_anchor {
                     TokenData::Alias { value: string }
                 } else {
@@ -1044,12 +1035,11 @@ impl<'r> Scanner<'r> {
                 },
                 start_mark,
                 end_mark,
-            };
-            Ok(())
+            })
         }
     }
 
-    fn scan_tag(&mut self, token: &mut Token) -> Result<(), ScannerError> {
+    fn scan_tag(&mut self) -> Result<Token, ScannerError> {
         let mut handle;
         let mut suffix;
 
@@ -1097,13 +1087,11 @@ impl<'r> Scanner<'r> {
         }
 
         let end_mark: Mark = self.mark;
-        *token = Token {
+        Ok(Token {
             data: TokenData::Tag { handle, suffix },
             start_mark,
             end_mark,
-        };
-
-        Ok(())
+        })
     }
 
     fn scan_tag_handle(
@@ -1280,7 +1268,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn scan_block_scalar(&mut self, token: &mut Token, literal: bool) -> Result<(), ScannerError> {
+    fn scan_block_scalar(&mut self, literal: bool) -> Result<Token, ScannerError> {
         let mut end_mark: Mark;
         let mut string = String::new();
         let mut leading_break = String::new();
@@ -1418,7 +1406,7 @@ impl<'r> Scanner<'r> {
             string.push_str(&trailing_breaks);
         }
 
-        *token = Token {
+        Ok(Token {
             data: TokenData::Scalar {
                 value: string,
                 style: if literal {
@@ -1429,9 +1417,7 @@ impl<'r> Scanner<'r> {
             },
             start_mark,
             end_mark,
-        };
-
-        Ok(())
+        })
     }
 
     fn scan_block_scalar_breaks(
@@ -1478,7 +1464,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn scan_flow_scalar(&mut self, token: &mut Token, single: bool) -> Result<(), ScannerError> {
+    fn scan_flow_scalar(&mut self, single: bool) -> Result<Token, ScannerError> {
         let mut string = String::new();
         let mut leading_break = String::new();
         let mut trailing_breaks = String::new();
@@ -1697,7 +1683,7 @@ impl<'r> Scanner<'r> {
 
         SKIP(self);
         let end_mark: Mark = self.mark;
-        *token = Token {
+        Ok(Token {
             data: TokenData::Scalar {
                 value: string,
                 style: if single {
@@ -1708,11 +1694,10 @@ impl<'r> Scanner<'r> {
             },
             start_mark,
             end_mark,
-        };
-        Ok(())
+        })
     }
 
-    fn scan_plain_scalar(&mut self, token: &mut Token) -> Result<(), ScannerError> {
+    fn scan_plain_scalar(&mut self) -> Result<Token, ScannerError> {
         let mut end_mark: Mark;
         let mut string = String::new();
         let mut leading_break = String::new();
@@ -1828,18 +1813,17 @@ impl<'r> Scanner<'r> {
             }
         }
 
-        *token = Token {
+        if leading_blanks {
+            self.simple_key_allowed = true;
+        }
+
+        Ok(Token {
             data: TokenData::Scalar {
                 value: string,
                 style: ScalarStyle::Plain,
             },
             start_mark,
             end_mark,
-        };
-        if leading_blanks {
-            self.simple_key_allowed = true;
-        }
-
-        Ok(())
+        })
     }
 }

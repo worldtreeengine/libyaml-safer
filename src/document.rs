@@ -13,17 +13,6 @@ pub struct Document {
     /// The version directive.
     pub version_directive: Option<VersionDirective>,
     /// The list of tag directives.
-    ///
-    /// ```
-    /// # const _: &str = stringify! {
-    /// struct {
-    ///     /// The beginning of the tag directives list.
-    ///     start: *mut yaml_tag_directive_t,
-    ///     /// The end of the tag directives list.
-    ///     end: *mut yaml_tag_directive_t,
-    /// }
-    /// # };
-    /// ```
     pub tag_directives: Vec<TagDirective>,
     /// Is the document start indicator implicit?
     pub start_implicit: bool,

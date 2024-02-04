@@ -12,25 +12,14 @@ macro_rules! CHECK {
 
 macro_rules! IS_ALPHA {
     ($buffer:expr) => {
-        if let Some(ch) = $buffer.get(0).copied() {
-            IS_ALPHA_CHAR!(ch)
-        } else {
-            false
-        }
+        crate::macros::is_alpha($buffer.get(0).copied())
     };
 }
 
-macro_rules! IS_ALPHA_CHAR {
-    ($ch:expr) => {
-        $ch >= '0' && $ch <= '9'
-            || $ch >= 'A' && $ch <= 'Z'
-            || $ch >= 'a' && $ch <= 'z'
-            || $ch == '_'
-            || $ch == '-'
+pub(crate) fn is_alpha(ch: impl Into<Option<char>>) -> bool {
+    let Some(ch) = ch.into() else {
+        return false;
     };
-}
-
-pub(crate) fn is_alpha(ch: char) -> bool {
     ch >= '0' && ch <= '9'
         || ch >= 'A' && ch <= 'Z'
         || ch >= 'a' && ch <= 'z'
