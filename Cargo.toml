@@ -14,7 +14,7 @@ description = "Safer libyaml port, based on unsafe-libyaml"
 documentation = "https://docs.rs/libyaml-safer"
 edition = "2021"
 keywords = ["yaml"]
-license = "Apache 2.0 OR MIT"
+license-file = "LICENSE-MIT"
 repository = "https://github.com/simonask/libyaml-safer"
 rust-version = "1.70"
 
