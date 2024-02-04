@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use alloc::string::String;
 
-use crate::macros::{is_blankz, is_break, vecdeque_starts_with};
+use crate::macros::{is_blankz, is_break};
 use crate::reader::yaml_parser_update_buffer;
 use crate::{
     Encoding, Mark, ReaderError, ScalarStyle, ScannerError, SimpleKey, Token, TokenData,
@@ -118,13 +118,13 @@ fn SKIP(scanner: &mut Scanner) {
 }
 
 fn SKIP_LINE(scanner: &mut Scanner) {
-    if vecdeque_starts_with(&scanner.buffer, &['\r', '\n']) {
-        scanner.mark.index += 2;
-        scanner.mark.column = 0;
-        scanner.mark.line += 1;
-        scanner.buffer.drain(0..2);
-    } else if let Some(front) = scanner.buffer.front().copied() {
-        if is_break(front) {
+    if let Some(front) = scanner.buffer.front().copied() {
+        if let ('\r', Some('\n')) = (front, scanner.buffer.get(1).copied()) {
+            scanner.mark.index += 2;
+            scanner.mark.column = 0;
+            scanner.mark.line += 1;
+            scanner.buffer.drain(0..2);
+        } else if is_break(front) {
             let width = front.len_utf8();
             scanner.mark.index += width as u64;
             scanner.mark.column = 0;
@@ -145,29 +145,28 @@ fn READ_STRING(scanner: &mut Scanner, string: &mut String) {
 }
 
 fn READ_LINE_STRING(scanner: &mut Scanner, string: &mut String) {
-    if vecdeque_starts_with(&scanner.buffer, &['\r', '\n']) {
+    let Some(front) = scanner.buffer.front().copied() else {
+        panic!("unexpected end of input");
+    };
+
+    if let Some('\r') = scanner.buffer.get(1).copied() {
         string.push('\n');
         scanner.buffer.drain(0..2);
         scanner.mark.index += 2;
         scanner.mark.column = 0;
         scanner.mark.line += 1;
-    } else {
-        let Some(front) = scanner.buffer.front().copied() else {
-            panic!("unexpected end of input");
-        };
-        if is_break(front) {
-            scanner.buffer.pop_front();
-            let char_len = front.len_utf8();
-            if char_len == 3 {
-                // libyaml preserves Unicode breaks in this case.
-                string.push(front);
-            } else {
-                string.push('\n');
-            }
-            scanner.mark.index += char_len as u64;
-            scanner.mark.column = 0;
-            scanner.mark.line += 1;
+    } else if is_break(front) {
+        scanner.buffer.pop_front();
+        let char_len = front.len_utf8();
+        if char_len == 3 {
+            // libyaml preserves Unicode breaks in this case.
+            string.push(front);
+        } else {
+            string.push('\n');
         }
+        scanner.mark.index += char_len as u64;
+        scanner.mark.column = 0;
+        scanner.mark.line += 1;
     }
 }
 
@@ -215,7 +214,7 @@ impl<'r> Scanner<'r> {
         }
     }
 
-    /// Equivalent of the libyaml `PEEK_TOKEN` macro.
+    /// Equivalent of the libyaml `PEEK_TOKEN` macro, used by the parser.
     pub(crate) fn peek(&mut self) -> Result<&Token, ScannerError> {
         if self.token_available {
             return Ok(self
@@ -234,7 +233,7 @@ impl<'r> Scanner<'r> {
             .expect("token_available is true, but token queue is empty"))
     }
 
-    /// Equivalent of the libyaml `PEEK_TOKEN` macro.
+    /// Equivalent of the libyaml `PEEK_TOKEN` macro, used by the parser.
     pub(crate) fn peek_mut(&mut self) -> Result<&mut Token, ScannerError> {
         if self.token_available {
             return Ok(self
@@ -253,7 +252,7 @@ impl<'r> Scanner<'r> {
             .expect("token_available is true, but token queue is empty"))
     }
 
-    /// Equivalent of the libyaml `SKIP_TOKEN` macro.
+    /// Equivalent of the libyaml `SKIP_TOKEN` macro, used by the parser.
     pub(crate) fn skip_token(&mut self) {
         self.token_available = false;
         self.tokens_parsed = self.tokens_parsed.wrapping_add(1);

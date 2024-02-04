@@ -255,19 +255,3 @@ macro_rules! IS_BLANKZ {
         IS_BLANKZ_AT!($string, 0)
     };
 }
-
-pub(crate) fn vecdeque_starts_with<T: PartialEq + Copy>(
-    vec: &alloc::collections::VecDeque<T>,
-    needle: &[T],
-) -> bool {
-    let (head, tail) = vec.as_slices();
-    if head.len() >= needle.len() {
-        head.starts_with(needle)
-    } else {
-        head.iter()
-            .chain(tail.iter())
-            .copied()
-            .take(needle.len())
-            .eq(needle.iter().copied())
-    }
-}
