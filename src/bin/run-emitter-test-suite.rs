@@ -16,12 +16,9 @@
 )]
 
 use libyaml_safer::{
-    yaml_alias_event_new, yaml_document_end_event_new, yaml_document_start_event_new,
     yaml_emitter_emit, yaml_emitter_new, yaml_emitter_reset, yaml_emitter_set_canonical,
-    yaml_emitter_set_output, yaml_emitter_set_unicode, yaml_mapping_end_event_new,
-    yaml_mapping_start_event_new, yaml_scalar_event_new, yaml_sequence_end_event_new,
-    yaml_sequence_start_event_new, yaml_stream_end_event_new, yaml_stream_start_event_new,
-    Encoding, MappingStyle, ScalarStyle, SequenceStyle,
+    yaml_emitter_set_output, yaml_emitter_set_unicode, Encoding, Event, MappingStyle, ScalarStyle,
+    SequenceStyle,
 };
 use std::env;
 use std::error::Error;
@@ -52,38 +49,38 @@ pub(crate) fn test_main(
         let line = line_buffer.strip_suffix('\n').unwrap_or(&line_buffer);
 
         let event = if line.starts_with("+STR") {
-            yaml_stream_start_event_new(Encoding::Utf8)
+            Event::stream_start(Encoding::Utf8)
         } else if line.starts_with("-STR") {
-            yaml_stream_end_event_new()
+            Event::stream_end()
         } else if line.starts_with("+DOC") {
             let implicit = !line[4..].starts_with(" ---");
-            yaml_document_start_event_new(None, &[], implicit)
+            Event::document_start(None, &[], implicit)
         } else if line.starts_with("-DOC") {
             let implicit = !line[4..].starts_with(" ...");
-            yaml_document_end_event_new(implicit)
+            Event::document_end(implicit)
         } else if line.starts_with("+MAP") {
-            yaml_mapping_start_event_new(
+            Event::mapping_start(
                 get_anchor('&', line),
                 get_tag(line),
                 false,
                 MappingStyle::Block,
             )
         } else if line.starts_with("-MAP") {
-            yaml_mapping_end_event_new()
+            Event::mapping_end()
         } else if line.starts_with("+SEQ") {
-            yaml_sequence_start_event_new(
+            Event::sequence_start(
                 get_anchor('&', line),
                 get_tag(line),
                 false,
                 SequenceStyle::Block,
             )
         } else if line.starts_with("-SEQ") {
-            yaml_sequence_end_event_new()
+            Event::sequence_end()
         } else if line.starts_with("=VAL") {
             let mut style = ScalarStyle::Any;
             let value = get_value(line, &mut value_buffer, &mut style);
             let implicit = get_tag(line).is_none();
-            yaml_scalar_event_new(
+            Event::scalar(
                 get_anchor('&', line),
                 get_tag(line),
                 value,
@@ -92,7 +89,7 @@ pub(crate) fn test_main(
                 style,
             )
         } else if line.starts_with("=ALI") {
-            yaml_alias_event_new(get_anchor('*', line).expect("no alias name"))
+            Event::alias(get_anchor('*', line).expect("no alias name"))
         } else {
             break Err(format!("Unknown event: '{line}'").into());
         };

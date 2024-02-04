@@ -1,12 +1,153 @@
+use std::collections::VecDeque;
+
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
 
 use crate::scanner::yaml_parser_fetch_more_tokens;
-use crate::yaml::{EventData, TokenData};
 use crate::{
-    Event, MappingStyle, Mark, Parser, ParserError, ParserState, ScalarStyle, SequenceStyle,
-    TagDirective, Token, VersionDirective,
+    Encoding, Event, EventData, MappingStyle, Mark, ParserError, ScalarStyle, SequenceStyle,
+    TagDirective, Token, TokenData, VersionDirective, INPUT_BUFFER_SIZE,
 };
+
+/// The parser structure.
+///
+/// All members are internal. Manage the structure using the `yaml_parser_`
+/// family of functions.
+#[non_exhaustive]
+pub struct Parser<'r> {
+    /// Read handler.
+    pub(crate) read_handler: Option<&'r mut dyn std::io::BufRead>,
+    /// EOF flag
+    pub(crate) eof: bool,
+    /// The working buffer.
+    ///
+    /// This always contains valid UTF-8.
+    pub(crate) buffer: VecDeque<char>,
+    /// The number of unread characters in the buffer.
+    pub(crate) unread: usize,
+    /// The input encoding.
+    pub(crate) encoding: Encoding,
+    /// The offset of the current position (in bytes).
+    pub(crate) offset: usize,
+    /// The mark of the current position.
+    pub(crate) mark: Mark,
+    /// Have we started to scan the input stream?
+    pub(crate) stream_start_produced: bool,
+    /// Have we reached the end of the input stream?
+    pub(crate) stream_end_produced: bool,
+    /// The number of unclosed '[' and '{' indicators.
+    pub(crate) flow_level: i32,
+    /// The tokens queue.
+    pub(crate) tokens: VecDeque<Token>,
+    /// The number of tokens fetched from the queue.
+    pub(crate) tokens_parsed: usize,
+    /// Does the tokens queue contain a token ready for dequeueing.
+    pub(crate) token_available: bool,
+    /// The indentation levels stack.
+    pub(crate) indents: Vec<i32>,
+    /// The current indentation level.
+    pub(crate) indent: i32,
+    /// May a simple key occur at the current position?
+    pub(crate) simple_key_allowed: bool,
+    /// The stack of simple keys.
+    pub(crate) simple_keys: Vec<SimpleKey>,
+    /// The parser states stack.
+    pub(crate) states: Vec<ParserState>,
+    /// The current parser state.
+    pub(crate) state: ParserState,
+    /// The stack of marks.
+    pub(crate) marks: Vec<Mark>,
+    /// The list of TAG directives.
+    pub(crate) tag_directives: Vec<TagDirective>,
+    /// The alias data.
+    pub(crate) aliases: Vec<AliasData>,
+}
+
+impl<'r> Default for Parser<'r> {
+    fn default() -> Self {
+        yaml_parser_new()
+    }
+}
+
+/// This structure holds information about a potential simple key.
+#[derive(Copy, Clone)]
+#[non_exhaustive]
+pub struct SimpleKey {
+    /// Is a simple key possible?
+    pub possible: bool,
+    /// Is a simple key required?
+    pub required: bool,
+    /// The number of the token.
+    pub token_number: usize,
+    /// The position mark.
+    pub mark: Mark,
+}
+
+/// The states of the parser.
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[non_exhaustive]
+pub enum ParserState {
+    /// Expect STREAM-START.
+    #[default]
+    StreamStart = 0,
+    /// Expect the beginning of an implicit document.
+    ImplicitDocumentStart = 1,
+    /// Expect DOCUMENT-START.
+    DocumentStart = 2,
+    /// Expect the content of a document.
+    DocumentContent = 3,
+    /// Expect DOCUMENT-END.
+    DocumentEnd = 4,
+    /// Expect a block node.
+    BlockNode = 5,
+    /// Expect a block node or indentless sequence.
+    BlockNodeOrIndentlessSequence = 6,
+    /// Expect a flow node.
+    FlowNode = 7,
+    /// Expect the first entry of a block sequence.
+    BlockSequenceFirstEntry = 8,
+    /// Expect an entry of a block sequence.
+    BlockSequenceEntry = 9,
+    /// Expect an entry of an indentless sequence.
+    IndentlessSequenceEntry = 10,
+    /// Expect the first key of a block mapping.
+    BlockMappingFirstKey = 11,
+    /// Expect a block mapping key.
+    BlockMappingKey = 12,
+    /// Expect a block mapping value.
+    BlockMappingValue = 13,
+    /// Expect the first entry of a flow sequence.
+    FlowSequenceFirstEntry = 14,
+    /// Expect an entry of a flow sequence.
+    FlowSequenceEntry = 15,
+    /// Expect a key of an ordered mapping.
+    FlowSequenceEntryMappingKey = 16,
+    /// Expect a value of an ordered mapping.
+    FlowSequenceEntryMappingValue = 17,
+    /// Expect the and of an ordered mapping entry.
+    FlowSequenceEntryMappingEnd = 18,
+    /// Expect the first key of a flow mapping.
+    FlowMappingFirstKey = 19,
+    /// Expect a key of a flow mapping.
+    FlowMappingKey = 20,
+    /// Expect a value of a flow mapping.
+    FlowMappingValue = 21,
+    /// Expect an empty value of a flow mapping.
+    FlowMappingEmptyValue = 22,
+    /// Expect nothing.
+    End = 23,
+}
+
+/// This structure holds aliases data.
+#[non_exhaustive]
+pub struct AliasData {
+    /// The anchor.
+    pub anchor: String,
+    /// The node id.
+    pub index: i32,
+    /// The anchor mark.
+    pub mark: Mark,
+}
 
 fn PEEK_TOKEN<'a>(parser: &'a mut Parser) -> Result<&'a Token, ParserError> {
     if parser.token_available {
@@ -53,6 +194,57 @@ fn SKIP_TOKEN(parser: &mut Parser) {
             ..
         }
     );
+}
+
+/// Create a parser.
+pub fn yaml_parser_new<'r>() -> Parser<'r> {
+    Parser {
+        read_handler: None,
+        eof: false,
+        buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
+        unread: 0,
+        encoding: Encoding::Any,
+        offset: 0,
+        mark: Mark::default(),
+        stream_start_produced: false,
+        stream_end_produced: false,
+        flow_level: 0,
+        tokens: VecDeque::with_capacity(16),
+        tokens_parsed: 0,
+        token_available: false,
+        indents: Vec::with_capacity(16),
+        indent: 0,
+        simple_key_allowed: false,
+        simple_keys: Vec::with_capacity(16),
+        states: Vec::with_capacity(16),
+        state: ParserState::default(),
+        marks: Vec::with_capacity(16),
+        tag_directives: Vec::with_capacity(16),
+        aliases: Vec::new(),
+    }
+}
+
+/// Reset the parser state.
+pub fn yaml_parser_reset(parser: &mut Parser) {
+    *parser = yaml_parser_new();
+}
+
+/// Set a string input.
+pub fn yaml_parser_set_input_string<'r>(parser: &mut Parser<'r>, input: &'r mut &[u8]) {
+    assert!((parser.read_handler).is_none());
+    parser.read_handler = Some(input);
+}
+
+/// Set a generic input handler.
+pub fn yaml_parser_set_input<'r>(parser: &mut Parser<'r>, input: &'r mut dyn std::io::BufRead) {
+    assert!((parser.read_handler).is_none());
+    parser.read_handler = Some(input);
+}
+
+/// Set the source encoding.
+pub fn yaml_parser_set_encoding(parser: &mut Parser, encoding: Encoding) {
+    assert!(parser.encoding == Encoding::Any);
+    parser.encoding = encoding;
 }
 
 /// Parse the input stream and produce the next parsing event.

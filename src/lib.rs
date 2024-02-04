@@ -27,47 +27,150 @@ extern crate alloc;
 #[macro_use]
 mod macros;
 
-mod api;
+mod document;
 mod dumper;
 mod emitter;
 mod error;
+mod event;
 mod loader;
 mod parser;
 mod reader;
 mod scanner;
+mod token;
 mod writer;
-mod yaml;
 
-pub use crate::api::{
-    yaml_alias_event_new, yaml_document_add_mapping, yaml_document_add_scalar,
-    yaml_document_add_sequence, yaml_document_append_mapping_pair,
-    yaml_document_append_sequence_item, yaml_document_delete, yaml_document_end_event_new,
-    yaml_document_get_node, yaml_document_get_root_node, yaml_document_new,
-    yaml_document_start_event_new, yaml_emitter_new, yaml_emitter_reset, yaml_emitter_set_break,
-    yaml_emitter_set_canonical, yaml_emitter_set_encoding, yaml_emitter_set_indent,
-    yaml_emitter_set_output, yaml_emitter_set_output_string, yaml_emitter_set_unicode,
-    yaml_emitter_set_width, yaml_mapping_end_event_new, yaml_mapping_start_event_new,
-    yaml_parser_new, yaml_parser_reset, yaml_parser_set_encoding, yaml_parser_set_input,
-    yaml_parser_set_input_string, yaml_scalar_event_new, yaml_sequence_end_event_new,
-    yaml_sequence_start_event_new, yaml_stream_end_event_new, yaml_stream_start_event_new,
-};
+pub use crate::document::*;
 pub use crate::dumper::{yaml_emitter_close, yaml_emitter_dump, yaml_emitter_open};
-pub use crate::emitter::yaml_emitter_emit;
+pub use crate::emitter::*;
 pub use crate::error::*;
+pub use crate::event::*;
 pub use crate::loader::yaml_parser_load;
-pub use crate::parser::yaml_parser_parse;
+pub use crate::parser::*;
 pub use crate::scanner::yaml_parser_scan;
+pub use crate::token::*;
 pub use crate::writer::yaml_emitter_flush;
-pub use crate::yaml::{
-    AliasData, Break, Document, Emitter, EmitterState, Encoding, Event, EventData, MappingStyle,
-    Node, NodeItem, NodePair, Parser, ParserState, ScalarStyle, SequenceStyle, SimpleKey,
-    TagDirective, Token, TokenData, VersionDirective,
-};
-#[doc(hidden)]
-pub use crate::yaml::{
-    BOOL_TAG, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG, FLOAT_TAG, INT_TAG,
-    MAP_TAG, NULL_TAG, SEQ_TAG, STR_TAG, TIMESTAMP_TAG,
-};
+
+pub(crate) const INPUT_RAW_BUFFER_SIZE: usize = 16384;
+pub(crate) const INPUT_BUFFER_SIZE: usize = INPUT_RAW_BUFFER_SIZE;
+pub(crate) const OUTPUT_BUFFER_SIZE: usize = 16384;
+
+/// The tag `!!null` with the only possible value: `null`.
+pub const NULL_TAG: &str = "tag:yaml.org,2002:null";
+/// The tag `!!bool` with the values: `true` and `false`.
+pub const BOOL_TAG: &str = "tag:yaml.org,2002:bool";
+/// The tag `!!str` for string values.
+pub const STR_TAG: &str = "tag:yaml.org,2002:str";
+/// The tag `!!int` for integer values.
+pub const INT_TAG: &str = "tag:yaml.org,2002:int";
+/// The tag `!!float` for float values.
+pub const FLOAT_TAG: &str = "tag:yaml.org,2002:float";
+/// The tag `!!timestamp` for date and time values.
+pub const TIMESTAMP_TAG: &str = "tag:yaml.org,2002:timestamp";
+
+/// The tag `!!seq` is used to denote sequences.
+pub const SEQ_TAG: &str = "tag:yaml.org,2002:seq";
+/// The tag `!!map` is used to denote mapping.
+pub const MAP_TAG: &str = "tag:yaml.org,2002:map";
+
+/// The default scalar tag is `!!str`.
+pub const DEFAULT_SCALAR_TAG: &str = STR_TAG;
+/// The default sequence tag is `!!seq`.
+pub const DEFAULT_SEQUENCE_TAG: &str = SEQ_TAG;
+/// The default mapping tag is `!!map`.
+pub const DEFAULT_MAPPING_TAG: &str = MAP_TAG;
+
+/// The version directive data.
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub struct VersionDirective {
+    /// The major version number.
+    pub major: i32,
+    /// The minor version number.
+    pub minor: i32,
+}
+
+/// The tag directive data.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct TagDirective {
+    /// The tag handle.
+    pub handle: String,
+    /// The tag prefix.
+    pub prefix: String,
+}
+
+/// The stream encoding.
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[non_exhaustive]
+pub enum Encoding {
+    /// Let the parser choose the encoding.
+    #[default]
+    Any = 0,
+    /// The default UTF-8 encoding.
+    Utf8 = 1,
+    /// The UTF-16-LE encoding with BOM.
+    Utf16Le = 2,
+    /// The UTF-16-BE encoding with BOM.
+    Utf16Be = 3,
+}
+
+/// Line break type.
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[non_exhaustive]
+pub enum Break {
+    /// Let the parser choose the break type.
+    #[default]
+    Any = 0,
+    /// Use CR for line breaks (Mac style).
+    Cr = 1,
+    /// Use LN for line breaks (Unix style).
+    Ln = 2,
+    /// Use CR LN for line breaks (DOS style).
+    CrLn = 3,
+}
+
+/// Scalar styles.
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[non_exhaustive]
+pub enum ScalarStyle {
+    /// Let the emitter choose the style.
+    #[default]
+    Any = 0,
+    /// The plain scalar style.
+    Plain = 1,
+    /// The single-quoted scalar style.
+    SingleQuoted = 2,
+    /// The double-quoted scalar style.
+    DoubleQuoted = 3,
+    /// The literal scalar style.
+    Literal = 4,
+    /// The folded scalar style.
+    Folded = 5,
+}
+
+/// Sequence styles.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[non_exhaustive]
+pub enum SequenceStyle {
+    /// Let the emitter choose the style.
+    Any = 0,
+    /// The block sequence style.
+    Block = 1,
+    /// The flow sequence style.
+    Flow = 2,
+}
+
+/// Mapping styles.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[non_exhaustive]
+pub enum MappingStyle {
+    /// Let the emitter choose the style.
+    Any = 0,
+    /// The block mapping style.
+    Block = 1,
+    /// The flow mapping style.
+    Flow = 2,
+}
 
 #[cfg(test)]
 mod tests {
@@ -186,11 +289,11 @@ foo: bar
         let mut output = Vec::new();
         yaml_emitter_set_output_string(&mut emitter, &mut output);
 
-        let event = yaml_stream_start_event_new(Encoding::Utf8);
+        let event = Event::stream_start(Encoding::Utf8);
         yaml_emitter_emit(&mut emitter, event).unwrap();
-        let event = yaml_document_start_event_new(None, &[], true);
+        let event = Event::document_start(None, &[], true);
         yaml_emitter_emit(&mut emitter, event).unwrap();
-        let event = yaml_scalar_event_new(
+        let event = Event::scalar(
             None,
             None,
             "1st non-empty\n2nd non-empty 3rd non-empty",
@@ -199,9 +302,9 @@ foo: bar
             ScalarStyle::Plain,
         );
         yaml_emitter_emit(&mut emitter, event).unwrap();
-        let event = yaml_document_end_event_new(true);
+        let event = Event::document_end(true);
         yaml_emitter_emit(&mut emitter, event).unwrap();
-        let event = yaml_stream_end_event_new();
+        let event = Event::stream_end();
         yaml_emitter_emit(&mut emitter, event).unwrap();
 
         assert_eq!(

@@ -1,14 +1,92 @@
+use std::collections::VecDeque;
+
 use alloc::string::String;
 
-use crate::api::OUTPUT_BUFFER_SIZE;
 use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_breakz, is_printable, is_space,
 };
-use crate::yaml::EventData;
 use crate::{
-    yaml_emitter_flush, Break, Emitter, EmitterError, EmitterState, Encoding, Event, MappingStyle,
-    ScalarStyle, SequenceStyle, TagDirective, VersionDirective, WriterError,
+    yaml_emitter_flush, Break, EmitterError, Encoding, Event, EventData, MappingStyle, ScalarStyle,
+    SequenceStyle, TagDirective, VersionDirective, WriterError, OUTPUT_BUFFER_SIZE,
 };
+
+/// The emitter structure.
+///
+/// All members are internal. Manage the structure using the `yaml_emitter_`
+/// family of functions.
+#[non_exhaustive]
+pub struct Emitter<'w> {
+    /// Write handler.
+    pub(crate) write_handler: Option<&'w mut dyn std::io::Write>,
+    /// The working buffer.
+    ///
+    /// This always contains valid UTF-8.
+    pub(crate) buffer: String,
+    /// The raw buffer.
+    ///
+    /// This contains the output in the encoded format, so for example it may be
+    /// UTF-16 encoded.
+    pub(crate) raw_buffer: Vec<u8>,
+    /// The stream encoding.
+    pub(crate) encoding: Encoding,
+    /// If the output is in the canonical style?
+    pub(crate) canonical: bool,
+    /// The number of indentation spaces.
+    pub(crate) best_indent: i32,
+    /// The preferred width of the output lines.
+    pub(crate) best_width: i32,
+    /// Allow unescaped non-ASCII characters?
+    pub(crate) unicode: bool,
+    /// The preferred line break.
+    pub(crate) line_break: Break,
+    /// The stack of states.
+    pub(crate) states: Vec<EmitterState>,
+    /// The current emitter state.
+    pub(crate) state: EmitterState,
+    /// The event queue.
+    pub(crate) events: VecDeque<Event>,
+    /// The stack of indentation levels.
+    pub(crate) indents: Vec<i32>,
+    /// The list of tag directives.
+    pub(crate) tag_directives: Vec<TagDirective>,
+    /// The current indentation level.
+    pub(crate) indent: i32,
+    /// The current flow level.
+    pub(crate) flow_level: i32,
+    /// Is it the document root context?
+    pub(crate) root_context: bool,
+    /// Is it a sequence context?
+    pub(crate) sequence_context: bool,
+    /// Is it a mapping context?
+    pub(crate) mapping_context: bool,
+    /// Is it a simple mapping key context?
+    pub(crate) simple_key_context: bool,
+    /// The current line.
+    pub(crate) line: i32,
+    /// The current column.
+    pub(crate) column: i32,
+    /// If the last character was a whitespace?
+    pub(crate) whitespace: bool,
+    /// If the last character was an indentation character (' ', '-', '?', ':')?
+    pub(crate) indention: bool,
+    /// If an explicit document end is required?
+    pub(crate) open_ended: i32,
+    /// If the stream was already opened?
+    pub(crate) opened: bool,
+    /// If the stream was already closed?
+    pub(crate) closed: bool,
+    /// The information associated with the document nodes.
+    // Note: Same length as `document.nodes`.
+    pub(crate) anchors: Vec<Anchors>,
+    /// The last assigned anchor id.
+    pub(crate) last_anchor_id: i32,
+}
+
+impl<'a> Default for Emitter<'a> {
+    fn default() -> Self {
+        yaml_emitter_new()
+    }
+}
 
 fn FLUSH(emitter: &mut Emitter) -> Result<(), WriterError> {
     if emitter.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
@@ -68,6 +146,59 @@ fn WRITE_BREAK_CHAR(emitter: &mut Emitter, ch: char) -> Result<(), WriterError> 
     Ok(())
 }
 
+/// The emitter states.
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[non_exhaustive]
+pub enum EmitterState {
+    /// Expect STREAM-START.
+    #[default]
+    StreamStart = 0,
+    /// Expect the first DOCUMENT-START or STREAM-END.
+    FirstDocumentStart = 1,
+    /// Expect DOCUMENT-START or STREAM-END.
+    DocumentStart = 2,
+    /// Expect the content of a document.
+    DocumentContent = 3,
+    /// Expect DOCUMENT-END.
+    DocumentEnd = 4,
+    /// Expect the first item of a flow sequence.
+    FlowSequenceFirstItem = 5,
+    /// Expect an item of a flow sequence.
+    FlowSequenceItem = 6,
+    /// Expect the first key of a flow mapping.
+    FlowMappingFirstKey = 7,
+    /// Expect a key of a flow mapping.
+    FlowMappingKey = 8,
+    /// Expect a value for a simple key of a flow mapping.
+    FlowMappingSimpleValue = 9,
+    /// Expect a value of a flow mapping.
+    FlowMappingValue = 10,
+    /// Expect the first item of a block sequence.
+    BlockSequenceFirstItem = 11,
+    /// Expect an item of a block sequence.
+    BlockSequenceItem = 12,
+    /// Expect the first key of a block mapping.
+    BlockMappingFirstKey = 13,
+    /// Expect the key of a block mapping.
+    BlockMappingKey = 14,
+    /// Expect a value for a simple key of a block mapping.
+    BlockMappingSimpleValue = 15,
+    /// Expect a value of a block mapping.
+    BlockMappingValue = 16,
+    /// Expect nothing.
+    End = 17,
+}
+
+#[derive(Copy, Clone, Default)]
+pub(crate) struct Anchors {
+    /// The number of references.
+    pub references: i32,
+    /// The anchor id.
+    pub anchor: i32,
+    /// If the node has been emitted?
+    pub serialized: bool,
+}
+
 #[derive(Default)]
 struct Analysis<'a> {
     pub anchor: Option<AnchorAnalysis<'a>>,
@@ -107,6 +238,98 @@ fn yaml_emitter_set_emitter_error<T>(
     problem: &'static str,
 ) -> Result<T, EmitterError> {
     Err(EmitterError::Problem(problem))
+}
+
+/// Create an emitter.
+pub fn yaml_emitter_new<'w>() -> Emitter<'w> {
+    Emitter {
+        write_handler: None,
+        buffer: String::with_capacity(OUTPUT_BUFFER_SIZE),
+        raw_buffer: Vec::with_capacity(OUTPUT_BUFFER_SIZE),
+        encoding: Encoding::Any,
+        canonical: false,
+        best_indent: 0,
+        best_width: 0,
+        unicode: false,
+        line_break: Break::default(),
+        states: Vec::with_capacity(16),
+        state: EmitterState::default(),
+        events: VecDeque::with_capacity(16),
+        indents: Vec::with_capacity(16),
+        tag_directives: Vec::with_capacity(16),
+        indent: 0,
+        flow_level: 0,
+        root_context: false,
+        sequence_context: false,
+        mapping_context: false,
+        simple_key_context: false,
+        line: 0,
+        column: 0,
+        whitespace: false,
+        indention: false,
+        open_ended: 0,
+        opened: false,
+        closed: false,
+        anchors: Vec::new(),
+        last_anchor_id: 0,
+    }
+}
+
+/// Reset the emitter state.
+pub fn yaml_emitter_reset(emitter: &mut Emitter) {
+    *emitter = yaml_emitter_new();
+}
+
+/// Set a string output.
+///
+/// The emitter will write the output characters to the `output` buffer.
+pub fn yaml_emitter_set_output_string<'w>(emitter: &mut Emitter<'w>, output: &'w mut Vec<u8>) {
+    assert!(emitter.write_handler.is_none());
+    if emitter.encoding == Encoding::Any {
+        yaml_emitter_set_encoding(emitter, Encoding::Utf8);
+    } else if emitter.encoding != Encoding::Utf8 {
+        panic!("cannot output UTF-16 to String")
+    }
+    output.clear();
+    emitter.write_handler = Some(output);
+}
+
+/// Set a generic output handler.
+pub fn yaml_emitter_set_output<'w>(emitter: &mut Emitter<'w>, handler: &'w mut dyn std::io::Write) {
+    assert!(emitter.write_handler.is_none());
+    emitter.write_handler = Some(handler);
+}
+
+/// Set the output encoding.
+pub fn yaml_emitter_set_encoding(emitter: &mut Emitter, encoding: Encoding) {
+    assert_eq!(emitter.encoding, Encoding::Any);
+    emitter.encoding = encoding;
+}
+
+/// Set if the output should be in the "canonical" format as in the YAML
+/// specification.
+pub fn yaml_emitter_set_canonical(emitter: &mut Emitter, canonical: bool) {
+    emitter.canonical = canonical;
+}
+
+/// Set the indentation increment.
+pub fn yaml_emitter_set_indent(emitter: &mut Emitter, indent: i32) {
+    emitter.best_indent = if 1 < indent && indent < 10 { indent } else { 2 };
+}
+
+/// Set the preferred line width. -1 means unlimited.
+pub fn yaml_emitter_set_width(emitter: &mut Emitter, width: i32) {
+    emitter.best_width = if width >= 0 { width } else { -1 };
+}
+
+/// Set if unescaped non-ASCII characters are allowed.
+pub fn yaml_emitter_set_unicode(emitter: &mut Emitter, unicode: bool) {
+    emitter.unicode = unicode;
+}
+
+/// Set the preferred line break.
+pub fn yaml_emitter_set_break(emitter: &mut Emitter, line_break: Break) {
+    emitter.line_break = line_break;
 }
 
 /// Emit an event.

@@ -3,10 +3,11 @@ use std::mem::take;
 use alloc::string::String;
 use alloc::vec;
 
-use crate::yaml::{Anchors, Any, Document, Emitter, Event, EventData, Node, NodeData};
 use crate::{
-    yaml_emitter_emit, EmitterError, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
+    yaml_emitter_emit, EmitterError, Encoding, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG,
+    DEFAULT_SEQUENCE_TAG,
 };
+use crate::{Anchors, Document, Emitter, Event, EventData, Node, NodeData};
 
 /// Start a YAML stream.
 ///
@@ -15,7 +16,9 @@ use crate::{
 pub fn yaml_emitter_open(emitter: &mut Emitter) -> Result<(), EmitterError> {
     assert!(!emitter.opened);
     let event = Event {
-        data: EventData::StreamStart { encoding: Any },
+        data: EventData::StreamStart {
+            encoding: Encoding::Any,
+        },
         ..Default::default()
     };
     yaml_emitter_emit(emitter, event)?;
@@ -45,7 +48,7 @@ pub fn yaml_emitter_close(emitter: &mut Emitter) -> Result<(), EmitterError> {
 ///
 /// The document object may be generated using the
 /// [`yaml_parser_load()`](crate::yaml_parser_load) function or the
-/// [`yaml_document_new()`](crate::yaml_document_new) function.
+/// [`Document::new()`] function.
 pub fn yaml_emitter_dump(
     emitter: &mut Emitter,
     mut document: Document,

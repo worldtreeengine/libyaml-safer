@@ -1,9 +1,8 @@
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
 
-use crate::yaml::{EventData, NodeData};
 use crate::{
-    yaml_document_new, yaml_parser_parse, AliasData, ComposerError, Document, Event, Mark, Node,
+    yaml_parser_parse, AliasData, ComposerError, Document, Event, EventData, Mark, Node, NodeData,
     NodePair, Parser, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
 };
 
@@ -21,7 +20,7 @@ use crate::{
 /// [`yaml_parser_parse()`](crate::yaml_parser_parse). Doing this will break the
 /// parser.
 pub fn yaml_parser_load(parser: &mut Parser) -> Result<Document, ComposerError> {
-    let mut document = yaml_document_new(None, &[], false, false);
+    let mut document = Document::new(None, &[], false, false);
     document.nodes.reserve(16);
 
     if !parser.stream_start_produced {
