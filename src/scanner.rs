@@ -24,8 +24,6 @@ pub struct Scanner<'r> {
     ///
     /// This always contains valid UTF-8.
     pub(crate) buffer: VecDeque<char>,
-    /// The number of unread characters in the buffer.
-    pub(crate) unread: usize,
     /// The input encoding.
     pub(crate) encoding: Encoding,
     /// The offset of the current position (in bytes).
@@ -60,7 +58,6 @@ impl<'r> Scanner<'r> {
             read_handler: None,
             eof: false,
             buffer: VecDeque::with_capacity(INPUT_BUFFER_SIZE),
-            unread: 0,
             encoding: Encoding::Any,
             offset: 0,
             mark: Mark::default(),
@@ -103,7 +100,7 @@ impl<'r> Default for Scanner<'r> {
 }
 
 fn CACHE(scanner: &mut Scanner, length: usize) -> Result<(), ReaderError> {
-    if scanner.unread >= length {
+    if scanner.buffer.len() >= length {
         Ok(())
     } else {
         yaml_parser_update_buffer(scanner, length)
@@ -118,7 +115,6 @@ fn SKIP(scanner: &mut Scanner) {
     let width = popped.len_utf8();
     scanner.mark.index += width as u64;
     scanner.mark.column += 1;
-    scanner.unread -= 1;
 }
 
 fn SKIP_LINE(scanner: &mut Scanner) {
@@ -126,7 +122,6 @@ fn SKIP_LINE(scanner: &mut Scanner) {
         scanner.mark.index += 2;
         scanner.mark.column = 0;
         scanner.mark.line += 1;
-        scanner.unread -= 2;
         scanner.buffer.drain(0..2);
     } else if let Some(front) = scanner.buffer.front().copied() {
         if is_break(front) {
@@ -134,7 +129,6 @@ fn SKIP_LINE(scanner: &mut Scanner) {
             scanner.mark.index += width as u64;
             scanner.mark.column = 0;
             scanner.mark.line += 1;
-            scanner.unread -= 1;
             scanner.buffer.pop_front();
         }
     }
@@ -145,7 +139,6 @@ fn READ_STRING(scanner: &mut Scanner, string: &mut String) {
         string.push(popped);
         scanner.mark.index = popped.len_utf8() as u64;
         scanner.mark.column += 1;
-        scanner.unread -= 1;
     } else {
         panic!("unexpected end of input")
     }
@@ -158,7 +151,6 @@ fn READ_LINE_STRING(scanner: &mut Scanner, string: &mut String) {
         scanner.mark.index += 2;
         scanner.mark.column = 0;
         scanner.mark.line += 1;
-        scanner.unread -= 2;
     } else {
         let Some(front) = scanner.buffer.front().copied() else {
             panic!("unexpected end of input");
@@ -175,7 +167,6 @@ fn READ_LINE_STRING(scanner: &mut Scanner, string: &mut String) {
             scanner.mark.index += char_len as u64;
             scanner.mark.column = 0;
             scanner.mark.line += 1;
-            scanner.unread -= 1;
         }
     }
 }

@@ -283,7 +283,7 @@ pub(crate) fn yaml_parser_update_buffer(
     length: usize,
 ) -> Result<(), ReaderError> {
     let reader = parser.read_handler.as_deref_mut().expect("no read handler");
-    if parser.unread >= length {
+    if parser.buffer.len() >= length {
         return Ok(());
     }
     if parser.encoding == Encoding::Any {
@@ -295,12 +295,10 @@ pub(crate) fn yaml_parser_update_buffer(
         }
     }
 
-    while parser.unread < length {
+    while parser.buffer.len() < length {
         if parser.eof {
             return Ok(());
         }
-
-        let tokens_before = parser.buffer.len();
 
         let not_eof = match parser.encoding {
             Encoding::Any => unreachable!(),
@@ -312,9 +310,6 @@ pub(crate) fn yaml_parser_update_buffer(
                 read_utf16_buffered::<true>(reader, &mut parser.buffer, &mut parser.offset)?
             }
         };
-
-        let num_read = parser.buffer.len() - tokens_before;
-        parser.unread += num_read;
         if !not_eof {
             parser.eof = true;
             return Ok(());
