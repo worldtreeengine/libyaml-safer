@@ -175,7 +175,7 @@ fn yaml_emitter_needs_mode_events(emitter: &mut Emitter) -> Option<Event> {
 
 fn yaml_emitter_append_tag_directive(
     emitter: &mut Emitter,
-    value: &TagDirective,
+    value: TagDirective,
     allow_duplicates: bool,
 ) -> Result<(), EmitterError> {
     for tag_directive in &emitter.tag_directives {
@@ -186,7 +186,7 @@ fn yaml_emitter_append_tag_directive(
             return yaml_emitter_set_emitter_error(emitter, "duplicate %TAG directive");
         }
     }
-    emitter.tag_directives.push(value.clone());
+    emitter.tag_directives.push(value);
     Ok(())
 }
 
@@ -199,10 +199,10 @@ fn yaml_emitter_increase_indent(emitter: &mut Emitter, flow: bool, indentless: b
     }
 }
 
-fn yaml_emitter_state_machine(
+fn yaml_emitter_state_machine<'a>(
     emitter: &mut Emitter,
-    event: &Event,
-    analysis: &mut Analysis,
+    event: &'a Event,
+    analysis: &mut Analysis<'a>,
 ) -> Result<(), EmitterError> {
     match emitter.state {
         EmitterState::StreamStart => yaml_emitter_emit_stream_start(emitter, event),
@@ -303,9 +303,6 @@ fn yaml_emitter_emit_document_start(
         implicit,
     } = &event.data
     {
-        let (version_directive, tag_directives, implicit) =
-            (*version_directive, tag_directives, *implicit);
-
         let default_tag_directives: [TagDirective; 2] = [
             // TODO: Avoid these heap allocations.
             TagDirective {
@@ -317,15 +314,15 @@ fn yaml_emitter_emit_document_start(
                 prefix: String::from("tag:yaml.org,2002:"),
             },
         ];
-        let mut implicit = implicit;
+        let mut implicit = *implicit;
         if let Some(version_directive) = version_directive {
-            yaml_emitter_analyze_version_directive(emitter, version_directive)?;
+            yaml_emitter_analyze_version_directive(emitter, *version_directive)?;
         }
         for tag_directive in tag_directives {
             yaml_emitter_analyze_tag_directive(emitter, tag_directive)?;
-            yaml_emitter_append_tag_directive(emitter, tag_directive, false)?;
+            yaml_emitter_append_tag_directive(emitter, tag_directive.clone(), false)?;
         }
-        for tag_directive in &default_tag_directives {
+        for tag_directive in default_tag_directives {
             yaml_emitter_append_tag_directive(emitter, tag_directive, true)?;
         }
         if !first || emitter.canonical {

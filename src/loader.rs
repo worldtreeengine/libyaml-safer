@@ -314,7 +314,7 @@ fn yaml_parser_load_sequence(
 
     document.nodes.push(node);
     let index: i32 = document.nodes.len() as i32;
-    yaml_parser_register_anchor(parser, document, index, anchor.clone())?;
+    yaml_parser_register_anchor(parser, document, index, anchor)?;
     yaml_parser_load_node_add(document, ctx, index)?;
     ctx.push(index);
     Ok(())

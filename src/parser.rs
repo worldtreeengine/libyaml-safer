@@ -852,7 +852,7 @@ fn yaml_parser_process_directives(
 
     let mut tag_directives = Vec::with_capacity(16);
 
-    let mut token = PEEK_TOKEN(parser)?;
+    let mut token = PEEK_TOKEN_MUT(parser)?;
 
     loop {
         if !matches!(
@@ -873,24 +873,23 @@ fn yaml_parser_process_directives(
                 major: *major,
                 minor: *minor,
             });
-        } else if let TokenData::TagDirective { handle, prefix } = &token.data {
+        } else if let TokenData::TagDirective { handle, prefix } = &mut token.data {
             let value = TagDirective {
-                // TODO: Get rid of these clones by consuming tokens by value.
-                handle: handle.clone(),
-                prefix: prefix.clone(),
+                handle: core::mem::take(handle),
+                prefix: core::mem::take(prefix),
             };
             let mark = token.start_mark;
-            yaml_parser_append_tag_directive(parser, &value, false, mark)?;
+            yaml_parser_append_tag_directive(parser, value.clone(), false, mark)?;
 
             tag_directives.push(value);
         }
 
         SKIP_TOKEN(parser);
-        token = PEEK_TOKEN(parser)?;
+        token = PEEK_TOKEN_MUT(parser)?;
     }
 
     let start_mark = token.start_mark;
-    for default_tag_directive in &default_tag_directives {
+    for default_tag_directive in default_tag_directives {
         yaml_parser_append_tag_directive(parser, default_tag_directive, true, start_mark)?;
     }
 
@@ -913,7 +912,7 @@ fn yaml_parser_process_directives(
 
 fn yaml_parser_append_tag_directive(
     parser: &mut Parser,
-    value: &TagDirective,
+    value: TagDirective,
     allow_duplicates: bool,
     mark: Mark,
 ) -> Result<(), ParserError> {
@@ -925,6 +924,6 @@ fn yaml_parser_append_tag_directive(
             return yaml_parser_set_parser_error("found duplicate %TAG directive", mark);
         }
     }
-    parser.tag_directives.push(value.clone());
+    parser.tag_directives.push(value);
     Ok(())
 }
