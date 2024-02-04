@@ -56,6 +56,24 @@ drop-in replacement. The shape of the API is idiomatic Rust, and while it is
 possible to emulate the C API using this library, supporting this use case is
 not a priority. Use `unsafe-libyaml` if that is what you need.
 
+### Performance
+
+Performance is largely on par with `unsafe-libyaml`. No significant effort has
+been put into optimizing this library, beyond just choosing the most
+straightforward ways to reasonably port concepts from the C-like code.
+
+See
+[`benches/bench.rs`](https://github.com/simonask/libyaml-safer/benches/bench.rs)
+for a very simple benchmark dealing with a very large (~700 KiB) YAML document.
+On my machine (Ryzen 9 3950X) the parser from this library is slightly slower
+and the emitter is slightly faster, but both within about ~1ms of their unsafe
+counterparts. Run `cargo bench` to test on your machine.
+
+If there is demand, there are clear paths forward to optimize the parser. For
+example, due to it being ported directly from unsafe C-like code doing pointer
+arithmetic, it performs a completely unreasonable number of bounds checks for
+each input byte.
+
 ## License
 
 <a href="LICENSE-MIT">MIT license</a>, same as unsafe-libyaml and libyaml.
