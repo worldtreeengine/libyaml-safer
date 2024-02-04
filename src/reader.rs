@@ -53,6 +53,8 @@ fn yaml_parser_determine_encoding(
     }
 }
 
+// Allowing unsafe code because it is the only efficient way to partially decode
+// a string slice from a stream of UTF-8 bytes.
 #[allow(unsafe_code)]
 fn read_utf8_buffered(
     reader: &mut dyn BufRead,

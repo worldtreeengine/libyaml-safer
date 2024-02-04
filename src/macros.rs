@@ -73,46 +73,6 @@ pub(crate) fn is_ascii(ch: char) -> bool {
     ch.is_ascii()
 }
 
-// TODO: Keeping this comment around to verify the `is_printable` function.
-// macro_rules! IS_PRINTABLE {
-//     ($string:expr) => {
-//         match *$string.pointer {
-//             // ASCII
-//             0x0A | 0x20..=0x7E => true,
-//             // U+A0 ... U+BF
-//             0xC2 => match *$string.pointer.wrapping_offset(1) {
-//                 0xA0..=0xBF => true,
-//                 _ => false,
-//             },
-//             // U+C0 ... U+CFFF
-//             0xC3..=0xEC => true,
-//             // U+D000 ... U+D7FF
-//             0xED => match *$string.pointer.wrapping_offset(1) {
-//                 0x00..=0x9F => true,
-//                 _ => false,
-//             },
-//             // U+E000 ... U+EFFF
-//             0xEE => true,
-//             // U+F000 ... U+FFFD
-//             0xEF => match *$string.pointer.wrapping_offset(1) {
-//                 0xBB => match *$string.pointer.wrapping_offset(2) {
-//                     // except U+FEFF
-//                     0xBF => false,
-//                     _ => true,
-//                 },
-//                 0xBF => match *$string.pointer.wrapping_offset(2) {
-//                     0xBE | 0xBF => false,
-//                     _ => true,
-//                 },
-//                 _ => true,
-//             },
-//             // U+10000 ... U+10FFFF
-//             0xF0..=0xF4 => true,
-//             _ => false,
-//         }
-//     };
-// }
-
 pub(crate) fn is_printable(ch: char) -> bool {
     match ch {
         '\u{feff}' | '\u{fffe}' | '\u{ffff}' => false,
