@@ -217,7 +217,7 @@ pub enum TokenData {
 impl TokenData {
     /// Returns `true` if the yaml token data is [`VersionDirective`].
     ///
-    /// [`VersionDirective`]: YamlTokenData::VersionDirective
+    /// [`VersionDirective`]: TokenData::VersionDirective
     #[must_use]
     pub fn is_version_directive(&self) -> bool {
         matches!(self, Self::VersionDirective { .. })
@@ -225,7 +225,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`TagDirective`].
     ///
-    /// [`TagDirective`]: YamlTokenData::TagDirective
+    /// [`TagDirective`]: TokenData::TagDirective
     #[must_use]
     pub fn is_tag_directive(&self) -> bool {
         matches!(self, Self::TagDirective { .. })
@@ -233,7 +233,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`DocumentStart`].
     ///
-    /// [`DocumentStart`]: YamlTokenData::DocumentStart
+    /// [`DocumentStart`]: TokenData::DocumentStart
     #[must_use]
     pub fn is_document_start(&self) -> bool {
         matches!(self, Self::DocumentStart)
@@ -241,7 +241,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`StreamEnd`].
     ///
-    /// [`StreamEnd`]: YamlTokenData::StreamEnd
+    /// [`StreamEnd`]: TokenData::StreamEnd
     #[must_use]
     pub fn is_stream_end(&self) -> bool {
         matches!(self, Self::StreamEnd)
@@ -249,7 +249,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`BlockEntry`].
     ///
-    /// [`BlockEntry`]: YamlTokenData::BlockEntry
+    /// [`BlockEntry`]: TokenData::BlockEntry
     #[must_use]
     pub fn is_block_entry(&self) -> bool {
         matches!(self, Self::BlockEntry)
@@ -257,7 +257,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`BlockSequenceStart`].
     ///
-    /// [`BlockSequenceStart`]: YamlTokenData::BlockSequenceStart
+    /// [`BlockSequenceStart`]: TokenData::BlockSequenceStart
     #[must_use]
     pub fn is_block_sequence_start(&self) -> bool {
         matches!(self, Self::BlockSequenceStart)
@@ -265,7 +265,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`BlockMappingStart`].
     ///
-    /// [`BlockMappingStart`]: YamlTokenData::BlockMappingStart
+    /// [`BlockMappingStart`]: TokenData::BlockMappingStart
     #[must_use]
     pub fn is_block_mapping_start(&self) -> bool {
         matches!(self, Self::BlockMappingStart)
@@ -273,7 +273,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`BlockEnd`].
     ///
-    /// [`BlockEnd`]: YamlTokenData::BlockEnd
+    /// [`BlockEnd`]: TokenData::BlockEnd
     #[must_use]
     pub fn is_block_end(&self) -> bool {
         matches!(self, Self::BlockEnd)
@@ -281,7 +281,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`Key`].
     ///
-    /// [`Key`]: YamlTokenData::Key
+    /// [`Key`]: TokenData::Key
     #[must_use]
     pub fn is_key(&self) -> bool {
         matches!(self, Self::Key)
@@ -289,7 +289,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`Value`].
     ///
-    /// [`Value`]: YamlTokenData::Value
+    /// [`Value`]: TokenData::Value
     #[must_use]
     pub fn is_value(&self) -> bool {
         matches!(self, Self::Value)
@@ -297,7 +297,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`FlowSequenceEnd`].
     ///
-    /// [`FlowSequenceEnd`]: YamlTokenData::FlowSequenceEnd
+    /// [`FlowSequenceEnd`]: TokenData::FlowSequenceEnd
     #[must_use]
     pub fn is_flow_sequence_end(&self) -> bool {
         matches!(self, Self::FlowSequenceEnd)
@@ -305,7 +305,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`FlowEntry`].
     ///
-    /// [`FlowEntry`]: YamlTokenData::FlowEntry
+    /// [`FlowEntry`]: TokenData::FlowEntry
     #[must_use]
     pub fn is_flow_entry(&self) -> bool {
         matches!(self, Self::FlowEntry)
@@ -313,7 +313,7 @@ impl TokenData {
 
     /// Returns `true` if the yaml token data is [`FlowMappingEnd`].
     ///
-    /// [`FlowMappingEnd`]: YamlTokenData::FlowMappingEnd
+    /// [`FlowMappingEnd`]: TokenData::FlowMappingEnd
     #[must_use]
     pub fn is_flow_mapping_end(&self) -> bool {
         matches!(self, Self::FlowMappingEnd)

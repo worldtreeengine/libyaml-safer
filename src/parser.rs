@@ -59,12 +59,14 @@ fn SKIP_TOKEN(parser: &mut Parser) {
 ///
 /// Call the function subsequently to produce a sequence of events corresponding
 /// to the input stream. The initial event has the type
-/// [`EventData::StreamStart`] while the ending event has the type
-/// [`EventData::StreamEnd`].
+/// [`EventData::StreamStart`](crate::EventData::StreamStart) while the ending
+/// event has the type [`EventData::StreamEnd`](crate::EventData::StreamEnd).
 ///
-/// An application must not alternate the calls of [`yaml_parser_parse()`] with
-/// the calls of [`yaml_parser_scan()`] or [`yaml_parser_load()`]. Doing this
-/// will break the parser.
+/// An application must not alternate the calls of
+/// [`yaml_parser_parse()`](crate::yaml_parser_parse) with the calls of
+/// [`yaml_parser_scan()`](crate::yaml_parser_scan) or
+/// [`yaml_parser_load()`](crate::yaml_parser_load). Doing this will break the
+/// parser.
 pub fn yaml_parser_parse(parser: &mut Parser) -> Result<Event, ParserError> {
     if parser.stream_end_produced || parser.state == ParserState::End {
         return Ok(Event {

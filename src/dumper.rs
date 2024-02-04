@@ -10,7 +10,8 @@ use crate::{
 
 /// Start a YAML stream.
 ///
-/// This function should be used before [`yaml_emitter_dump()`] is called.
+/// This function should be used before
+/// [`yaml_emitter_dump()`](crate::yaml_emitter_dump) is called.
 pub fn yaml_emitter_open(emitter: &mut Emitter) -> Result<(), EmitterError> {
     assert!(!emitter.opened);
     let event = Event {
@@ -24,7 +25,8 @@ pub fn yaml_emitter_open(emitter: &mut Emitter) -> Result<(), EmitterError> {
 
 /// Finish a YAML stream.
 ///
-/// This function should be used after [`yaml_emitter_dump()`] is called.
+/// This function should be used after
+/// [`yaml_emitter_dump()`](crate::yaml_emitter_dump) is called.
 pub fn yaml_emitter_close(emitter: &mut Emitter) -> Result<(), EmitterError> {
     assert!(emitter.opened);
     if emitter.closed {
@@ -41,8 +43,9 @@ pub fn yaml_emitter_close(emitter: &mut Emitter) -> Result<(), EmitterError> {
 
 /// Emit a YAML document.
 ///
-/// The document object may be generated using the [`yaml_parser_load()`] function
-/// or the [`yaml_document_new()`] function.
+/// The document object may be generated using the
+/// [`yaml_parser_load()`](crate::yaml_parser_load) function or the
+/// [`yaml_document_new()`](crate::yaml_document_new) function.
 pub fn yaml_emitter_dump(
     emitter: &mut Emitter,
     mut document: Document,

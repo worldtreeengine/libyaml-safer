@@ -20,6 +20,7 @@
     clippy::unnecessary_wraps,
     clippy::match_wildcard_for_single_variants
 )]
+#![deny(unsafe_code)]
 
 extern crate alloc;
 

@@ -111,10 +111,10 @@ fn yaml_emitter_set_emitter_error<T>(
 
 /// Emit an event.
 ///
-/// The event object may be generated using the [`yaml_parser_parse()`] function.
-/// The emitter takes the responsibility for the event object and destroys its
-/// content after it is emitted. The event object is destroyed even if the
-/// function fails.
+/// The event object may be generated using the
+/// [`yaml_parser_parse()`](crate::yaml_parser_parse) function. The emitter
+/// takes the responsibility for the event object and destroys its content after
+/// it is emitted. The event object is destroyed even if the function fails.
 pub fn yaml_emitter_emit(emitter: &mut Emitter, event: Event) -> Result<(), EmitterError> {
     emitter.events.push_back(event);
     while let Some(event) = yaml_emitter_needs_mode_events(emitter) {

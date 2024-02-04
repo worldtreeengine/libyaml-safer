@@ -84,12 +84,14 @@ fn READ_LINE_STRING(parser: &mut Parser, string: &mut String) {
 ///
 /// Call the function subsequently to produce a sequence of tokens corresponding
 /// to the input stream. The initial token has the type
-/// [`TokenData::StreamStart`] while the ending token has the type
-/// [`TokenData::StreamEnd`].
+/// [`TokenData::StreamStart`](crate::TokenData::StreamStart) while the ending
+/// token has the type [`TokenData::StreamEnd`](crate::TokenData::StreamEnd).
 ///
-/// An application must not alternate the calls of [`yaml_parser_scan()`] with
-/// the calls of [`yaml_parser_parse()`] or [`yaml_parser_load()`]. Doing this
-/// will break the parser.
+/// An application must not alternate the calls of
+/// [`yaml_parser_scan()`](crate::yaml_parser_scan) with the calls of
+/// [`yaml_parser_parse()`](crate::yaml_parser_parse) or
+/// [`yaml_parser_load()`](crate::yaml_parser_load). Doing this will break the
+/// parser.
 pub fn yaml_parser_scan(parser: &mut Parser) -> Result<Token, ScannerError> {
     if parser.stream_end_produced {
         return Ok(Token {

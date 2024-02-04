@@ -53,6 +53,7 @@ fn yaml_parser_determine_encoding(
     }
 }
 
+#[allow(unsafe_code)]
 fn read_utf8_buffered(
     reader: &mut dyn BufRead,
     out: &mut VecDeque<char>,
@@ -93,11 +94,9 @@ fn read_utf8_buffered(
             }
 
             match err.error_len() {
-                Some(_invalid_len) => {
-                    Err(ReaderError::InvalidUtf8 {
-                        value: available[valid_bytes],
-                    })
-                }
+                Some(_invalid_len) => Err(ReaderError::InvalidUtf8 {
+                    value: available[valid_bytes],
+                }),
                 None => {
                     if valid_bytes != 0 {
                         // Some valid UTF-8 characters were present, and the
