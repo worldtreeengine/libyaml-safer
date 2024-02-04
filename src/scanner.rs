@@ -91,100 +91,79 @@ impl<'r> Scanner<'r> {
         assert!(self.encoding == Encoding::Any);
         self.encoding = encoding;
     }
-}
 
-impl<'r> Default for Scanner<'r> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-fn CACHE(scanner: &mut Scanner, length: usize) -> Result<(), ReaderError> {
-    if scanner.buffer.len() >= length {
-        Ok(())
-    } else {
-        yaml_parser_update_buffer(scanner, length)
-    }
-}
-
-fn SKIP(scanner: &mut Scanner) {
-    let popped = scanner
-        .buffer
-        .pop_front()
-        .expect("unexpected end of tokens");
-    let width = popped.len_utf8();
-    scanner.mark.index += width as u64;
-    scanner.mark.column += 1;
-}
-
-fn SKIP_LINE(scanner: &mut Scanner) {
-    if let Some(front) = scanner.buffer.front().copied() {
-        if let ('\r', Some('\n')) = (front, scanner.buffer.get(1).copied()) {
-            scanner.mark.index += 2;
-            scanner.mark.column = 0;
-            scanner.mark.line += 1;
-            scanner.buffer.drain(0..2);
-        } else if is_break(front) {
-            let width = front.len_utf8();
-            scanner.mark.index += width as u64;
-            scanner.mark.column = 0;
-            scanner.mark.line += 1;
-            scanner.buffer.pop_front();
+    fn cache(&mut self, length: usize) -> Result<(), ReaderError> {
+        if self.buffer.len() >= length {
+            Ok(())
+        } else {
+            yaml_parser_update_buffer(self, length)
         }
     }
-}
 
-fn READ_STRING(scanner: &mut Scanner, string: &mut String) {
-    if let Some(popped) = scanner.buffer.pop_front() {
-        string.push(popped);
-        scanner.mark.index = popped.len_utf8() as u64;
-        scanner.mark.column += 1;
-    } else {
-        panic!("unexpected end of input")
+    /// Equivalent to the libyaml macro `SKIP`.
+    fn skip_char(&mut self) {
+        let popped = self.buffer.pop_front().expect("unexpected end of tokens");
+        let width = popped.len_utf8();
+        self.mark.index += width as u64;
+        self.mark.column += 1;
     }
-}
 
-fn READ_LINE_STRING(scanner: &mut Scanner, string: &mut String) {
-    let Some(front) = scanner.buffer.front().copied() else {
-        panic!("unexpected end of input");
-    };
+    /// Equivalent to the libyaml macro `SKIP_LINE`.
+    fn skip_line_break(&mut self) {
+        if let Some(front) = self.buffer.front().copied() {
+            if let ('\r', Some('\n')) = (front, self.buffer.get(1).copied()) {
+                self.mark.index += 2;
+                self.mark.column = 0;
+                self.mark.line += 1;
+                self.buffer.drain(0..2);
+            } else if is_break(front) {
+                let width = front.len_utf8();
+                self.mark.index += width as u64;
+                self.mark.column = 0;
+                self.mark.line += 1;
+                self.buffer.pop_front();
+            }
+        }
+    }
 
-    if let Some('\r') = scanner.buffer.get(1).copied() {
-        string.push('\n');
-        scanner.buffer.drain(0..2);
-        scanner.mark.index += 2;
-        scanner.mark.column = 0;
-        scanner.mark.line += 1;
-    } else if is_break(front) {
-        scanner.buffer.pop_front();
-        let char_len = front.len_utf8();
-        if char_len == 3 {
-            // libyaml preserves Unicode breaks in this case.
-            string.push(front);
+    /// Equivalent to the libyaml macro `READ`.
+    fn read_char(&mut self, string: &mut String) {
+        if let Some(popped) = self.buffer.pop_front() {
+            string.push(popped);
+            self.mark.index = popped.len_utf8() as u64;
+            self.mark.column += 1;
         } else {
+            panic!("unexpected end of input")
+        }
+    }
+
+    /// Equivalent to the libyaml macro `READ_LINE`.
+    fn read_line_break(&mut self, string: &mut String) {
+        let Some(front) = self.buffer.front().copied() else {
+            panic!("unexpected end of input");
+        };
+
+        if let Some('\r') = self.buffer.get(1).copied() {
             string.push('\n');
+            self.buffer.drain(0..2);
+            self.mark.index += 2;
+            self.mark.column = 0;
+            self.mark.line += 1;
+        } else if is_break(front) {
+            self.buffer.pop_front();
+            let char_len = front.len_utf8();
+            if char_len == 3 {
+                // libyaml preserves Unicode breaks in this case.
+                string.push(front);
+            } else {
+                string.push('\n');
+            }
+            self.mark.index += char_len as u64;
+            self.mark.column = 0;
+            self.mark.line += 1;
         }
-        scanner.mark.index += char_len as u64;
-        scanner.mark.column = 0;
-        scanner.mark.line += 1;
     }
-}
 
-impl<'r> Iterator for Scanner<'r> {
-    type Item = Result<Token, ScannerError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.stream_end_produced {
-            None
-        } else {
-            Some(self.scan())
-        }
-    }
-}
-
-impl<'r> core::iter::FusedIterator for Scanner<'r> {}
-
-impl<'r> Scanner<'r> {
     /// Scan the input stream and produce the next token.
     ///
     /// Call the function subsequently to produce a sequence of tokens
@@ -305,7 +284,7 @@ impl<'r> Scanner<'r> {
     }
 
     fn fetch_next_token(&mut self) -> Result<(), ScannerError> {
-        CACHE(self, 1)?;
+        self.cache(1)?;
         if !self.stream_start_produced {
             self.fetch_stream_start();
             return Ok(());
@@ -313,7 +292,7 @@ impl<'r> Scanner<'r> {
         self.scan_to_next_token()?;
         self.stale_simple_keys()?;
         self.unroll_indent(self.mark.column as i64);
-        CACHE(self, 4)?;
+        self.cache(4)?;
         if IS_Z!(self.buffer) {
             return self.fetch_stream_end();
         }
@@ -593,9 +572,9 @@ impl<'r> Scanner<'r> {
         self.remove_simple_key()?;
         self.simple_key_allowed = false;
         let start_mark: Mark = self.mark;
-        SKIP(self);
-        SKIP(self);
-        SKIP(self);
+        self.skip_char();
+        self.skip_char();
+        self.skip_char();
         let end_mark: Mark = self.mark;
 
         let token = Token {
@@ -612,7 +591,7 @@ impl<'r> Scanner<'r> {
         self.increase_flow_level()?;
         self.simple_key_allowed = true;
         let start_mark: Mark = self.mark;
-        SKIP(self);
+        self.skip_char();
         let end_mark: Mark = self.mark;
         let token = Token {
             data,
@@ -628,7 +607,7 @@ impl<'r> Scanner<'r> {
         self.decrease_flow_level();
         self.simple_key_allowed = false;
         let start_mark: Mark = self.mark;
-        SKIP(self);
+        self.skip_char();
         let end_mark: Mark = self.mark;
         let token = Token {
             data,
@@ -643,7 +622,7 @@ impl<'r> Scanner<'r> {
         self.remove_simple_key()?;
         self.simple_key_allowed = true;
         let start_mark: Mark = self.mark;
-        SKIP(self);
+        self.skip_char();
         let end_mark: Mark = self.mark;
         let token = Token {
             data: TokenData::FlowEntry,
@@ -673,7 +652,7 @@ impl<'r> Scanner<'r> {
         self.remove_simple_key()?;
         self.simple_key_allowed = true;
         let start_mark: Mark = self.mark;
-        SKIP(self);
+        self.skip_char();
         let end_mark: Mark = self.mark;
         let token = Token {
             data: TokenData::BlockEntry,
@@ -703,7 +682,7 @@ impl<'r> Scanner<'r> {
         self.remove_simple_key()?;
         self.simple_key_allowed = self.flow_level == 0;
         let start_mark: Mark = self.mark;
-        SKIP(self);
+        self.skip_char();
         let end_mark: Mark = self.mark;
         let token = Token {
             data: TokenData::Key,
@@ -756,7 +735,7 @@ impl<'r> Scanner<'r> {
             self.simple_key_allowed = self.flow_level == 0;
         }
         let start_mark: Mark = self.mark;
-        SKIP(self);
+        self.skip_char();
         let end_mark: Mark = self.mark;
         let token = Token {
             data: TokenData::Value,
@@ -809,28 +788,28 @@ impl<'r> Scanner<'r> {
 
     fn scan_to_next_token(&mut self) -> Result<(), ScannerError> {
         loop {
-            CACHE(self, 1)?;
+            self.cache(1)?;
             if self.mark.column == 0 && IS_BOM!(self.buffer) {
-                SKIP(self);
+                self.skip_char();
             }
-            CACHE(self, 1)?;
+            self.cache(1)?;
             while CHECK!(self.buffer, ' ')
                 || (self.flow_level != 0 || !self.simple_key_allowed) && CHECK!(self.buffer, '\t')
             {
-                SKIP(self);
-                CACHE(self, 1)?;
+                self.skip_char();
+                self.cache(1)?;
             }
             if CHECK!(self.buffer, '#') {
                 while !IS_BREAKZ!(self.buffer) {
-                    SKIP(self);
-                    CACHE(self, 1)?;
+                    self.skip_char();
+                    self.cache(1)?;
                 }
             }
             if !IS_BREAK!(self.buffer) {
                 break;
             }
-            CACHE(self, 2)?;
-            SKIP_LINE(self);
+            self.cache(2)?;
+            self.skip_line_break();
             if self.flow_level == 0 {
                 self.simple_key_allowed = true;
             }
@@ -843,7 +822,7 @@ impl<'r> Scanner<'r> {
         let mut major: i32 = 0;
         let mut minor: i32 = 0;
         let start_mark: Mark = self.mark;
-        SKIP(self);
+        self.skip_char();
         let name = self.scan_directive_name(start_mark)?;
         let token = if name == "YAML" {
             self.scan_version_directive_value(start_mark, &mut major, &mut minor)?;
@@ -869,13 +848,13 @@ impl<'r> Scanner<'r> {
                 "found unknown directive name",
             );
         };
-        CACHE(self, 1)?;
+        self.cache(1)?;
         loop {
             if !IS_BLANK!(self.buffer) {
                 break;
             }
-            SKIP(self);
-            CACHE(self, 1)?;
+            self.skip_char();
+            self.cache(1)?;
         }
 
         if CHECK!(self.buffer, '#') {
@@ -883,15 +862,15 @@ impl<'r> Scanner<'r> {
                 if IS_BREAKZ!(self.buffer) {
                     break;
                 }
-                SKIP(self);
-                CACHE(self, 1)?;
+                self.skip_char();
+                self.cache(1)?;
             }
         }
 
         if IS_BREAKZ!(self.buffer) {
             if IS_BREAK!(self.buffer) {
-                CACHE(self, 2)?;
-                SKIP_LINE(self);
+                self.cache(2)?;
+                self.skip_line_break();
             }
             Ok(token)
         } else {
@@ -905,14 +884,14 @@ impl<'r> Scanner<'r> {
 
     fn scan_directive_name(&mut self, start_mark: Mark) -> Result<String, ScannerError> {
         let mut string = String::new();
-        CACHE(self, 1)?;
+        self.cache(1)?;
 
         loop {
             if !IS_ALPHA!(self.buffer) {
                 break;
             }
-            READ_STRING(self, &mut string);
-            CACHE(self, 1)?;
+            self.read_char(&mut string);
+            self.cache(1)?;
         }
 
         if string.is_empty() {
@@ -938,10 +917,10 @@ impl<'r> Scanner<'r> {
         major: &mut i32,
         minor: &mut i32,
     ) -> Result<(), ScannerError> {
-        CACHE(self, 1)?;
+        self.cache(1)?;
         while IS_BLANK!(self.buffer) {
-            SKIP(self);
-            CACHE(self, 1)?;
+            self.skip_char();
+            self.cache(1)?;
         }
         self.scan_version_directive_number(start_mark, major)?;
         if !CHECK!(self.buffer, '.') {
@@ -951,7 +930,7 @@ impl<'r> Scanner<'r> {
                 "did not find expected digit or '.' character",
             );
         }
-        SKIP(self);
+        self.skip_char();
         self.scan_version_directive_number(start_mark, minor)
     }
 
@@ -962,7 +941,7 @@ impl<'r> Scanner<'r> {
     ) -> Result<(), ScannerError> {
         let mut value: i32 = 0;
         let mut length = 0;
-        CACHE(self, 1)?;
+        self.cache(1)?;
         while IS_DIGIT!(self.buffer) {
             length += 1;
             if length > MAX_NUMBER_LENGTH {
@@ -973,8 +952,8 @@ impl<'r> Scanner<'r> {
                 );
             }
             value = (value * 10) + AS_DIGIT!(self.buffer) as i32;
-            SKIP(self);
-            CACHE(self, 1)?;
+            self.skip_char();
+            self.cache(1)?;
         }
         if length == 0 {
             return self.set_scanner_error(
@@ -992,16 +971,16 @@ impl<'r> Scanner<'r> {
         &mut self,
         start_mark: Mark,
     ) -> Result<(String, String), ScannerError> {
-        CACHE(self, 1)?;
+        self.cache(1)?;
 
         loop {
             if IS_BLANK!(self.buffer) {
-                SKIP(self);
-                CACHE(self, 1)?;
+                self.skip_char();
+                self.cache(1)?;
             } else {
                 let handle_value = self.scan_tag_handle(true, start_mark)?;
 
-                CACHE(self, 1)?;
+                self.cache(1)?;
 
                 if !IS_BLANK!(self.buffer) {
                     return self.set_scanner_error(
@@ -1012,12 +991,12 @@ impl<'r> Scanner<'r> {
                 }
 
                 while IS_BLANK!(self.buffer) {
-                    SKIP(self);
-                    CACHE(self, 1)?;
+                    self.skip_char();
+                    self.cache(1)?;
                 }
 
                 let prefix_value = self.scan_tag_uri(true, true, None, start_mark)?;
-                CACHE(self, 1)?;
+                self.cache(1)?;
 
                 if !IS_BLANKZ!(self.buffer) {
                     return self.set_scanner_error(
@@ -1036,15 +1015,15 @@ impl<'r> Scanner<'r> {
 
         let mut string = String::new();
         let start_mark: Mark = self.mark;
-        SKIP(self);
-        CACHE(self, 1)?;
+        self.skip_char();
+        self.cache(1)?;
 
         loop {
             if !IS_ALPHA!(self.buffer) {
                 break;
             }
-            READ_STRING(self, &mut string);
-            CACHE(self, 1)?;
+            self.read_char(&mut string);
+            self.cache(1)?;
             length += 1;
         }
         let end_mark: Mark = self.mark;
@@ -1087,12 +1066,12 @@ impl<'r> Scanner<'r> {
 
         let start_mark: Mark = self.mark;
 
-        CACHE(self, 2)?;
+        self.cache(2)?;
 
         if CHECK_AT!(self.buffer, '<', 1) {
             handle = String::new();
-            SKIP(self);
-            SKIP(self);
+            self.skip_char();
+            self.skip_char();
             suffix = self.scan_tag_uri(true, false, None, start_mark)?;
 
             if !CHECK!(self.buffer, '>') {
@@ -1102,7 +1081,7 @@ impl<'r> Scanner<'r> {
                     "did not find the expected '>'",
                 );
             }
-            SKIP(self);
+            self.skip_char();
         } else {
             handle = self.scan_tag_handle(false, start_mark)?;
             if handle.starts_with('!') && handle.len() > 1 && handle.ends_with('!') {
@@ -1116,7 +1095,7 @@ impl<'r> Scanner<'r> {
             }
         }
 
-        CACHE(self, 1)?;
+        self.cache(1)?;
         if !IS_BLANKZ!(self.buffer) {
             if self.flow_level == 0 || !CHECK!(self.buffer, ',') {
                 return self.set_scanner_error(
@@ -1142,7 +1121,7 @@ impl<'r> Scanner<'r> {
         start_mark: Mark,
     ) -> Result<String, ScannerError> {
         let mut string = String::new();
-        CACHE(self, 1)?;
+        self.cache(1)?;
 
         if !CHECK!(self.buffer, '!') {
             return self.set_scanner_error(
@@ -1156,17 +1135,17 @@ impl<'r> Scanner<'r> {
             );
         }
 
-        READ_STRING(self, &mut string);
-        CACHE(self, 1)?;
+        self.read_char(&mut string);
+        self.cache(1)?;
         loop {
             if !IS_ALPHA!(self.buffer) {
                 break;
             }
-            READ_STRING(self, &mut string);
-            CACHE(self, 1)?;
+            self.read_char(&mut string);
+            self.cache(1)?;
         }
         if CHECK!(self.buffer, '!') {
-            READ_STRING(self, &mut string);
+            self.read_char(&mut string);
         } else if directive && string != "!" {
             return self.set_scanner_error(
                 "while parsing a tag directive",
@@ -1191,7 +1170,7 @@ impl<'r> Scanner<'r> {
         if length > 1 {
             string = String::from(&head[1..]);
         }
-        CACHE(self, 1)?;
+        self.cache(1)?;
 
         while IS_ALPHA!(self.buffer)
             || CHECK!(self.buffer, ';')
@@ -1219,10 +1198,10 @@ impl<'r> Scanner<'r> {
             if CHECK!(self.buffer, '%') {
                 self.scan_uri_escapes(directive, start_mark, &mut string)?;
             } else {
-                READ_STRING(self, &mut string);
+                self.read_char(&mut string);
             }
             length += 1;
-            CACHE(self, 1)?;
+            self.cache(1)?;
         }
         if length == 0 {
             self.set_scanner_error(
@@ -1247,7 +1226,7 @@ impl<'r> Scanner<'r> {
     ) -> Result<(), ScannerError> {
         let mut width: i32 = 0;
         loop {
-            CACHE(self, 3)?;
+            self.cache(3)?;
             if !(CHECK!(self.buffer, '%')
                 && IS_HEX_AT!(self.buffer, 1)
                 && IS_HEX_AT!(self.buffer, 2))
@@ -1299,9 +1278,9 @@ impl<'r> Scanner<'r> {
                 );
             }
             string.push(char::from_u32(octet as _).expect("invalid Unicode"));
-            SKIP(self);
-            SKIP(self);
-            SKIP(self);
+            self.skip_char();
+            self.skip_char();
+            self.skip_char();
             width -= 1;
             if width == 0 {
                 break;
@@ -1321,13 +1300,13 @@ impl<'r> Scanner<'r> {
         let mut leading_blank: i32 = 0;
         let mut trailing_blank: i32;
         let start_mark: Mark = self.mark;
-        SKIP(self);
-        CACHE(self, 1)?;
+        self.skip_char();
+        self.cache(1)?;
 
         if CHECK!(self.buffer, '+') || CHECK!(self.buffer, '-') {
             chomping = if CHECK!(self.buffer, '+') { 1 } else { -1 };
-            SKIP(self);
-            CACHE(self, 1)?;
+            self.skip_char();
+            self.cache(1)?;
             if IS_DIGIT!(self.buffer) {
                 if CHECK!(self.buffer, '0') {
                     return self.set_scanner_error(
@@ -1337,7 +1316,7 @@ impl<'r> Scanner<'r> {
                     );
                 }
                 increment = AS_DIGIT!(self.buffer) as i32;
-                SKIP(self);
+                self.skip_char();
             }
         } else if IS_DIGIT!(self.buffer) {
             if CHECK!(self.buffer, '0') {
@@ -1348,21 +1327,21 @@ impl<'r> Scanner<'r> {
                 );
             }
             increment = AS_DIGIT!(self.buffer) as i32;
-            SKIP(self);
-            CACHE(self, 1)?;
+            self.skip_char();
+            self.cache(1)?;
             if CHECK!(self.buffer, '+') || CHECK!(self.buffer, '-') {
                 chomping = if CHECK!(self.buffer, '+') { 1 } else { -1 };
-                SKIP(self);
+                self.skip_char();
             }
         }
 
-        CACHE(self, 1)?;
+        self.cache(1)?;
         loop {
             if !IS_BLANK!(self.buffer) {
                 break;
             }
-            SKIP(self);
-            CACHE(self, 1)?;
+            self.skip_char();
+            self.cache(1)?;
         }
 
         if CHECK!(self.buffer, '#') {
@@ -1370,8 +1349,8 @@ impl<'r> Scanner<'r> {
                 if IS_BREAKZ!(self.buffer) {
                     break;
                 }
-                SKIP(self);
-                CACHE(self, 1)?;
+                self.skip_char();
+                self.cache(1)?;
             }
         }
 
@@ -1384,8 +1363,8 @@ impl<'r> Scanner<'r> {
         }
 
         if IS_BREAK!(self.buffer) {
-            CACHE(self, 2)?;
-            SKIP_LINE(self);
+            self.cache(2)?;
+            self.skip_line_break();
         }
 
         end_mark = self.mark;
@@ -1403,7 +1382,7 @@ impl<'r> Scanner<'r> {
             &mut end_mark,
         )?;
 
-        CACHE(self, 1)?;
+        self.cache(1)?;
 
         loop {
             if self.mark.column as i32 != indent || IS_Z!(self.buffer) {
@@ -1427,11 +1406,11 @@ impl<'r> Scanner<'r> {
             trailing_breaks.clear();
             leading_blank = IS_BLANK!(self.buffer) as i32;
             while !IS_BREAKZ!(self.buffer) {
-                READ_STRING(self, &mut string);
-                CACHE(self, 1)?;
+                self.read_char(&mut string);
+                self.cache(1)?;
             }
-            CACHE(self, 2)?;
-            READ_LINE_STRING(self, &mut leading_break);
+            self.cache(2)?;
+            self.read_line_break(&mut leading_break);
             self.scan_block_scalar_breaks(
                 &mut indent,
                 &mut trailing_breaks,
@@ -1472,10 +1451,10 @@ impl<'r> Scanner<'r> {
         let mut max_indent: i32 = 0;
         *end_mark = self.mark;
         loop {
-            CACHE(self, 1)?;
+            self.cache(1)?;
             while (*indent == 0 || (self.mark.column as i32) < *indent) && IS_SPACE!(self.buffer) {
-                SKIP(self);
-                CACHE(self, 1)?;
+                self.skip_char();
+                self.cache(1)?;
             }
             if self.mark.column as i32 > max_indent {
                 max_indent = self.mark.column as i32;
@@ -1490,8 +1469,8 @@ impl<'r> Scanner<'r> {
             if !IS_BREAK!(self.buffer) {
                 break;
             }
-            CACHE(self, 2)?;
-            READ_LINE_STRING(self, breaks);
+            self.cache(2)?;
+            self.read_line_break(breaks);
             *end_mark = self.mark;
         }
         if *indent == 0 {
@@ -1514,9 +1493,9 @@ impl<'r> Scanner<'r> {
         let mut leading_blanks;
 
         let start_mark: Mark = self.mark;
-        SKIP(self);
+        self.skip_char();
         loop {
-            CACHE(self, 4)?;
+            self.cache(4)?;
 
             if self.mark.column == 0
                 && (CHECK_AT!(self.buffer, '-', 0)
@@ -1539,21 +1518,21 @@ impl<'r> Scanner<'r> {
                     "found unexpected end of stream",
                 );
             }
-            CACHE(self, 2)?;
+            self.cache(2)?;
             leading_blanks = false;
             while !IS_BLANKZ!(self.buffer) {
                 if single && CHECK_AT!(self.buffer, '\'', 0) && CHECK_AT!(self.buffer, '\'', 1) {
                     string.push('\'');
-                    SKIP(self);
-                    SKIP(self);
+                    self.skip_char();
+                    self.skip_char();
                 } else {
                     if CHECK!(self.buffer, if single { '\'' } else { '"' }) {
                         break;
                     }
                     if !single && CHECK!(self.buffer, '\\') && IS_BREAK_AT!(self.buffer, 1) {
-                        CACHE(self, 3)?;
-                        SKIP(self);
-                        SKIP_LINE(self);
+                        self.cache(3)?;
+                        self.skip_char();
+                        self.skip_line_break();
                         leading_blanks = true;
                         break;
                     } else if !single && CHECK!(self.buffer, '\\') {
@@ -1639,12 +1618,12 @@ impl<'r> Scanner<'r> {
                                 );
                             }
                         }
-                        SKIP(self);
-                        SKIP(self);
+                        self.skip_char();
+                        self.skip_char();
                         if code_length != 0 {
                             let mut value: u32 = 0;
                             let mut k = 0;
-                            CACHE(self, code_length)?;
+                            self.cache(code_length)?;
                             while k < code_length {
                                 if !IS_HEX_AT!(self.buffer, k) {
                                     return self.set_scanner_error(
@@ -1668,39 +1647,39 @@ impl<'r> Scanner<'r> {
 
                             k = 0;
                             while k < code_length {
-                                SKIP(self);
+                                self.skip_char();
                                 k += 1;
                             }
                         }
                     } else {
-                        READ_STRING(self, &mut string);
+                        self.read_char(&mut string);
                     }
                 }
-                CACHE(self, 2)?;
+                self.cache(2)?;
             }
-            CACHE(self, 1)?;
+            self.cache(1)?;
             if CHECK!(self.buffer, if single { '\'' } else { '"' }) {
                 break;
             }
-            CACHE(self, 1)?;
+            self.cache(1)?;
             while IS_BLANK!(self.buffer) || IS_BREAK!(self.buffer) {
                 if IS_BLANK!(self.buffer) {
                     if leading_blanks {
-                        SKIP(self);
+                        self.skip_char();
                     } else {
-                        READ_STRING(self, &mut whitespaces);
+                        self.read_char(&mut whitespaces);
                     }
                 } else {
-                    CACHE(self, 2)?;
+                    self.cache(2)?;
                     if leading_blanks {
-                        READ_LINE_STRING(self, &mut trailing_breaks);
+                        self.read_line_break(&mut trailing_breaks);
                     } else {
                         whitespaces.clear();
-                        READ_LINE_STRING(self, &mut leading_break);
+                        self.read_line_break(&mut leading_break);
                         leading_blanks = true;
                     }
                 }
-                CACHE(self, 1)?;
+                self.cache(1)?;
             }
             if leading_blanks {
                 if leading_break.starts_with('\n') {
@@ -1723,7 +1702,7 @@ impl<'r> Scanner<'r> {
             }
         }
 
-        SKIP(self);
+        self.skip_char();
         let end_mark: Mark = self.mark;
         Ok(Token {
             data: TokenData::Scalar {
@@ -1750,7 +1729,7 @@ impl<'r> Scanner<'r> {
         end_mark = self.mark;
         let start_mark: Mark = end_mark;
         loop {
-            CACHE(self, 4)?;
+            self.cache(4)?;
             if self.mark.column == 0
                 && (CHECK_AT!(self.buffer, '-', 0)
                     && CHECK_AT!(self.buffer, '-', 1)
@@ -1814,14 +1793,14 @@ impl<'r> Scanner<'r> {
                         whitespaces.clear();
                     }
                 }
-                READ_STRING(self, &mut string);
+                self.read_char(&mut string);
                 end_mark = self.mark;
-                CACHE(self, 2)?;
+                self.cache(2)?;
             }
             if !(IS_BLANK!(self.buffer) || IS_BREAK!(self.buffer)) {
                 break;
             }
-            CACHE(self, 1)?;
+            self.cache(1)?;
 
             while IS_BLANK!(self.buffer) || IS_BREAK!(self.buffer) {
                 if IS_BLANK!(self.buffer) {
@@ -1833,22 +1812,22 @@ impl<'r> Scanner<'r> {
                             "found a tab character that violates indentation",
                         );
                     } else if !leading_blanks {
-                        READ_STRING(self, &mut whitespaces);
+                        self.read_char(&mut whitespaces);
                     } else {
-                        SKIP(self);
+                        self.skip_char();
                     }
                 } else {
-                    CACHE(self, 2)?;
+                    self.cache(2)?;
 
                     if leading_blanks {
-                        READ_LINE_STRING(self, &mut trailing_breaks);
+                        self.read_line_break(&mut trailing_breaks);
                     } else {
                         whitespaces.clear();
-                        READ_LINE_STRING(self, &mut leading_break);
+                        self.read_line_break(&mut leading_break);
                         leading_blanks = true;
                     }
                 }
-                CACHE(self, 1)?;
+                self.cache(1)?;
             }
             if self.flow_level == 0 && (self.mark.column as i32) < indent {
                 break;
@@ -1869,3 +1848,23 @@ impl<'r> Scanner<'r> {
         })
     }
 }
+
+impl<'r> Default for Scanner<'r> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'r> Iterator for Scanner<'r> {
+    type Item = Result<Token, ScannerError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.stream_end_produced {
+            None
+        } else {
+            Some(self.scan())
+        }
+    }
+}
+
+impl<'r> core::iter::FusedIterator for Scanner<'r> {}
