@@ -60,6 +60,9 @@ pub fn yaml_emitter_dump(
         }
     }
     if document.nodes.is_empty() {
+        // TODO: Do we really want to close the emitter just because the
+        // document contains no nodes? Isn't it OK to emit multiple documents in
+        // the same stream?
         yaml_emitter_close(emitter)?;
     } else {
         assert!(emitter.opened);
