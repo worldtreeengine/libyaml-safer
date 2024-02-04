@@ -9,6 +9,12 @@ use crate::{
     INPUT_BUFFER_SIZE,
 };
 
+const MAX_NUMBER_LENGTH: u64 = 9_u64;
+
+/// Given an input stream of bytes, produce a stream of [`Token`]s.
+///
+/// This is used internally by the parser, and may also be used standalone as a
+/// replacement for the libyaml `yaml_parser_scan()` function.
 pub struct Scanner<'r> {
     /// Read handler.
     pub(crate) read_handler: Option<&'r mut dyn std::io::BufRead>,
@@ -96,66 +102,69 @@ impl<'r> Default for Scanner<'r> {
     }
 }
 
-fn CACHE(parser: &mut Scanner, length: usize) -> Result<(), ReaderError> {
-    if parser.unread >= length {
+fn CACHE(scanner: &mut Scanner, length: usize) -> Result<(), ReaderError> {
+    if scanner.unread >= length {
         Ok(())
     } else {
-        yaml_parser_update_buffer(parser, length)
+        yaml_parser_update_buffer(scanner, length)
     }
 }
 
-fn SKIP(parser: &mut Scanner) {
-    let popped = parser.buffer.pop_front().expect("unexpected end of tokens");
+fn SKIP(scanner: &mut Scanner) {
+    let popped = scanner
+        .buffer
+        .pop_front()
+        .expect("unexpected end of tokens");
     let width = popped.len_utf8();
-    parser.mark.index += width as u64;
-    parser.mark.column += 1;
-    parser.unread -= 1;
+    scanner.mark.index += width as u64;
+    scanner.mark.column += 1;
+    scanner.unread -= 1;
 }
 
-fn SKIP_LINE(parser: &mut Scanner) {
-    if vecdeque_starts_with(&parser.buffer, &['\r', '\n']) {
-        parser.mark.index += 2;
-        parser.mark.column = 0;
-        parser.mark.line += 1;
-        parser.unread -= 2;
-        parser.buffer.drain(0..2);
-    } else if let Some(front) = parser.buffer.front().copied() {
+fn SKIP_LINE(scanner: &mut Scanner) {
+    if vecdeque_starts_with(&scanner.buffer, &['\r', '\n']) {
+        scanner.mark.index += 2;
+        scanner.mark.column = 0;
+        scanner.mark.line += 1;
+        scanner.unread -= 2;
+        scanner.buffer.drain(0..2);
+    } else if let Some(front) = scanner.buffer.front().copied() {
         if is_break(front) {
             let width = front.len_utf8();
-            parser.mark.index += width as u64;
-            parser.mark.column = 0;
-            parser.mark.line += 1;
-            parser.unread -= 1;
-            parser.buffer.pop_front();
+            scanner.mark.index += width as u64;
+            scanner.mark.column = 0;
+            scanner.mark.line += 1;
+            scanner.unread -= 1;
+            scanner.buffer.pop_front();
         }
     }
 }
 
-fn READ_STRING(parser: &mut Scanner, string: &mut String) {
-    if let Some(popped) = parser.buffer.pop_front() {
+fn READ_STRING(scanner: &mut Scanner, string: &mut String) {
+    if let Some(popped) = scanner.buffer.pop_front() {
         string.push(popped);
-        parser.mark.index = popped.len_utf8() as u64;
-        parser.mark.column += 1;
-        parser.unread -= 1;
+        scanner.mark.index = popped.len_utf8() as u64;
+        scanner.mark.column += 1;
+        scanner.unread -= 1;
     } else {
         panic!("unexpected end of input")
     }
 }
 
-fn READ_LINE_STRING(parser: &mut Scanner, string: &mut String) {
-    if vecdeque_starts_with(&parser.buffer, &['\r', '\n']) {
+fn READ_LINE_STRING(scanner: &mut Scanner, string: &mut String) {
+    if vecdeque_starts_with(&scanner.buffer, &['\r', '\n']) {
         string.push('\n');
-        parser.buffer.drain(0..2);
-        parser.mark.index += 2;
-        parser.mark.column = 0;
-        parser.mark.line += 1;
-        parser.unread -= 2;
+        scanner.buffer.drain(0..2);
+        scanner.mark.index += 2;
+        scanner.mark.column = 0;
+        scanner.mark.line += 1;
+        scanner.unread -= 2;
     } else {
-        let Some(front) = parser.buffer.front().copied() else {
+        let Some(front) = scanner.buffer.front().copied() else {
             panic!("unexpected end of input");
         };
         if is_break(front) {
-            parser.buffer.pop_front();
+            scanner.buffer.pop_front();
             let char_len = front.len_utf8();
             if char_len == 3 {
                 // libyaml preserves Unicode breaks in this case.
@@ -163,1730 +172,1665 @@ fn READ_LINE_STRING(parser: &mut Scanner, string: &mut String) {
             } else {
                 string.push('\n');
             }
-            parser.mark.index += char_len as u64;
-            parser.mark.column = 0;
-            parser.mark.line += 1;
-            parser.unread -= 1;
+            scanner.mark.index += char_len as u64;
+            scanner.mark.column = 0;
+            scanner.mark.line += 1;
+            scanner.unread -= 1;
         }
     }
 }
 
-/// Scan the input stream and produce the next token.
-///
-/// Call the function subsequently to produce a sequence of tokens corresponding
-/// to the input stream. The initial token has the type
-/// [`TokenData::StreamStart`](crate::TokenData::StreamStart) while the ending
-/// token has the type [`TokenData::StreamEnd`](crate::TokenData::StreamEnd).
-///
-/// An application must not alternate the calls of
-/// [`yaml_parser_scan()`](crate::yaml_parser_scan) with the calls of
-/// [`Parser::parse()`] or [`Document::load()`](crate::Document::load). Doing
-/// this will break the parser.
-pub fn yaml_parser_scan(parser: &mut Scanner) -> Result<Token, ScannerError> {
-    if parser.stream_end_produced {
-        return Ok(Token {
-            data: TokenData::StreamEnd,
-            ..Default::default()
-        });
-    }
-    if !parser.token_available {
-        yaml_parser_fetch_more_tokens(parser)?;
-    }
-    if let Some(token) = parser.tokens.pop_front() {
-        parser.token_available = false;
-        parser.tokens_parsed += 1;
-        if let TokenData::StreamEnd = &token.data {
-            parser.stream_end_produced = true;
+impl<'r> Scanner<'r> {
+    /// Scan the input stream and produce the next token.
+    ///
+    /// Call the function subsequently to produce a sequence of tokens corresponding
+    /// to the input stream. The initial token has the type
+    /// [`TokenData::StreamStart`] while the ending token has the type
+    /// [`TokenData::StreamEnd`].
+    ///
+    /// An application must not alternate the calls of
+    /// [`yaml_parser_scan()`](crate::yaml_parser_scan) with the calls of
+    /// [`Parser::parse()`] or [`Document::load()`](crate::Document::load). Doing
+    /// this will break the parser.
+    pub fn scan(&mut self) -> Result<Token, ScannerError> {
+        if self.stream_end_produced {
+            return Ok(Token {
+                data: TokenData::StreamEnd,
+                ..Default::default()
+            });
         }
-        Ok(token)
-    } else {
-        unreachable!("no more tokens, but stream-end was not produced")
-    }
-}
-
-fn yaml_parser_set_scanner_error<T>(
-    parser: &mut Scanner,
-    context: &'static str,
-    context_mark: Mark,
-    problem: &'static str,
-) -> Result<T, ScannerError> {
-    Err(ScannerError::Problem {
-        context,
-        context_mark,
-        problem,
-        problem_mark: parser.mark,
-    })
-}
-
-pub(crate) fn yaml_parser_fetch_more_tokens(parser: &mut Scanner) -> Result<(), ScannerError> {
-    let mut need_more_tokens;
-    loop {
-        need_more_tokens = false;
-        if parser.tokens.is_empty() {
-            need_more_tokens = true;
+        if !self.token_available {
+            self.fetch_more_tokens()?;
+        }
+        if let Some(token) = self.tokens.pop_front() {
+            self.token_available = false;
+            self.tokens_parsed += 1;
+            if let TokenData::StreamEnd = &token.data {
+                self.stream_end_produced = true;
+            }
+            Ok(token)
         } else {
-            yaml_parser_stale_simple_keys(parser)?;
-            for simple_key in &parser.simple_keys {
-                if simple_key.possible && simple_key.token_number == parser.tokens_parsed {
-                    need_more_tokens = true;
-                    break;
+            unreachable!("no more tokens, but stream-end was not produced")
+        }
+    }
+
+    fn set_scanner_error<T>(
+        &mut self,
+        context: &'static str,
+        context_mark: Mark,
+        problem: &'static str,
+    ) -> Result<T, ScannerError> {
+        Err(ScannerError::Problem {
+            context,
+            context_mark,
+            problem,
+            problem_mark: self.mark,
+        })
+    }
+
+    pub(crate) fn fetch_more_tokens(&mut self) -> Result<(), ScannerError> {
+        let mut need_more_tokens;
+        loop {
+            need_more_tokens = false;
+            if self.tokens.is_empty() {
+                need_more_tokens = true;
+            } else {
+                self.stale_simple_keys()?;
+                for simple_key in &self.simple_keys {
+                    if simple_key.possible && simple_key.token_number == self.tokens_parsed {
+                        need_more_tokens = true;
+                        break;
+                    }
                 }
             }
+            if !need_more_tokens {
+                break;
+            }
+            self.fetch_next_token()?;
         }
-        if !need_more_tokens {
-            break;
+        self.token_available = true;
+        Ok(())
+    }
+
+    fn fetch_next_token(&mut self) -> Result<(), ScannerError> {
+        CACHE(self, 1)?;
+        if !self.stream_start_produced {
+            self.fetch_stream_start();
+            return Ok(());
         }
-        yaml_parser_fetch_next_token(parser)?;
-    }
-    parser.token_available = true;
-    Ok(())
-}
-
-fn yaml_parser_fetch_next_token(parser: &mut Scanner) -> Result<(), ScannerError> {
-    CACHE(parser, 1)?;
-    if !parser.stream_start_produced {
-        yaml_parser_fetch_stream_start(parser);
-        return Ok(());
-    }
-    yaml_parser_scan_to_next_token(parser)?;
-    yaml_parser_stale_simple_keys(parser)?;
-    yaml_parser_unroll_indent(parser, parser.mark.column as i64);
-    CACHE(parser, 4)?;
-    if IS_Z!(parser.buffer) {
-        return yaml_parser_fetch_stream_end(parser);
-    }
-    if parser.mark.column == 0_u64 && parser.buffer[0] == '%' {
-        return yaml_parser_fetch_directive(parser);
-    }
-    if parser.mark.column == 0_u64
-        && CHECK_AT!(parser.buffer, '-', 0)
-        && CHECK_AT!(parser.buffer, '-', 1)
-        && CHECK_AT!(parser.buffer, '-', 2)
-        && is_blankz(parser.buffer.get(3).copied())
-    {
-        return yaml_parser_fetch_document_indicator(parser, TokenData::DocumentStart);
-    }
-    if parser.mark.column == 0_u64
-        && CHECK_AT!(parser.buffer, '.', 0)
-        && CHECK_AT!(parser.buffer, '.', 1)
-        && CHECK_AT!(parser.buffer, '.', 2)
-        && is_blankz(parser.buffer.get(3).copied())
-    {
-        return yaml_parser_fetch_document_indicator(parser, TokenData::DocumentEnd);
-    }
-    if CHECK!(parser.buffer, '[') {
-        return yaml_parser_fetch_flow_collection_start(parser, TokenData::FlowSequenceStart);
-    }
-    if CHECK!(parser.buffer, '{') {
-        return yaml_parser_fetch_flow_collection_start(parser, TokenData::FlowMappingStart);
-    }
-    if CHECK!(parser.buffer, ']') {
-        return yaml_parser_fetch_flow_collection_end(parser, TokenData::FlowSequenceEnd);
-    }
-    if CHECK!(parser.buffer, '}') {
-        return yaml_parser_fetch_flow_collection_end(parser, TokenData::FlowMappingEnd);
-    }
-    if CHECK!(parser.buffer, ',') {
-        return yaml_parser_fetch_flow_entry(parser);
-    }
-    if CHECK!(parser.buffer, '-') && IS_BLANKZ_AT!(parser.buffer, 1) {
-        return yaml_parser_fetch_block_entry(parser);
-    }
-    if CHECK!(parser.buffer, '?') && (parser.flow_level != 0 || IS_BLANKZ_AT!(parser.buffer, 1)) {
-        return yaml_parser_fetch_key(parser);
-    }
-    if CHECK!(parser.buffer, ':') && (parser.flow_level != 0 || IS_BLANKZ_AT!(parser.buffer, 1)) {
-        return yaml_parser_fetch_value(parser);
-    }
-    if CHECK!(parser.buffer, '*') {
-        return yaml_parser_fetch_anchor(parser, true);
-    }
-    if CHECK!(parser.buffer, '&') {
-        return yaml_parser_fetch_anchor(parser, false);
-    }
-    if CHECK!(parser.buffer, '!') {
-        return yaml_parser_fetch_tag(parser);
-    }
-    if CHECK!(parser.buffer, '|') && parser.flow_level == 0 {
-        return yaml_parser_fetch_block_scalar(parser, true);
-    }
-    if CHECK!(parser.buffer, '>') && parser.flow_level == 0 {
-        return yaml_parser_fetch_block_scalar(parser, false);
-    }
-    if CHECK!(parser.buffer, '\'') {
-        return yaml_parser_fetch_flow_scalar(parser, true);
-    }
-    if CHECK!(parser.buffer, '"') {
-        return yaml_parser_fetch_flow_scalar(parser, false);
-    }
-    if !(IS_BLANKZ!(parser.buffer)
-        || CHECK!(parser.buffer, '-')
-        || CHECK!(parser.buffer, '?')
-        || CHECK!(parser.buffer, ':')
-        || CHECK!(parser.buffer, ',')
-        || CHECK!(parser.buffer, '[')
-        || CHECK!(parser.buffer, ']')
-        || CHECK!(parser.buffer, '{')
-        || CHECK!(parser.buffer, '}')
-        || CHECK!(parser.buffer, '#')
-        || CHECK!(parser.buffer, '&')
-        || CHECK!(parser.buffer, '*')
-        || CHECK!(parser.buffer, '!')
-        || CHECK!(parser.buffer, '|')
-        || CHECK!(parser.buffer, '>')
-        || CHECK!(parser.buffer, '\'')
-        || CHECK!(parser.buffer, '"')
-        || CHECK!(parser.buffer, '%')
-        || CHECK!(parser.buffer, '@')
-        || CHECK!(parser.buffer, '`'))
-        || CHECK!(parser.buffer, '-') && !IS_BLANK_AT!(parser.buffer, 1)
-        || parser.flow_level == 0
-            && (CHECK!(parser.buffer, '?') || CHECK!(parser.buffer, ':'))
-            && !IS_BLANKZ_AT!(parser.buffer, 1)
-    {
-        return yaml_parser_fetch_plain_scalar(parser);
-    }
-    yaml_parser_set_scanner_error(
-        parser,
-        "while scanning for the next token",
-        parser.mark,
-        "found character that cannot start any token",
-    )
-}
-
-fn yaml_parser_stale_simple_keys(parser: &mut Scanner) -> Result<(), ScannerError> {
-    for simple_key in &mut parser.simple_keys {
-        let mark = simple_key.mark;
-        if simple_key.possible
-            && (mark.line < parser.mark.line || mark.index + 1024 < parser.mark.index)
+        self.scan_to_next_token()?;
+        self.stale_simple_keys()?;
+        self.unroll_indent(self.mark.column as i64);
+        CACHE(self, 4)?;
+        if IS_Z!(self.buffer) {
+            return self.fetch_stream_end();
+        }
+        if self.mark.column == 0_u64 && self.buffer[0] == '%' {
+            return self.fetch_directive();
+        }
+        if self.mark.column == 0_u64
+            && CHECK_AT!(self.buffer, '-', 0)
+            && CHECK_AT!(self.buffer, '-', 1)
+            && CHECK_AT!(self.buffer, '-', 2)
+            && is_blankz(self.buffer.get(3).copied())
         {
+            return self.fetch_document_indicator(TokenData::DocumentStart);
+        }
+        if self.mark.column == 0_u64
+            && CHECK_AT!(self.buffer, '.', 0)
+            && CHECK_AT!(self.buffer, '.', 1)
+            && CHECK_AT!(self.buffer, '.', 2)
+            && is_blankz(self.buffer.get(3).copied())
+        {
+            return self.fetch_document_indicator(TokenData::DocumentEnd);
+        }
+        if CHECK!(self.buffer, '[') {
+            return self.fetch_flow_collection_start(TokenData::FlowSequenceStart);
+        }
+        if CHECK!(self.buffer, '{') {
+            return self.fetch_flow_collection_start(TokenData::FlowMappingStart);
+        }
+        if CHECK!(self.buffer, ']') {
+            return self.fetch_flow_collection_end(TokenData::FlowSequenceEnd);
+        }
+        if CHECK!(self.buffer, '}') {
+            return self.fetch_flow_collection_end(TokenData::FlowMappingEnd);
+        }
+        if CHECK!(self.buffer, ',') {
+            return self.fetch_flow_entry();
+        }
+        if CHECK!(self.buffer, '-') && IS_BLANKZ_AT!(self.buffer, 1) {
+            return self.fetch_block_entry();
+        }
+        if CHECK!(self.buffer, '?') && (self.flow_level != 0 || IS_BLANKZ_AT!(self.buffer, 1)) {
+            return self.fetch_key();
+        }
+        if CHECK!(self.buffer, ':') && (self.flow_level != 0 || IS_BLANKZ_AT!(self.buffer, 1)) {
+            return self.fetch_value();
+        }
+        if CHECK!(self.buffer, '*') {
+            return self.fetch_anchor(true);
+        }
+        if CHECK!(self.buffer, '&') {
+            return self.fetch_anchor(false);
+        }
+        if CHECK!(self.buffer, '!') {
+            return self.fetch_tag();
+        }
+        if CHECK!(self.buffer, '|') && self.flow_level == 0 {
+            return self.fetch_block_scalar(true);
+        }
+        if CHECK!(self.buffer, '>') && self.flow_level == 0 {
+            return self.fetch_block_scalar(false);
+        }
+        if CHECK!(self.buffer, '\'') {
+            return self.fetch_flow_scalar(true);
+        }
+        if CHECK!(self.buffer, '"') {
+            return self.fetch_flow_scalar(false);
+        }
+        if !(IS_BLANKZ!(self.buffer)
+            || CHECK!(self.buffer, '-')
+            || CHECK!(self.buffer, '?')
+            || CHECK!(self.buffer, ':')
+            || CHECK!(self.buffer, ',')
+            || CHECK!(self.buffer, '[')
+            || CHECK!(self.buffer, ']')
+            || CHECK!(self.buffer, '{')
+            || CHECK!(self.buffer, '}')
+            || CHECK!(self.buffer, '#')
+            || CHECK!(self.buffer, '&')
+            || CHECK!(self.buffer, '*')
+            || CHECK!(self.buffer, '!')
+            || CHECK!(self.buffer, '|')
+            || CHECK!(self.buffer, '>')
+            || CHECK!(self.buffer, '\'')
+            || CHECK!(self.buffer, '"')
+            || CHECK!(self.buffer, '%')
+            || CHECK!(self.buffer, '@')
+            || CHECK!(self.buffer, '`'))
+            || CHECK!(self.buffer, '-') && !IS_BLANK_AT!(self.buffer, 1)
+            || self.flow_level == 0
+                && (CHECK!(self.buffer, '?') || CHECK!(self.buffer, ':'))
+                && !IS_BLANKZ_AT!(self.buffer, 1)
+        {
+            return self.fetch_plain_scalar();
+        }
+        self.set_scanner_error(
+            "while scanning for the next token",
+            self.mark,
+            "found character that cannot start any token",
+        )
+    }
+
+    fn stale_simple_keys(&mut self) -> Result<(), ScannerError> {
+        for simple_key in &mut self.simple_keys {
+            let mark = simple_key.mark;
+            if simple_key.possible
+                && (mark.line < self.mark.line || mark.index + 1024 < self.mark.index)
+            {
+                if simple_key.required {
+                    return self.set_scanner_error(
+                        "while scanning a simple key",
+                        mark,
+                        "could not find expected ':'",
+                    );
+                }
+                simple_key.possible = false;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn save_simple_key(&mut self) -> Result<(), ScannerError> {
+        let required = self.flow_level == 0 && self.indent as u64 == self.mark.column;
+        if self.simple_key_allowed {
+            let simple_key = SimpleKey {
+                possible: true,
+                required,
+                token_number: self.tokens_parsed + self.tokens.len(),
+                mark: self.mark,
+            };
+            self.remove_simple_key()?;
+            *self.simple_keys.last_mut().unwrap() = simple_key;
+        }
+        Ok(())
+    }
+
+    fn remove_simple_key(&mut self) -> Result<(), ScannerError> {
+        let simple_key: &mut SimpleKey = self.simple_keys.last_mut().unwrap();
+        if simple_key.possible {
+            let mark = simple_key.mark;
             if simple_key.required {
-                return yaml_parser_set_scanner_error(
-                    parser,
+                return self.set_scanner_error(
                     "while scanning a simple key",
                     mark,
                     "could not find expected ':'",
                 );
             }
-            simple_key.possible = false;
         }
-    }
-
-    Ok(())
-}
-
-fn yaml_parser_save_simple_key(parser: &mut Scanner) -> Result<(), ScannerError> {
-    let required = parser.flow_level == 0 && parser.indent as u64 == parser.mark.column;
-    if parser.simple_key_allowed {
-        let simple_key = SimpleKey {
-            possible: true,
-            required,
-            token_number: parser.tokens_parsed + parser.tokens.len(),
-            mark: parser.mark,
-        };
-        yaml_parser_remove_simple_key(parser)?;
-        *parser.simple_keys.last_mut().unwrap() = simple_key;
-    }
-    Ok(())
-}
-
-fn yaml_parser_remove_simple_key(parser: &mut Scanner) -> Result<(), ScannerError> {
-    let simple_key: &mut SimpleKey = parser.simple_keys.last_mut().unwrap();
-    if simple_key.possible {
-        let mark = simple_key.mark;
-        if simple_key.required {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "while scanning a simple key",
-                mark,
-                "could not find expected ':'",
-            );
-        }
-    }
-    simple_key.possible = false;
-    Ok(())
-}
-
-fn yaml_parser_increase_flow_level(parser: &mut Scanner) -> Result<(), ScannerError> {
-    let empty_simple_key = SimpleKey {
-        possible: false,
-        required: false,
-        token_number: 0,
-        mark: Mark {
-            index: 0_u64,
-            line: 0_u64,
-            column: 0_u64,
-        },
-    };
-    parser.simple_keys.push(empty_simple_key);
-    assert!(
-        parser.flow_level != i32::MAX,
-        "parser.flow_level integer overflow"
-    );
-    parser.flow_level += 1;
-    Ok(())
-}
-
-fn yaml_parser_decrease_flow_level(parser: &mut Scanner) {
-    if parser.flow_level != 0 {
-        parser.flow_level -= 1;
-        let _ = parser.simple_keys.pop();
-    }
-}
-
-fn yaml_parser_roll_indent(
-    parser: &mut Scanner,
-    column: i64,
-    number: i64,
-    data: TokenData,
-    mark: Mark,
-) -> Result<(), ScannerError> {
-    if parser.flow_level != 0 {
-        return Ok(());
-    }
-    if parser.indent < column as i32 {
-        parser.indents.push(parser.indent);
-        assert!(column <= i32::MAX as i64, "integer overflow");
-        parser.indent = column as i32;
-        let token = Token {
-            data,
-            start_mark: mark,
-            end_mark: mark,
-        };
-        if number == -1_i64 {
-            parser.tokens.push_back(token);
-        } else {
-            parser
-                .tokens
-                .insert((number as usize).wrapping_sub(parser.tokens_parsed), token);
-        }
-    }
-    Ok(())
-}
-
-fn yaml_parser_unroll_indent(parser: &mut Scanner, column: i64) {
-    if parser.flow_level != 0 {
-        return;
-    }
-    while parser.indent as i64 > column {
-        let token = Token {
-            data: TokenData::BlockEnd,
-            start_mark: parser.mark,
-            end_mark: parser.mark,
-        };
-        parser.tokens.push_back(token);
-        parser.indent = parser.indents.pop().unwrap();
-    }
-}
-
-fn yaml_parser_fetch_stream_start(parser: &mut Scanner) {
-    let simple_key = SimpleKey {
-        possible: false,
-        required: false,
-        token_number: 0,
-        mark: Mark {
-            index: 0,
-            line: 0,
-            column: 0,
-        },
-    };
-    parser.indent = -1;
-    parser.simple_keys.push(simple_key);
-    parser.simple_key_allowed = true;
-    parser.stream_start_produced = true;
-    let token = Token {
-        data: TokenData::StreamStart {
-            encoding: parser.encoding,
-        },
-        start_mark: parser.mark,
-        end_mark: parser.mark,
-    };
-    parser.tokens.push_back(token);
-}
-
-fn yaml_parser_fetch_stream_end(parser: &mut Scanner) -> Result<(), ScannerError> {
-    if parser.mark.column != 0_u64 {
-        parser.mark.column = 0_u64;
-        parser.mark.line += 1;
-    }
-    yaml_parser_unroll_indent(parser, -1_i64);
-    yaml_parser_remove_simple_key(parser)?;
-    parser.simple_key_allowed = false;
-    let token = Token {
-        data: TokenData::StreamEnd,
-        start_mark: parser.mark,
-        end_mark: parser.mark,
-    };
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_directive(parser: &mut Scanner) -> Result<(), ScannerError> {
-    let mut token = Token::default();
-    yaml_parser_unroll_indent(parser, -1_i64);
-    yaml_parser_remove_simple_key(parser)?;
-    parser.simple_key_allowed = false;
-    yaml_parser_scan_directive(parser, &mut token)?;
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_document_indicator(
-    parser: &mut Scanner,
-    data: TokenData,
-) -> Result<(), ScannerError> {
-    yaml_parser_unroll_indent(parser, -1_i64);
-    yaml_parser_remove_simple_key(parser)?;
-    parser.simple_key_allowed = false;
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    SKIP(parser);
-    SKIP(parser);
-    let end_mark: Mark = parser.mark;
-
-    let token = Token {
-        data,
-        start_mark,
-        end_mark,
-    };
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_flow_collection_start(
-    parser: &mut Scanner,
-    data: TokenData,
-) -> Result<(), ScannerError> {
-    yaml_parser_save_simple_key(parser)?;
-    yaml_parser_increase_flow_level(parser)?;
-    parser.simple_key_allowed = true;
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    let end_mark: Mark = parser.mark;
-    let token = Token {
-        data,
-        start_mark,
-        end_mark,
-    };
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_flow_collection_end(
-    parser: &mut Scanner,
-    data: TokenData,
-) -> Result<(), ScannerError> {
-    yaml_parser_remove_simple_key(parser)?;
-    yaml_parser_decrease_flow_level(parser);
-    parser.simple_key_allowed = false;
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    let end_mark: Mark = parser.mark;
-    let token = Token {
-        data,
-        start_mark,
-        end_mark,
-    };
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_flow_entry(parser: &mut Scanner) -> Result<(), ScannerError> {
-    yaml_parser_remove_simple_key(parser)?;
-    parser.simple_key_allowed = true;
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    let end_mark: Mark = parser.mark;
-    let token = Token {
-        data: TokenData::FlowEntry,
-        start_mark,
-        end_mark,
-    };
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_block_entry(parser: &mut Scanner) -> Result<(), ScannerError> {
-    if parser.flow_level == 0 {
-        if !parser.simple_key_allowed {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "",
-                parser.mark,
-                "block sequence entries are not allowed in this context",
-            );
-        }
-        yaml_parser_roll_indent(
-            parser,
-            parser.mark.column as _,
-            -1_i64,
-            TokenData::BlockSequenceStart,
-            parser.mark,
-        )?;
-    }
-    yaml_parser_remove_simple_key(parser)?;
-    parser.simple_key_allowed = true;
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    let end_mark: Mark = parser.mark;
-    let token = Token {
-        data: TokenData::BlockEntry,
-        start_mark,
-        end_mark,
-    };
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_key(parser: &mut Scanner) -> Result<(), ScannerError> {
-    if parser.flow_level == 0 {
-        if !parser.simple_key_allowed {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "",
-                parser.mark,
-                "mapping keys are not allowed in this context",
-            );
-        }
-        yaml_parser_roll_indent(
-            parser,
-            parser.mark.column as _,
-            -1_i64,
-            TokenData::BlockMappingStart,
-            parser.mark,
-        )?;
-    }
-    yaml_parser_remove_simple_key(parser)?;
-    parser.simple_key_allowed = parser.flow_level == 0;
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    let end_mark: Mark = parser.mark;
-    let token = Token {
-        data: TokenData::Key,
-        start_mark,
-        end_mark,
-    };
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_value(parser: &mut Scanner) -> Result<(), ScannerError> {
-    let simple_key: &mut SimpleKey = parser.simple_keys.last_mut().unwrap();
-    if simple_key.possible {
-        let token = Token {
-            data: TokenData::Key,
-            start_mark: simple_key.mark,
-            end_mark: simple_key.mark,
-        };
-        parser.tokens.insert(
-            simple_key.token_number.wrapping_sub(parser.tokens_parsed),
-            token,
-        );
-        let mark_column = simple_key.mark.column as _;
-        let token_number = simple_key.token_number as _;
-        let mark = simple_key.mark;
         simple_key.possible = false;
-        yaml_parser_roll_indent(
-            parser,
-            mark_column,
-            token_number,
-            TokenData::BlockMappingStart,
-            mark,
-        )?;
-        parser.simple_key_allowed = false;
-    } else {
-        if parser.flow_level == 0 {
-            if !parser.simple_key_allowed {
-                return yaml_parser_set_scanner_error(
-                    parser,
-                    "",
-                    parser.mark,
-                    "mapping values are not allowed in this context",
-                );
-            }
-            yaml_parser_roll_indent(
-                parser,
-                parser.mark.column as _,
-                -1_i64,
-                TokenData::BlockMappingStart,
-                parser.mark,
-            )?;
-        }
-        parser.simple_key_allowed = parser.flow_level == 0;
+        Ok(())
     }
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    let end_mark: Mark = parser.mark;
-    let token = Token {
-        data: TokenData::Value,
-        start_mark,
-        end_mark,
-    };
-    parser.tokens.push_back(token);
-    Ok(())
-}
 
-fn yaml_parser_fetch_anchor(
-    parser: &mut Scanner,
-    fetch_alias_instead_of_anchor: bool,
-) -> Result<(), ScannerError> {
-    let mut token = Token::default();
-    yaml_parser_save_simple_key(parser)?;
-    parser.simple_key_allowed = false;
-    yaml_parser_scan_anchor(parser, &mut token, fetch_alias_instead_of_anchor)?;
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_tag(parser: &mut Scanner) -> Result<(), ScannerError> {
-    let mut token = Token::default();
-    yaml_parser_save_simple_key(parser)?;
-    parser.simple_key_allowed = false;
-    yaml_parser_scan_tag(parser, &mut token)?;
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_block_scalar(parser: &mut Scanner, literal: bool) -> Result<(), ScannerError> {
-    let mut token = Token::default();
-    yaml_parser_remove_simple_key(parser)?;
-    parser.simple_key_allowed = true;
-    yaml_parser_scan_block_scalar(parser, &mut token, literal)?;
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_flow_scalar(parser: &mut Scanner, single: bool) -> Result<(), ScannerError> {
-    let mut token = Token::default();
-    yaml_parser_save_simple_key(parser)?;
-    parser.simple_key_allowed = false;
-    yaml_parser_scan_flow_scalar(parser, &mut token, single)?;
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_fetch_plain_scalar(parser: &mut Scanner) -> Result<(), ScannerError> {
-    let mut token = Token::default();
-    yaml_parser_save_simple_key(parser)?;
-    parser.simple_key_allowed = false;
-    yaml_parser_scan_plain_scalar(parser, &mut token)?;
-    parser.tokens.push_back(token);
-    Ok(())
-}
-
-fn yaml_parser_scan_to_next_token(parser: &mut Scanner) -> Result<(), ScannerError> {
-    loop {
-        CACHE(parser, 1)?;
-        if parser.mark.column == 0 && IS_BOM!(parser.buffer) {
-            SKIP(parser);
-        }
-        CACHE(parser, 1)?;
-        while CHECK!(parser.buffer, ' ')
-            || (parser.flow_level != 0 || !parser.simple_key_allowed) && CHECK!(parser.buffer, '\t')
-        {
-            SKIP(parser);
-            CACHE(parser, 1)?;
-        }
-        if CHECK!(parser.buffer, '#') {
-            while !IS_BREAKZ!(parser.buffer) {
-                SKIP(parser);
-                CACHE(parser, 1)?;
-            }
-        }
-        if !IS_BREAK!(parser.buffer) {
-            break;
-        }
-        CACHE(parser, 2)?;
-        SKIP_LINE(parser);
-        if parser.flow_level == 0 {
-            parser.simple_key_allowed = true;
-        }
-    }
-    Ok(())
-}
-
-fn yaml_parser_scan_directive(parser: &mut Scanner, token: &mut Token) -> Result<(), ScannerError> {
-    let end_mark: Mark;
-    let mut major: i32 = 0;
-    let mut minor: i32 = 0;
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    let name = yaml_parser_scan_directive_name(parser, start_mark)?;
-    if name == "YAML" {
-        yaml_parser_scan_version_directive_value(parser, start_mark, &mut major, &mut minor)?;
-
-        end_mark = parser.mark;
-        *token = Token {
-            data: TokenData::VersionDirective { major, minor },
-            start_mark,
-            end_mark,
+    fn increase_flow_level(&mut self) -> Result<(), ScannerError> {
+        let empty_simple_key = SimpleKey {
+            possible: false,
+            required: false,
+            token_number: 0,
+            mark: Mark {
+                index: 0_u64,
+                line: 0_u64,
+                column: 0_u64,
+            },
         };
-    } else if name == "TAG" {
-        let (handle, prefix) = yaml_parser_scan_tag_directive_value(parser, start_mark)?;
-        end_mark = parser.mark;
-        *token = Token {
-            data: TokenData::TagDirective { handle, prefix },
-            start_mark,
-            end_mark,
-        };
-    } else {
-        return yaml_parser_set_scanner_error(
-            parser,
-            "while scanning a directive",
-            start_mark,
-            "found unknown directive name",
+        self.simple_keys.push(empty_simple_key);
+        assert!(
+            self.flow_level != i32::MAX,
+            "parser.flow_level integer overflow"
         );
-    }
-    CACHE(parser, 1)?;
-    loop {
-        if !IS_BLANK!(parser.buffer) {
-            break;
-        }
-        SKIP(parser);
-        CACHE(parser, 1)?;
+        self.flow_level += 1;
+        Ok(())
     }
 
-    if CHECK!(parser.buffer, '#') {
-        loop {
-            if IS_BREAKZ!(parser.buffer) {
-                break;
+    fn decrease_flow_level(&mut self) {
+        if self.flow_level != 0 {
+            self.flow_level -= 1;
+            let _ = self.simple_keys.pop();
+        }
+    }
+
+    fn roll_indent(
+        &mut self,
+        column: i64,
+        number: i64,
+        data: TokenData,
+        mark: Mark,
+    ) -> Result<(), ScannerError> {
+        if self.flow_level != 0 {
+            return Ok(());
+        }
+        if self.indent < column as i32 {
+            self.indents.push(self.indent);
+            assert!(column <= i32::MAX as i64, "integer overflow");
+            self.indent = column as i32;
+            let token = Token {
+                data,
+                start_mark: mark,
+                end_mark: mark,
+            };
+            if number == -1_i64 {
+                self.tokens.push_back(token);
+            } else {
+                self.tokens
+                    .insert((number as usize).wrapping_sub(self.tokens_parsed), token);
             }
-            SKIP(parser);
-            CACHE(parser, 1)?;
-        }
-    }
-
-    if IS_BREAKZ!(parser.buffer) {
-        if IS_BREAK!(parser.buffer) {
-            CACHE(parser, 2)?;
-            SKIP_LINE(parser);
         }
         Ok(())
-    } else {
-        yaml_parser_set_scanner_error(
-            parser,
-            "while scanning a directive",
-            start_mark,
-            "did not find expected comment or line break",
-        )
     }
-}
 
-fn yaml_parser_scan_directive_name(
-    parser: &mut Scanner,
-    start_mark: Mark,
-) -> Result<String, ScannerError> {
-    let mut string = String::new();
-    CACHE(parser, 1)?;
-
-    loop {
-        if !IS_ALPHA!(parser.buffer) {
-            break;
+    fn unroll_indent(&mut self, column: i64) {
+        if self.flow_level != 0 {
+            return;
         }
-        READ_STRING(parser, &mut string);
-        CACHE(parser, 1)?;
-    }
-
-    if string.is_empty() {
-        yaml_parser_set_scanner_error(
-            parser,
-            "while scanning a directive",
-            start_mark,
-            "could not find expected directive name",
-        )
-    } else if !IS_BLANKZ!(parser.buffer) {
-        yaml_parser_set_scanner_error(
-            parser,
-            "while scanning a directive",
-            start_mark,
-            "found unexpected non-alphabetical character",
-        )
-    } else {
-        Ok(string)
-    }
-}
-
-fn yaml_parser_scan_version_directive_value(
-    parser: &mut Scanner,
-    start_mark: Mark,
-    major: &mut i32,
-    minor: &mut i32,
-) -> Result<(), ScannerError> {
-    CACHE(parser, 1)?;
-    while IS_BLANK!(parser.buffer) {
-        SKIP(parser);
-        CACHE(parser, 1)?;
-    }
-    yaml_parser_scan_version_directive_number(parser, start_mark, major)?;
-    if !CHECK!(parser.buffer, '.') {
-        return yaml_parser_set_scanner_error(
-            parser,
-            "while scanning a %YAML directive",
-            start_mark,
-            "did not find expected digit or '.' character",
-        );
-    }
-    SKIP(parser);
-    yaml_parser_scan_version_directive_number(parser, start_mark, minor)
-}
-
-const MAX_NUMBER_LENGTH: u64 = 9_u64;
-
-fn yaml_parser_scan_version_directive_number(
-    parser: &mut Scanner,
-    start_mark: Mark,
-    number: &mut i32,
-) -> Result<(), ScannerError> {
-    let mut value: i32 = 0;
-    let mut length = 0;
-    CACHE(parser, 1)?;
-    while IS_DIGIT!(parser.buffer) {
-        length += 1;
-        if length > MAX_NUMBER_LENGTH {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "while scanning a %YAML directive",
-                start_mark,
-                "found extremely long version number",
-            );
+        while self.indent as i64 > column {
+            let token = Token {
+                data: TokenData::BlockEnd,
+                start_mark: self.mark,
+                end_mark: self.mark,
+            };
+            self.tokens.push_back(token);
+            self.indent = self.indents.pop().unwrap();
         }
-        value = (value * 10) + AS_DIGIT!(parser.buffer) as i32;
-        SKIP(parser);
-        CACHE(parser, 1)?;
     }
-    if length == 0 {
-        return yaml_parser_set_scanner_error(
-            parser,
-            "while scanning a %YAML directive",
+
+    fn fetch_stream_start(&mut self) {
+        let simple_key = SimpleKey {
+            possible: false,
+            required: false,
+            token_number: 0,
+            mark: Mark {
+                index: 0,
+                line: 0,
+                column: 0,
+            },
+        };
+        self.indent = -1;
+        self.simple_keys.push(simple_key);
+        self.simple_key_allowed = true;
+        self.stream_start_produced = true;
+        let token = Token {
+            data: TokenData::StreamStart {
+                encoding: self.encoding,
+            },
+            start_mark: self.mark,
+            end_mark: self.mark,
+        };
+        self.tokens.push_back(token);
+    }
+
+    fn fetch_stream_end(&mut self) -> Result<(), ScannerError> {
+        if self.mark.column != 0_u64 {
+            self.mark.column = 0_u64;
+            self.mark.line += 1;
+        }
+        self.unroll_indent(-1_i64);
+        self.remove_simple_key()?;
+        self.simple_key_allowed = false;
+        let token = Token {
+            data: TokenData::StreamEnd,
+            start_mark: self.mark,
+            end_mark: self.mark,
+        };
+        self.tokens.push_back(token);
+        Ok(())
+    }
+
+    fn fetch_directive(&mut self) -> Result<(), ScannerError> {
+        let mut token = Token::default();
+        self.unroll_indent(-1_i64);
+        self.remove_simple_key()?;
+        self.simple_key_allowed = false;
+        self.scan_directive(&mut token)?;
+        self.tokens.push_back(token);
+        Ok(())
+    }
+
+    fn fetch_document_indicator(&mut self, data: TokenData) -> Result<(), ScannerError> {
+        self.unroll_indent(-1_i64);
+        self.remove_simple_key()?;
+        self.simple_key_allowed = false;
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        SKIP(self);
+        SKIP(self);
+        let end_mark: Mark = self.mark;
+
+        let token = Token {
+            data,
             start_mark,
-            "did not find expected version number",
-        );
+            end_mark,
+        };
+        self.tokens.push_back(token);
+        Ok(())
     }
-    *number = value;
-    Ok(())
-}
 
-// Returns (handle, prefix)
-fn yaml_parser_scan_tag_directive_value(
-    parser: &mut Scanner,
-    start_mark: Mark,
-) -> Result<(String, String), ScannerError> {
-    CACHE(parser, 1)?;
+    fn fetch_flow_collection_start(&mut self, data: TokenData) -> Result<(), ScannerError> {
+        self.save_simple_key()?;
+        self.increase_flow_level()?;
+        self.simple_key_allowed = true;
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        let end_mark: Mark = self.mark;
+        let token = Token {
+            data,
+            start_mark,
+            end_mark,
+        };
+        self.tokens.push_back(token);
+        Ok(())
+    }
 
-    loop {
-        if IS_BLANK!(parser.buffer) {
-            SKIP(parser);
-            CACHE(parser, 1)?;
-        } else {
-            let handle_value = yaml_parser_scan_tag_handle(parser, true, start_mark)?;
+    fn fetch_flow_collection_end(&mut self, data: TokenData) -> Result<(), ScannerError> {
+        self.remove_simple_key()?;
+        self.decrease_flow_level();
+        self.simple_key_allowed = false;
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        let end_mark: Mark = self.mark;
+        let token = Token {
+            data,
+            start_mark,
+            end_mark,
+        };
+        self.tokens.push_back(token);
+        Ok(())
+    }
 
-            CACHE(parser, 1)?;
+    fn fetch_flow_entry(&mut self) -> Result<(), ScannerError> {
+        self.remove_simple_key()?;
+        self.simple_key_allowed = true;
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        let end_mark: Mark = self.mark;
+        let token = Token {
+            data: TokenData::FlowEntry,
+            start_mark,
+            end_mark,
+        };
+        self.tokens.push_back(token);
+        Ok(())
+    }
 
-            if !IS_BLANK!(parser.buffer) {
-                return yaml_parser_set_scanner_error(
-                    parser,
-                    "while scanning a %TAG directive",
-                    start_mark,
-                    "did not find expected whitespace",
+    fn fetch_block_entry(&mut self) -> Result<(), ScannerError> {
+        if self.flow_level == 0 {
+            if !self.simple_key_allowed {
+                return self.set_scanner_error(
+                    "",
+                    self.mark,
+                    "block sequence entries are not allowed in this context",
                 );
             }
+            self.roll_indent(
+                self.mark.column as _,
+                -1_i64,
+                TokenData::BlockSequenceStart,
+                self.mark,
+            )?;
+        }
+        self.remove_simple_key()?;
+        self.simple_key_allowed = true;
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        let end_mark: Mark = self.mark;
+        let token = Token {
+            data: TokenData::BlockEntry,
+            start_mark,
+            end_mark,
+        };
+        self.tokens.push_back(token);
+        Ok(())
+    }
 
-            while IS_BLANK!(parser.buffer) {
-                SKIP(parser);
-                CACHE(parser, 1)?;
+    fn fetch_key(&mut self) -> Result<(), ScannerError> {
+        if self.flow_level == 0 {
+            if !self.simple_key_allowed {
+                return self.set_scanner_error(
+                    "",
+                    self.mark,
+                    "mapping keys are not allowed in this context",
+                );
             }
+            self.roll_indent(
+                self.mark.column as _,
+                -1_i64,
+                TokenData::BlockMappingStart,
+                self.mark,
+            )?;
+        }
+        self.remove_simple_key()?;
+        self.simple_key_allowed = self.flow_level == 0;
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        let end_mark: Mark = self.mark;
+        let token = Token {
+            data: TokenData::Key,
+            start_mark,
+            end_mark,
+        };
+        self.tokens.push_back(token);
+        Ok(())
+    }
 
-            let prefix_value = yaml_parser_scan_tag_uri(parser, true, true, None, start_mark)?;
-            CACHE(parser, 1)?;
+    fn fetch_value(&mut self) -> Result<(), ScannerError> {
+        let simple_key: &mut SimpleKey = self.simple_keys.last_mut().unwrap();
+        if simple_key.possible {
+            let token = Token {
+                data: TokenData::Key,
+                start_mark: simple_key.mark,
+                end_mark: simple_key.mark,
+            };
+            self.tokens.insert(
+                simple_key.token_number.wrapping_sub(self.tokens_parsed),
+                token,
+            );
+            let mark_column = simple_key.mark.column as _;
+            let token_number = simple_key.token_number as _;
+            let mark = simple_key.mark;
+            simple_key.possible = false;
+            self.roll_indent(
+                mark_column,
+                token_number,
+                TokenData::BlockMappingStart,
+                mark,
+            )?;
+            self.simple_key_allowed = false;
+        } else {
+            if self.flow_level == 0 {
+                if !self.simple_key_allowed {
+                    return self.set_scanner_error(
+                        "",
+                        self.mark,
+                        "mapping values are not allowed in this context",
+                    );
+                }
+                self.roll_indent(
+                    self.mark.column as _,
+                    -1_i64,
+                    TokenData::BlockMappingStart,
+                    self.mark,
+                )?;
+            }
+            self.simple_key_allowed = self.flow_level == 0;
+        }
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        let end_mark: Mark = self.mark;
+        let token = Token {
+            data: TokenData::Value,
+            start_mark,
+            end_mark,
+        };
+        self.tokens.push_back(token);
+        Ok(())
+    }
 
-            if !IS_BLANKZ!(parser.buffer) {
-                return yaml_parser_set_scanner_error(
-                    parser,
-                    "while scanning a %TAG directive",
+    fn fetch_anchor(&mut self, fetch_alias_instead_of_anchor: bool) -> Result<(), ScannerError> {
+        let mut token = Token::default();
+        self.save_simple_key()?;
+        self.simple_key_allowed = false;
+        self.scan_anchor(&mut token, fetch_alias_instead_of_anchor)?;
+        self.tokens.push_back(token);
+        Ok(())
+    }
+
+    fn fetch_tag(&mut self) -> Result<(), ScannerError> {
+        let mut token = Token::default();
+        self.save_simple_key()?;
+        self.simple_key_allowed = false;
+        self.scan_tag(&mut token)?;
+        self.tokens.push_back(token);
+        Ok(())
+    }
+
+    fn fetch_block_scalar(&mut self, literal: bool) -> Result<(), ScannerError> {
+        let mut token = Token::default();
+        self.remove_simple_key()?;
+        self.simple_key_allowed = true;
+        self.scan_block_scalar(&mut token, literal)?;
+        self.tokens.push_back(token);
+        Ok(())
+    }
+
+    fn fetch_flow_scalar(&mut self, single: bool) -> Result<(), ScannerError> {
+        let mut token = Token::default();
+        self.save_simple_key()?;
+        self.simple_key_allowed = false;
+        self.scan_flow_scalar(&mut token, single)?;
+        self.tokens.push_back(token);
+        Ok(())
+    }
+
+    fn fetch_plain_scalar(&mut self) -> Result<(), ScannerError> {
+        let mut token = Token::default();
+        self.save_simple_key()?;
+        self.simple_key_allowed = false;
+        self.scan_plain_scalar(&mut token)?;
+        self.tokens.push_back(token);
+        Ok(())
+    }
+
+    fn scan_to_next_token(&mut self) -> Result<(), ScannerError> {
+        loop {
+            CACHE(self, 1)?;
+            if self.mark.column == 0 && IS_BOM!(self.buffer) {
+                SKIP(self);
+            }
+            CACHE(self, 1)?;
+            while CHECK!(self.buffer, ' ')
+                || (self.flow_level != 0 || !self.simple_key_allowed) && CHECK!(self.buffer, '\t')
+            {
+                SKIP(self);
+                CACHE(self, 1)?;
+            }
+            if CHECK!(self.buffer, '#') {
+                while !IS_BREAKZ!(self.buffer) {
+                    SKIP(self);
+                    CACHE(self, 1)?;
+                }
+            }
+            if !IS_BREAK!(self.buffer) {
+                break;
+            }
+            CACHE(self, 2)?;
+            SKIP_LINE(self);
+            if self.flow_level == 0 {
+                self.simple_key_allowed = true;
+            }
+        }
+        Ok(())
+    }
+
+    fn scan_directive(&mut self, token: &mut Token) -> Result<(), ScannerError> {
+        let end_mark: Mark;
+        let mut major: i32 = 0;
+        let mut minor: i32 = 0;
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        let name = self.scan_directive_name(start_mark)?;
+        if name == "YAML" {
+            self.scan_version_directive_value(start_mark, &mut major, &mut minor)?;
+
+            end_mark = self.mark;
+            *token = Token {
+                data: TokenData::VersionDirective { major, minor },
+                start_mark,
+                end_mark,
+            };
+        } else if name == "TAG" {
+            let (handle, prefix) = self.scan_tag_directive_value(start_mark)?;
+            end_mark = self.mark;
+            *token = Token {
+                data: TokenData::TagDirective { handle, prefix },
+                start_mark,
+                end_mark,
+            };
+        } else {
+            return self.set_scanner_error(
+                "while scanning a directive",
+                start_mark,
+                "found unknown directive name",
+            );
+        }
+        CACHE(self, 1)?;
+        loop {
+            if !IS_BLANK!(self.buffer) {
+                break;
+            }
+            SKIP(self);
+            CACHE(self, 1)?;
+        }
+
+        if CHECK!(self.buffer, '#') {
+            loop {
+                if IS_BREAKZ!(self.buffer) {
+                    break;
+                }
+                SKIP(self);
+                CACHE(self, 1)?;
+            }
+        }
+
+        if IS_BREAKZ!(self.buffer) {
+            if IS_BREAK!(self.buffer) {
+                CACHE(self, 2)?;
+                SKIP_LINE(self);
+            }
+            Ok(())
+        } else {
+            self.set_scanner_error(
+                "while scanning a directive",
+                start_mark,
+                "did not find expected comment or line break",
+            )
+        }
+    }
+
+    fn scan_directive_name(&mut self, start_mark: Mark) -> Result<String, ScannerError> {
+        let mut string = String::new();
+        CACHE(self, 1)?;
+
+        loop {
+            if !IS_ALPHA!(self.buffer) {
+                break;
+            }
+            READ_STRING(self, &mut string);
+            CACHE(self, 1)?;
+        }
+
+        if string.is_empty() {
+            self.set_scanner_error(
+                "while scanning a directive",
+                start_mark,
+                "could not find expected directive name",
+            )
+        } else if !IS_BLANKZ!(self.buffer) {
+            self.set_scanner_error(
+                "while scanning a directive",
+                start_mark,
+                "found unexpected non-alphabetical character",
+            )
+        } else {
+            Ok(string)
+        }
+    }
+
+    fn scan_version_directive_value(
+        &mut self,
+        start_mark: Mark,
+        major: &mut i32,
+        minor: &mut i32,
+    ) -> Result<(), ScannerError> {
+        CACHE(self, 1)?;
+        while IS_BLANK!(self.buffer) {
+            SKIP(self);
+            CACHE(self, 1)?;
+        }
+        self.scan_version_directive_number(start_mark, major)?;
+        if !CHECK!(self.buffer, '.') {
+            return self.set_scanner_error(
+                "while scanning a %YAML directive",
+                start_mark,
+                "did not find expected digit or '.' character",
+            );
+        }
+        SKIP(self);
+        self.scan_version_directive_number(start_mark, minor)
+    }
+
+    fn scan_version_directive_number(
+        &mut self,
+        start_mark: Mark,
+        number: &mut i32,
+    ) -> Result<(), ScannerError> {
+        let mut value: i32 = 0;
+        let mut length = 0;
+        CACHE(self, 1)?;
+        while IS_DIGIT!(self.buffer) {
+            length += 1;
+            if length > MAX_NUMBER_LENGTH {
+                return self.set_scanner_error(
+                    "while scanning a %YAML directive",
+                    start_mark,
+                    "found extremely long version number",
+                );
+            }
+            value = (value * 10) + AS_DIGIT!(self.buffer) as i32;
+            SKIP(self);
+            CACHE(self, 1)?;
+        }
+        if length == 0 {
+            return self.set_scanner_error(
+                "while scanning a %YAML directive",
+                start_mark,
+                "did not find expected version number",
+            );
+        }
+        *number = value;
+        Ok(())
+    }
+
+    // Returns (handle, prefix)
+    fn scan_tag_directive_value(
+        &mut self,
+        start_mark: Mark,
+    ) -> Result<(String, String), ScannerError> {
+        CACHE(self, 1)?;
+
+        loop {
+            if IS_BLANK!(self.buffer) {
+                SKIP(self);
+                CACHE(self, 1)?;
+            } else {
+                let handle_value = self.scan_tag_handle(true, start_mark)?;
+
+                CACHE(self, 1)?;
+
+                if !IS_BLANK!(self.buffer) {
+                    return self.set_scanner_error(
+                        "while scanning a %TAG directive",
+                        start_mark,
+                        "did not find expected whitespace",
+                    );
+                }
+
+                while IS_BLANK!(self.buffer) {
+                    SKIP(self);
+                    CACHE(self, 1)?;
+                }
+
+                let prefix_value = self.scan_tag_uri(true, true, None, start_mark)?;
+                CACHE(self, 1)?;
+
+                if !IS_BLANKZ!(self.buffer) {
+                    return self.set_scanner_error(
+                        "while scanning a %TAG directive",
+                        start_mark,
+                        "did not find expected whitespace or line break",
+                    );
+                }
+                return Ok((handle_value, prefix_value));
+            }
+        }
+    }
+
+    fn scan_anchor(
+        &mut self,
+        token: &mut Token,
+        scan_alias_instead_of_anchor: bool,
+    ) -> Result<(), ScannerError> {
+        let mut length: i32 = 0;
+
+        let mut string = String::new();
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        CACHE(self, 1)?;
+
+        loop {
+            if !IS_ALPHA!(self.buffer) {
+                break;
+            }
+            READ_STRING(self, &mut string);
+            CACHE(self, 1)?;
+            length += 1;
+        }
+        let end_mark: Mark = self.mark;
+        if length == 0
+            || !(IS_BLANKZ!(self.buffer)
+                || CHECK!(self.buffer, '?')
+                || CHECK!(self.buffer, ':')
+                || CHECK!(self.buffer, ',')
+                || CHECK!(self.buffer, ']')
+                || CHECK!(self.buffer, '}')
+                || CHECK!(self.buffer, '%')
+                || CHECK!(self.buffer, '@')
+                || CHECK!(self.buffer, '`'))
+        {
+            self.set_scanner_error(
+                if scan_alias_instead_of_anchor {
+                    "while scanning an alias"
+                } else {
+                    "while scanning an anchor"
+                },
+                start_mark,
+                "did not find expected alphabetic or numeric character",
+            )
+        } else {
+            *token = Token {
+                data: if scan_alias_instead_of_anchor {
+                    TokenData::Alias { value: string }
+                } else {
+                    TokenData::Anchor { value: string }
+                },
+                start_mark,
+                end_mark,
+            };
+            Ok(())
+        }
+    }
+
+    fn scan_tag(&mut self, token: &mut Token) -> Result<(), ScannerError> {
+        let mut handle;
+        let mut suffix;
+
+        let start_mark: Mark = self.mark;
+
+        CACHE(self, 2)?;
+
+        if CHECK_AT!(self.buffer, '<', 1) {
+            handle = String::new();
+            SKIP(self);
+            SKIP(self);
+            suffix = self.scan_tag_uri(true, false, None, start_mark)?;
+
+            if !CHECK!(self.buffer, '>') {
+                return self.set_scanner_error(
+                    "while scanning a tag",
+                    start_mark,
+                    "did not find the expected '>'",
+                );
+            }
+            SKIP(self);
+        } else {
+            handle = self.scan_tag_handle(false, start_mark)?;
+            if handle.starts_with('!') && handle.len() > 1 && handle.ends_with('!') {
+                suffix = self.scan_tag_uri(false, false, None, start_mark)?;
+            } else {
+                suffix = self.scan_tag_uri(false, false, Some(&handle), start_mark)?;
+                handle = String::from("!");
+                if suffix.is_empty() {
+                    core::mem::swap(&mut handle, &mut suffix);
+                }
+            }
+        }
+
+        CACHE(self, 1)?;
+        if !IS_BLANKZ!(self.buffer) {
+            if self.flow_level == 0 || !CHECK!(self.buffer, ',') {
+                return self.set_scanner_error(
+                    "while scanning a tag",
                     start_mark,
                     "did not find expected whitespace or line break",
                 );
             }
-            return Ok((handle_value, prefix_value));
+            panic!("TODO: What is expected here?");
         }
-    }
-}
 
-fn yaml_parser_scan_anchor(
-    parser: &mut Scanner,
-    token: &mut Token,
-    scan_alias_instead_of_anchor: bool,
-) -> Result<(), ScannerError> {
-    let mut length: i32 = 0;
-
-    let mut string = String::new();
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    CACHE(parser, 1)?;
-
-    loop {
-        if !IS_ALPHA!(parser.buffer) {
-            break;
-        }
-        READ_STRING(parser, &mut string);
-        CACHE(parser, 1)?;
-        length += 1;
-    }
-    let end_mark: Mark = parser.mark;
-    if length == 0
-        || !(IS_BLANKZ!(parser.buffer)
-            || CHECK!(parser.buffer, '?')
-            || CHECK!(parser.buffer, ':')
-            || CHECK!(parser.buffer, ',')
-            || CHECK!(parser.buffer, ']')
-            || CHECK!(parser.buffer, '}')
-            || CHECK!(parser.buffer, '%')
-            || CHECK!(parser.buffer, '@')
-            || CHECK!(parser.buffer, '`'))
-    {
-        yaml_parser_set_scanner_error(
-            parser,
-            if scan_alias_instead_of_anchor {
-                "while scanning an alias"
-            } else {
-                "while scanning an anchor"
-            },
-            start_mark,
-            "did not find expected alphabetic or numeric character",
-        )
-    } else {
+        let end_mark: Mark = self.mark;
         *token = Token {
-            data: if scan_alias_instead_of_anchor {
-                TokenData::Alias { value: string }
-            } else {
-                TokenData::Anchor { value: string }
-            },
+            data: TokenData::Tag { handle, suffix },
             start_mark,
             end_mark,
         };
+
         Ok(())
     }
-}
 
-fn yaml_parser_scan_tag(parser: &mut Scanner, token: &mut Token) -> Result<(), ScannerError> {
-    let mut handle;
-    let mut suffix;
+    fn scan_tag_handle(
+        &mut self,
+        directive: bool,
+        start_mark: Mark,
+    ) -> Result<String, ScannerError> {
+        let mut string = String::new();
+        CACHE(self, 1)?;
 
-    let start_mark: Mark = parser.mark;
-
-    CACHE(parser, 2)?;
-
-    if CHECK_AT!(parser.buffer, '<', 1) {
-        handle = String::new();
-        SKIP(parser);
-        SKIP(parser);
-        suffix = yaml_parser_scan_tag_uri(parser, true, false, None, start_mark)?;
-
-        if !CHECK!(parser.buffer, '>') {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "while scanning a tag",
+        if !CHECK!(self.buffer, '!') {
+            return self.set_scanner_error(
+                if directive {
+                    "while scanning a tag directive"
+                } else {
+                    "while scanning a tag"
+                },
                 start_mark,
-                "did not find the expected '>'",
+                "did not find expected '!'",
             );
         }
-        SKIP(parser);
-    } else {
-        handle = yaml_parser_scan_tag_handle(parser, false, start_mark)?;
-        if handle.starts_with('!') && handle.len() > 1 && handle.ends_with('!') {
-            suffix = yaml_parser_scan_tag_uri(parser, false, false, None, start_mark)?;
-        } else {
-            suffix = yaml_parser_scan_tag_uri(parser, false, false, Some(&handle), start_mark)?;
-            handle = String::from("!");
-            if suffix.is_empty() {
-                core::mem::swap(&mut handle, &mut suffix);
+
+        READ_STRING(self, &mut string);
+        CACHE(self, 1)?;
+        loop {
+            if !IS_ALPHA!(self.buffer) {
+                break;
             }
+            READ_STRING(self, &mut string);
+            CACHE(self, 1)?;
         }
-    }
-
-    CACHE(parser, 1)?;
-    if !IS_BLANKZ!(parser.buffer) {
-        if parser.flow_level == 0 || !CHECK!(parser.buffer, ',') {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "while scanning a tag",
+        if CHECK!(self.buffer, '!') {
+            READ_STRING(self, &mut string);
+        } else if directive && string != "!" {
+            return self.set_scanner_error(
+                "while parsing a tag directive",
                 start_mark,
-                "did not find expected whitespace or line break",
+                "did not find expected '!'",
             );
         }
-        panic!("TODO: What is expected here?");
-    }
-
-    let end_mark: Mark = parser.mark;
-    *token = Token {
-        data: TokenData::Tag { handle, suffix },
-        start_mark,
-        end_mark,
-    };
-
-    Ok(())
-}
-
-fn yaml_parser_scan_tag_handle(
-    parser: &mut Scanner,
-    directive: bool,
-    start_mark: Mark,
-) -> Result<String, ScannerError> {
-    let mut string = String::new();
-    CACHE(parser, 1)?;
-
-    if !CHECK!(parser.buffer, '!') {
-        return yaml_parser_set_scanner_error(
-            parser,
-            if directive {
-                "while scanning a tag directive"
-            } else {
-                "while scanning a tag"
-            },
-            start_mark,
-            "did not find expected '!'",
-        );
-    }
-
-    READ_STRING(parser, &mut string);
-    CACHE(parser, 1)?;
-    loop {
-        if !IS_ALPHA!(parser.buffer) {
-            break;
-        }
-        READ_STRING(parser, &mut string);
-        CACHE(parser, 1)?;
-    }
-    if CHECK!(parser.buffer, '!') {
-        READ_STRING(parser, &mut string);
-    } else if directive && string != "!" {
-        return yaml_parser_set_scanner_error(
-            parser,
-            "while parsing a tag directive",
-            start_mark,
-            "did not find expected '!'",
-        );
-    }
-    Ok(string)
-}
-
-fn yaml_parser_scan_tag_uri(
-    parser: &mut Scanner,
-    uri_char: bool,
-    directive: bool,
-    head: Option<&str>,
-    start_mark: Mark,
-) -> Result<String, ScannerError> {
-    let head = head.unwrap_or("");
-    let mut length = head.len();
-    let mut string = String::new();
-
-    if length > 1 {
-        string = String::from(&head[1..]);
-    }
-    CACHE(parser, 1)?;
-
-    while IS_ALPHA!(parser.buffer)
-        || CHECK!(parser.buffer, ';')
-        || CHECK!(parser.buffer, '/')
-        || CHECK!(parser.buffer, '?')
-        || CHECK!(parser.buffer, ':')
-        || CHECK!(parser.buffer, '@')
-        || CHECK!(parser.buffer, '&')
-        || CHECK!(parser.buffer, '=')
-        || CHECK!(parser.buffer, '+')
-        || CHECK!(parser.buffer, '$')
-        || CHECK!(parser.buffer, '.')
-        || CHECK!(parser.buffer, '%')
-        || CHECK!(parser.buffer, '!')
-        || CHECK!(parser.buffer, '~')
-        || CHECK!(parser.buffer, '*')
-        || CHECK!(parser.buffer, '\'')
-        || CHECK!(parser.buffer, '(')
-        || CHECK!(parser.buffer, ')')
-        || uri_char
-            && (CHECK!(parser.buffer, ',')
-                || CHECK!(parser.buffer, '[')
-                || CHECK!(parser.buffer, ']'))
-    {
-        if CHECK!(parser.buffer, '%') {
-            yaml_parser_scan_uri_escapes(parser, directive, start_mark, &mut string)?;
-        } else {
-            READ_STRING(parser, &mut string);
-        }
-        length += 1;
-        CACHE(parser, 1)?;
-    }
-    if length == 0 {
-        yaml_parser_set_scanner_error(
-            parser,
-            if directive {
-                "while parsing a %TAG directive"
-            } else {
-                "while parsing a tag"
-            },
-            start_mark,
-            "did not find expected tag URI",
-        )
-    } else {
         Ok(string)
     }
-}
 
-fn yaml_parser_scan_uri_escapes(
-    parser: &mut Scanner,
-    directive: bool,
-    start_mark: Mark,
-    string: &mut String,
-) -> Result<(), ScannerError> {
-    let mut width: i32 = 0;
-    loop {
-        CACHE(parser, 3)?;
-        if !(CHECK!(parser.buffer, '%')
-            && IS_HEX_AT!(parser.buffer, 1)
-            && IS_HEX_AT!(parser.buffer, 2))
+    fn scan_tag_uri(
+        &mut self,
+        uri_char: bool,
+        directive: bool,
+        head: Option<&str>,
+        start_mark: Mark,
+    ) -> Result<String, ScannerError> {
+        let head = head.unwrap_or("");
+        let mut length = head.len();
+        let mut string = String::new();
+
+        if length > 1 {
+            string = String::from(&head[1..]);
+        }
+        CACHE(self, 1)?;
+
+        while IS_ALPHA!(self.buffer)
+            || CHECK!(self.buffer, ';')
+            || CHECK!(self.buffer, '/')
+            || CHECK!(self.buffer, '?')
+            || CHECK!(self.buffer, ':')
+            || CHECK!(self.buffer, '@')
+            || CHECK!(self.buffer, '&')
+            || CHECK!(self.buffer, '=')
+            || CHECK!(self.buffer, '+')
+            || CHECK!(self.buffer, '$')
+            || CHECK!(self.buffer, '.')
+            || CHECK!(self.buffer, '%')
+            || CHECK!(self.buffer, '!')
+            || CHECK!(self.buffer, '~')
+            || CHECK!(self.buffer, '*')
+            || CHECK!(self.buffer, '\'')
+            || CHECK!(self.buffer, '(')
+            || CHECK!(self.buffer, ')')
+            || uri_char
+                && (CHECK!(self.buffer, ',')
+                    || CHECK!(self.buffer, '[')
+                    || CHECK!(self.buffer, ']'))
         {
-            return yaml_parser_set_scanner_error(
-                parser,
+            if CHECK!(self.buffer, '%') {
+                self.scan_uri_escapes(directive, start_mark, &mut string)?;
+            } else {
+                READ_STRING(self, &mut string);
+            }
+            length += 1;
+            CACHE(self, 1)?;
+        }
+        if length == 0 {
+            self.set_scanner_error(
                 if directive {
                     "while parsing a %TAG directive"
                 } else {
                     "while parsing a tag"
                 },
                 start_mark,
-                "did not find URI escaped octet",
-            );
+                "did not find expected tag URI",
+            )
+        } else {
+            Ok(string)
         }
-        let octet = ((AS_HEX_AT!(parser.buffer, 1) << 4) + AS_HEX_AT!(parser.buffer, 2)) as u8;
-        if width == 0 {
-            width = if octet & 0x80 == 0 {
-                1
-            } else if octet & 0xE0 == 0xC0 {
-                2
-            } else if octet & 0xF0 == 0xE0 {
-                3
-            } else if octet & 0xF8 == 0xF0 {
-                4
-            } else {
-                0
-            };
-            // TODO: Something is fishy here, why isn't `width` being used?
-            if width == 0 {
-                return yaml_parser_set_scanner_error(
-                    parser,
+    }
+
+    fn scan_uri_escapes(
+        &mut self,
+        directive: bool,
+        start_mark: Mark,
+        string: &mut String,
+    ) -> Result<(), ScannerError> {
+        let mut width: i32 = 0;
+        loop {
+            CACHE(self, 3)?;
+            if !(CHECK!(self.buffer, '%')
+                && IS_HEX_AT!(self.buffer, 1)
+                && IS_HEX_AT!(self.buffer, 2))
+            {
+                return self.set_scanner_error(
                     if directive {
                         "while parsing a %TAG directive"
                     } else {
                         "while parsing a tag"
                     },
                     start_mark,
-                    "found an incorrect leading UTF-8 octet",
+                    "did not find URI escaped octet",
                 );
             }
-        } else if octet & 0xC0 != 0x80 {
-            return yaml_parser_set_scanner_error(
-                parser,
-                if directive {
-                    "while parsing a %TAG directive"
+            let octet = ((AS_HEX_AT!(self.buffer, 1) << 4) + AS_HEX_AT!(self.buffer, 2)) as u8;
+            if width == 0 {
+                width = if octet & 0x80 == 0 {
+                    1
+                } else if octet & 0xE0 == 0xC0 {
+                    2
+                } else if octet & 0xF0 == 0xE0 {
+                    3
+                } else if octet & 0xF8 == 0xF0 {
+                    4
                 } else {
-                    "while parsing a tag"
-                },
-                start_mark,
-                "found an incorrect trailing UTF-8 octet",
-            );
+                    0
+                };
+                // TODO: Something is fishy here, why isn't `width` being used?
+                if width == 0 {
+                    return self.set_scanner_error(
+                        if directive {
+                            "while parsing a %TAG directive"
+                        } else {
+                            "while parsing a tag"
+                        },
+                        start_mark,
+                        "found an incorrect leading UTF-8 octet",
+                    );
+                }
+            } else if octet & 0xC0 != 0x80 {
+                return self.set_scanner_error(
+                    if directive {
+                        "while parsing a %TAG directive"
+                    } else {
+                        "while parsing a tag"
+                    },
+                    start_mark,
+                    "found an incorrect trailing UTF-8 octet",
+                );
+            }
+            string.push(char::from_u32(octet as _).expect("invalid Unicode"));
+            SKIP(self);
+            SKIP(self);
+            SKIP(self);
+            width -= 1;
+            if width == 0 {
+                break;
+            }
         }
-        string.push(char::from_u32(octet as _).expect("invalid Unicode"));
-        SKIP(parser);
-        SKIP(parser);
-        SKIP(parser);
-        width -= 1;
-        if width == 0 {
-            break;
-        }
+        Ok(())
     }
-    Ok(())
-}
 
-fn yaml_parser_scan_block_scalar(
-    parser: &mut Scanner,
-    token: &mut Token,
-    literal: bool,
-) -> Result<(), ScannerError> {
-    let mut end_mark: Mark;
-    let mut string = String::new();
-    let mut leading_break = String::new();
-    let mut trailing_breaks = String::new();
-    let mut chomping: i32 = 0;
-    let mut increment: i32 = 0;
-    let mut indent: i32 = 0;
-    let mut leading_blank: i32 = 0;
-    let mut trailing_blank: i32;
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    CACHE(parser, 1)?;
+    fn scan_block_scalar(&mut self, token: &mut Token, literal: bool) -> Result<(), ScannerError> {
+        let mut end_mark: Mark;
+        let mut string = String::new();
+        let mut leading_break = String::new();
+        let mut trailing_breaks = String::new();
+        let mut chomping: i32 = 0;
+        let mut increment: i32 = 0;
+        let mut indent: i32 = 0;
+        let mut leading_blank: i32 = 0;
+        let mut trailing_blank: i32;
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        CACHE(self, 1)?;
 
-    if CHECK!(parser.buffer, '+') || CHECK!(parser.buffer, '-') {
-        chomping = if CHECK!(parser.buffer, '+') { 1 } else { -1 };
-        SKIP(parser);
-        CACHE(parser, 1)?;
-        if IS_DIGIT!(parser.buffer) {
-            if CHECK!(parser.buffer, '0') {
-                return yaml_parser_set_scanner_error(
-                    parser,
+        if CHECK!(self.buffer, '+') || CHECK!(self.buffer, '-') {
+            chomping = if CHECK!(self.buffer, '+') { 1 } else { -1 };
+            SKIP(self);
+            CACHE(self, 1)?;
+            if IS_DIGIT!(self.buffer) {
+                if CHECK!(self.buffer, '0') {
+                    return self.set_scanner_error(
+                        "while scanning a block scalar",
+                        start_mark,
+                        "found an indentation indicator equal to 0",
+                    );
+                }
+                increment = AS_DIGIT!(self.buffer) as i32;
+                SKIP(self);
+            }
+        } else if IS_DIGIT!(self.buffer) {
+            if CHECK!(self.buffer, '0') {
+                return self.set_scanner_error(
                     "while scanning a block scalar",
                     start_mark,
                     "found an indentation indicator equal to 0",
                 );
             }
-            increment = AS_DIGIT!(parser.buffer) as i32;
-            SKIP(parser);
+            increment = AS_DIGIT!(self.buffer) as i32;
+            SKIP(self);
+            CACHE(self, 1)?;
+            if CHECK!(self.buffer, '+') || CHECK!(self.buffer, '-') {
+                chomping = if CHECK!(self.buffer, '+') { 1 } else { -1 };
+                SKIP(self);
+            }
         }
-    } else if IS_DIGIT!(parser.buffer) {
-        if CHECK!(parser.buffer, '0') {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "while scanning a block scalar",
-                start_mark,
-                "found an indentation indicator equal to 0",
-            );
-        }
-        increment = AS_DIGIT!(parser.buffer) as i32;
-        SKIP(parser);
-        CACHE(parser, 1)?;
-        if CHECK!(parser.buffer, '+') || CHECK!(parser.buffer, '-') {
-            chomping = if CHECK!(parser.buffer, '+') { 1 } else { -1 };
-            SKIP(parser);
-        }
-    }
 
-    CACHE(parser, 1)?;
-    loop {
-        if !IS_BLANK!(parser.buffer) {
-            break;
-        }
-        SKIP(parser);
-        CACHE(parser, 1)?;
-    }
-
-    if CHECK!(parser.buffer, '#') {
+        CACHE(self, 1)?;
         loop {
-            if IS_BREAKZ!(parser.buffer) {
+            if !IS_BLANK!(self.buffer) {
                 break;
             }
-            SKIP(parser);
-            CACHE(parser, 1)?;
+            SKIP(self);
+            CACHE(self, 1)?;
         }
-    }
 
-    if !IS_BREAKZ!(parser.buffer) {
-        return yaml_parser_set_scanner_error(
-            parser,
-            "while scanning a block scalar",
-            start_mark,
-            "did not find expected comment or line break",
-        );
-    }
-
-    if IS_BREAK!(parser.buffer) {
-        CACHE(parser, 2)?;
-        SKIP_LINE(parser);
-    }
-
-    end_mark = parser.mark;
-    if increment != 0 {
-        indent = if parser.indent >= 0 {
-            parser.indent + increment
-        } else {
-            increment
-        };
-    }
-    yaml_parser_scan_block_scalar_breaks(
-        parser,
-        &mut indent,
-        &mut trailing_breaks,
-        start_mark,
-        &mut end_mark,
-    )?;
-
-    CACHE(parser, 1)?;
-
-    loop {
-        if parser.mark.column as i32 != indent || IS_Z!(parser.buffer) {
-            break;
-        }
-        trailing_blank = IS_BLANK!(parser.buffer) as i32;
-        if !literal && leading_break.starts_with('\n') && leading_blank == 0 && trailing_blank == 0
-        {
-            if trailing_breaks.is_empty() {
-                string.push(' ');
+        if CHECK!(self.buffer, '#') {
+            loop {
+                if IS_BREAKZ!(self.buffer) {
+                    break;
+                }
+                SKIP(self);
+                CACHE(self, 1)?;
             }
-            leading_break.clear();
-        } else {
-            string.push_str(&leading_break);
-            leading_break.clear();
         }
-        string.push_str(&trailing_breaks);
-        trailing_breaks.clear();
-        leading_blank = IS_BLANK!(parser.buffer) as i32;
-        while !IS_BREAKZ!(parser.buffer) {
-            READ_STRING(parser, &mut string);
-            CACHE(parser, 1)?;
+
+        if !IS_BREAKZ!(self.buffer) {
+            return self.set_scanner_error(
+                "while scanning a block scalar",
+                start_mark,
+                "did not find expected comment or line break",
+            );
         }
-        CACHE(parser, 2)?;
-        READ_LINE_STRING(parser, &mut leading_break);
-        yaml_parser_scan_block_scalar_breaks(
-            parser,
+
+        if IS_BREAK!(self.buffer) {
+            CACHE(self, 2)?;
+            SKIP_LINE(self);
+        }
+
+        end_mark = self.mark;
+        if increment != 0 {
+            indent = if self.indent >= 0 {
+                self.indent + increment
+            } else {
+                increment
+            };
+        }
+        self.scan_block_scalar_breaks(
             &mut indent,
             &mut trailing_breaks,
             start_mark,
             &mut end_mark,
         )?;
-    }
 
-    if chomping != -1 {
-        string.push_str(&leading_break);
-    }
+        CACHE(self, 1)?;
 
-    if chomping == 1 {
-        string.push_str(&trailing_breaks);
-    }
-
-    *token = Token {
-        data: TokenData::Scalar {
-            value: string,
-            style: if literal {
-                ScalarStyle::Literal
-            } else {
-                ScalarStyle::Folded
-            },
-        },
-        start_mark,
-        end_mark,
-    };
-
-    Ok(())
-}
-
-fn yaml_parser_scan_block_scalar_breaks(
-    parser: &mut Scanner,
-    indent: &mut i32,
-    breaks: &mut String,
-    start_mark: Mark,
-    end_mark: &mut Mark,
-) -> Result<(), ScannerError> {
-    let mut max_indent: i32 = 0;
-    *end_mark = parser.mark;
-    loop {
-        CACHE(parser, 1)?;
-        while (*indent == 0 || (parser.mark.column as i32) < *indent) && IS_SPACE!(parser.buffer) {
-            SKIP(parser);
-            CACHE(parser, 1)?;
-        }
-        if parser.mark.column as i32 > max_indent {
-            max_indent = parser.mark.column as i32;
-        }
-        if (*indent == 0 || (parser.mark.column as i32) < *indent) && IS_TAB!(parser.buffer) {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "while scanning a block scalar",
-                start_mark,
-                "found a tab character where an indentation space is expected",
-            );
-        }
-        if !IS_BREAK!(parser.buffer) {
-            break;
-        }
-        CACHE(parser, 2)?;
-        READ_LINE_STRING(parser, breaks);
-        *end_mark = parser.mark;
-    }
-    if *indent == 0 {
-        *indent = max_indent;
-        if *indent < parser.indent + 1 {
-            *indent = parser.indent + 1;
-        }
-        if *indent < 1 {
-            *indent = 1;
-        }
-    }
-    Ok(())
-}
-
-fn yaml_parser_scan_flow_scalar(
-    parser: &mut Scanner,
-    token: &mut Token,
-    single: bool,
-) -> Result<(), ScannerError> {
-    let mut string = String::new();
-    let mut leading_break = String::new();
-    let mut trailing_breaks = String::new();
-    let mut whitespaces = String::new();
-    let mut leading_blanks;
-
-    let start_mark: Mark = parser.mark;
-    SKIP(parser);
-    loop {
-        CACHE(parser, 4)?;
-
-        if parser.mark.column == 0
-            && (CHECK_AT!(parser.buffer, '-', 0)
-                && CHECK_AT!(parser.buffer, '-', 1)
-                && CHECK_AT!(parser.buffer, '-', 2)
-                || CHECK_AT!(parser.buffer, '.', 0)
-                    && CHECK_AT!(parser.buffer, '.', 1)
-                    && CHECK_AT!(parser.buffer, '.', 2))
-            && IS_BLANKZ_AT!(parser.buffer, 3)
-        {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "while scanning a quoted scalar",
-                start_mark,
-                "found unexpected document indicator",
-            );
-        } else if IS_Z!(parser.buffer) {
-            return yaml_parser_set_scanner_error(
-                parser,
-                "while scanning a quoted scalar",
-                start_mark,
-                "found unexpected end of stream",
-            );
-        }
-        CACHE(parser, 2)?;
-        leading_blanks = false;
-        while !IS_BLANKZ!(parser.buffer) {
-            if single && CHECK_AT!(parser.buffer, '\'', 0) && CHECK_AT!(parser.buffer, '\'', 1) {
-                string.push('\'');
-                SKIP(parser);
-                SKIP(parser);
-            } else {
-                if CHECK!(parser.buffer, if single { '\'' } else { '"' }) {
-                    break;
-                }
-                if !single && CHECK!(parser.buffer, '\\') && IS_BREAK_AT!(parser.buffer, 1) {
-                    CACHE(parser, 3)?;
-                    SKIP(parser);
-                    SKIP_LINE(parser);
-                    leading_blanks = true;
-                    break;
-                } else if !single && CHECK!(parser.buffer, '\\') {
-                    let mut code_length = 0usize;
-                    match parser.buffer.get(1).copied().unwrap() {
-                        '0' => {
-                            string.push('\0');
-                        }
-                        'a' => {
-                            string.push('\x07');
-                        }
-                        'b' => {
-                            string.push('\x08');
-                        }
-                        't' | '\t' => {
-                            string.push('\t');
-                        }
-                        'n' => {
-                            string.push('\n');
-                        }
-                        'v' => {
-                            string.push('\x0B');
-                        }
-                        'f' => {
-                            string.push('\x0C');
-                        }
-                        'r' => {
-                            string.push('\r');
-                        }
-                        'e' => {
-                            string.push('\x1B');
-                        }
-                        ' ' => {
-                            string.push(' ');
-                        }
-                        '"' => {
-                            string.push('"');
-                        }
-                        '/' => {
-                            string.push('/');
-                        }
-                        '\\' => {
-                            string.push('\\');
-                        }
-                        // NEL (#x85)
-                        'N' => {
-                            string.push('\u{0085}');
-                        }
-                        // #xA0
-                        '_' => {
-                            string.push('\u{00a0}');
-                            // string.push('\xC2');
-                            // string.push('\xA0');
-                        }
-                        // LS (#x2028)
-                        'L' => {
-                            string.push('\u{2028}');
-                            // string.push('\xE2');
-                            // string.push('\x80');
-                            // string.push('\xA8');
-                        }
-                        // PS (#x2029)
-                        'P' => {
-                            string.push('\u{2029}');
-                            // string.push('\xE2');
-                            // string.push('\x80');
-                            // string.push('\xA9');
-                        }
-                        'x' => {
-                            code_length = 2;
-                        }
-                        'u' => {
-                            code_length = 4;
-                        }
-                        'U' => {
-                            code_length = 8;
-                        }
-                        _ => {
-                            return yaml_parser_set_scanner_error(
-                                parser,
-                                "while parsing a quoted scalar",
-                                start_mark,
-                                "found unknown escape character",
-                            );
-                        }
-                    }
-                    SKIP(parser);
-                    SKIP(parser);
-                    if code_length != 0 {
-                        let mut value: u32 = 0;
-                        let mut k = 0;
-                        CACHE(parser, code_length)?;
-                        while k < code_length {
-                            if !IS_HEX_AT!(parser.buffer, k) {
-                                return yaml_parser_set_scanner_error(
-                                    parser,
-                                    "while parsing a quoted scalar",
-                                    start_mark,
-                                    "did not find expected hexdecimal number",
-                                );
-                            }
-                            value = (value << 4) + AS_HEX_AT!(parser.buffer, k);
-                            k += 1;
-                        }
-                        if let Some(ch) = char::from_u32(value) {
-                            string.push(ch);
-                        } else {
-                            return yaml_parser_set_scanner_error(
-                                parser,
-                                "while parsing a quoted scalar",
-                                start_mark,
-                                "found invalid Unicode character escape code",
-                            );
-                        }
-
-                        k = 0;
-                        while k < code_length {
-                            SKIP(parser);
-                            k += 1;
-                        }
-                    }
-                } else {
-                    READ_STRING(parser, &mut string);
-                }
+        loop {
+            if self.mark.column as i32 != indent || IS_Z!(self.buffer) {
+                break;
             }
-            CACHE(parser, 2)?;
-        }
-        CACHE(parser, 1)?;
-        if CHECK!(parser.buffer, if single { '\'' } else { '"' }) {
-            break;
-        }
-        CACHE(parser, 1)?;
-        while IS_BLANK!(parser.buffer) || IS_BREAK!(parser.buffer) {
-            if IS_BLANK!(parser.buffer) {
-                if leading_blanks {
-                    SKIP(parser);
-                } else {
-                    READ_STRING(parser, &mut whitespaces);
-                }
-            } else {
-                CACHE(parser, 2)?;
-                if leading_blanks {
-                    READ_LINE_STRING(parser, &mut trailing_breaks);
-                } else {
-                    whitespaces.clear();
-                    READ_LINE_STRING(parser, &mut leading_break);
-                    leading_blanks = true;
-                }
-            }
-            CACHE(parser, 1)?;
-        }
-        if leading_blanks {
-            if leading_break.starts_with('\n') {
+            trailing_blank = IS_BLANK!(self.buffer) as i32;
+            if !literal
+                && leading_break.starts_with('\n')
+                && leading_blank == 0
+                && trailing_blank == 0
+            {
                 if trailing_breaks.is_empty() {
                     string.push(' ');
-                } else {
-                    string.push_str(&trailing_breaks);
-                    trailing_breaks.clear();
                 }
                 leading_break.clear();
             } else {
                 string.push_str(&leading_break);
-                string.push_str(&trailing_breaks);
                 leading_break.clear();
-                trailing_breaks.clear();
             }
-        } else {
-            string.push_str(&whitespaces);
-            whitespaces.clear();
+            string.push_str(&trailing_breaks);
+            trailing_breaks.clear();
+            leading_blank = IS_BLANK!(self.buffer) as i32;
+            while !IS_BREAKZ!(self.buffer) {
+                READ_STRING(self, &mut string);
+                CACHE(self, 1)?;
+            }
+            CACHE(self, 2)?;
+            READ_LINE_STRING(self, &mut leading_break);
+            self.scan_block_scalar_breaks(
+                &mut indent,
+                &mut trailing_breaks,
+                start_mark,
+                &mut end_mark,
+            )?;
         }
+
+        if chomping != -1 {
+            string.push_str(&leading_break);
+        }
+
+        if chomping == 1 {
+            string.push_str(&trailing_breaks);
+        }
+
+        *token = Token {
+            data: TokenData::Scalar {
+                value: string,
+                style: if literal {
+                    ScalarStyle::Literal
+                } else {
+                    ScalarStyle::Folded
+                },
+            },
+            start_mark,
+            end_mark,
+        };
+
+        Ok(())
     }
 
-    SKIP(parser);
-    let end_mark: Mark = parser.mark;
-    *token = Token {
-        data: TokenData::Scalar {
-            value: string,
-            style: if single {
-                ScalarStyle::SingleQuoted
-            } else {
-                ScalarStyle::DoubleQuoted
-            },
-        },
-        start_mark,
-        end_mark,
-    };
-    Ok(())
-}
-
-fn yaml_parser_scan_plain_scalar(
-    parser: &mut Scanner,
-    token: &mut Token,
-) -> Result<(), ScannerError> {
-    let mut end_mark: Mark;
-    let mut string = String::new();
-    let mut leading_break = String::new();
-    let mut trailing_breaks = String::new();
-    let mut whitespaces = String::new();
-    let mut leading_blanks = false;
-    let indent: i32 = parser.indent + 1;
-    end_mark = parser.mark;
-    let start_mark: Mark = end_mark;
-    loop {
-        CACHE(parser, 4)?;
-        if parser.mark.column == 0
-            && (CHECK_AT!(parser.buffer, '-', 0)
-                && CHECK_AT!(parser.buffer, '-', 1)
-                && CHECK_AT!(parser.buffer, '-', 2)
-                || CHECK_AT!(parser.buffer, '.', 0)
-                    && CHECK_AT!(parser.buffer, '.', 1)
-                    && CHECK_AT!(parser.buffer, '.', 2))
-            && IS_BLANKZ_AT!(parser.buffer, 3)
-        {
-            break;
-        }
-        if CHECK!(parser.buffer, '#') {
-            break;
-        }
-        while !IS_BLANKZ!(parser.buffer) {
-            if parser.flow_level != 0
-                && CHECK!(parser.buffer, ':')
-                && (CHECK_AT!(parser.buffer, ',', 1)
-                    || CHECK_AT!(parser.buffer, '?', 1)
-                    || CHECK_AT!(parser.buffer, '[', 1)
-                    || CHECK_AT!(parser.buffer, ']', 1)
-                    || CHECK_AT!(parser.buffer, '{', 1)
-                    || CHECK_AT!(parser.buffer, '}', 1))
-            {
-                return yaml_parser_set_scanner_error(
-                    parser,
-                    "while scanning a plain scalar",
+    fn scan_block_scalar_breaks(
+        &mut self,
+        indent: &mut i32,
+        breaks: &mut String,
+        start_mark: Mark,
+        end_mark: &mut Mark,
+    ) -> Result<(), ScannerError> {
+        let mut max_indent: i32 = 0;
+        *end_mark = self.mark;
+        loop {
+            CACHE(self, 1)?;
+            while (*indent == 0 || (self.mark.column as i32) < *indent) && IS_SPACE!(self.buffer) {
+                SKIP(self);
+                CACHE(self, 1)?;
+            }
+            if self.mark.column as i32 > max_indent {
+                max_indent = self.mark.column as i32;
+            }
+            if (*indent == 0 || (self.mark.column as i32) < *indent) && IS_TAB!(self.buffer) {
+                return self.set_scanner_error(
+                    "while scanning a block scalar",
                     start_mark,
-                    "found unexpected ':'",
+                    "found a tab character where an indentation space is expected",
                 );
             }
+            if !IS_BREAK!(self.buffer) {
+                break;
+            }
+            CACHE(self, 2)?;
+            READ_LINE_STRING(self, breaks);
+            *end_mark = self.mark;
+        }
+        if *indent == 0 {
+            *indent = max_indent;
+            if *indent < self.indent + 1 {
+                *indent = self.indent + 1;
+            }
+            if *indent < 1 {
+                *indent = 1;
+            }
+        }
+        Ok(())
+    }
 
-            if CHECK!(parser.buffer, ':') && IS_BLANKZ_AT!(parser.buffer, 1)
-                || parser.flow_level != 0
-                    && (CHECK!(parser.buffer, ',')
-                        || CHECK!(parser.buffer, '[')
-                        || CHECK!(parser.buffer, ']')
-                        || CHECK!(parser.buffer, '{')
-                        || CHECK!(parser.buffer, '}'))
+    fn scan_flow_scalar(&mut self, token: &mut Token, single: bool) -> Result<(), ScannerError> {
+        let mut string = String::new();
+        let mut leading_break = String::new();
+        let mut trailing_breaks = String::new();
+        let mut whitespaces = String::new();
+        let mut leading_blanks;
+
+        let start_mark: Mark = self.mark;
+        SKIP(self);
+        loop {
+            CACHE(self, 4)?;
+
+            if self.mark.column == 0
+                && (CHECK_AT!(self.buffer, '-', 0)
+                    && CHECK_AT!(self.buffer, '-', 1)
+                    && CHECK_AT!(self.buffer, '-', 2)
+                    || CHECK_AT!(self.buffer, '.', 0)
+                        && CHECK_AT!(self.buffer, '.', 1)
+                        && CHECK_AT!(self.buffer, '.', 2))
+                && IS_BLANKZ_AT!(self.buffer, 3)
+            {
+                return self.set_scanner_error(
+                    "while scanning a quoted scalar",
+                    start_mark,
+                    "found unexpected document indicator",
+                );
+            } else if IS_Z!(self.buffer) {
+                return self.set_scanner_error(
+                    "while scanning a quoted scalar",
+                    start_mark,
+                    "found unexpected end of stream",
+                );
+            }
+            CACHE(self, 2)?;
+            leading_blanks = false;
+            while !IS_BLANKZ!(self.buffer) {
+                if single && CHECK_AT!(self.buffer, '\'', 0) && CHECK_AT!(self.buffer, '\'', 1) {
+                    string.push('\'');
+                    SKIP(self);
+                    SKIP(self);
+                } else {
+                    if CHECK!(self.buffer, if single { '\'' } else { '"' }) {
+                        break;
+                    }
+                    if !single && CHECK!(self.buffer, '\\') && IS_BREAK_AT!(self.buffer, 1) {
+                        CACHE(self, 3)?;
+                        SKIP(self);
+                        SKIP_LINE(self);
+                        leading_blanks = true;
+                        break;
+                    } else if !single && CHECK!(self.buffer, '\\') {
+                        let mut code_length = 0usize;
+                        match self.buffer.get(1).copied().unwrap() {
+                            '0' => {
+                                string.push('\0');
+                            }
+                            'a' => {
+                                string.push('\x07');
+                            }
+                            'b' => {
+                                string.push('\x08');
+                            }
+                            't' | '\t' => {
+                                string.push('\t');
+                            }
+                            'n' => {
+                                string.push('\n');
+                            }
+                            'v' => {
+                                string.push('\x0B');
+                            }
+                            'f' => {
+                                string.push('\x0C');
+                            }
+                            'r' => {
+                                string.push('\r');
+                            }
+                            'e' => {
+                                string.push('\x1B');
+                            }
+                            ' ' => {
+                                string.push(' ');
+                            }
+                            '"' => {
+                                string.push('"');
+                            }
+                            '/' => {
+                                string.push('/');
+                            }
+                            '\\' => {
+                                string.push('\\');
+                            }
+                            // NEL (#x85)
+                            'N' => {
+                                string.push('\u{0085}');
+                            }
+                            // #xA0
+                            '_' => {
+                                string.push('\u{00a0}');
+                                // string.push('\xC2');
+                                // string.push('\xA0');
+                            }
+                            // LS (#x2028)
+                            'L' => {
+                                string.push('\u{2028}');
+                                // string.push('\xE2');
+                                // string.push('\x80');
+                                // string.push('\xA8');
+                            }
+                            // PS (#x2029)
+                            'P' => {
+                                string.push('\u{2029}');
+                                // string.push('\xE2');
+                                // string.push('\x80');
+                                // string.push('\xA9');
+                            }
+                            'x' => {
+                                code_length = 2;
+                            }
+                            'u' => {
+                                code_length = 4;
+                            }
+                            'U' => {
+                                code_length = 8;
+                            }
+                            _ => {
+                                return self.set_scanner_error(
+                                    "while parsing a quoted scalar",
+                                    start_mark,
+                                    "found unknown escape character",
+                                );
+                            }
+                        }
+                        SKIP(self);
+                        SKIP(self);
+                        if code_length != 0 {
+                            let mut value: u32 = 0;
+                            let mut k = 0;
+                            CACHE(self, code_length)?;
+                            while k < code_length {
+                                if !IS_HEX_AT!(self.buffer, k) {
+                                    return self.set_scanner_error(
+                                        "while parsing a quoted scalar",
+                                        start_mark,
+                                        "did not find expected hexdecimal number",
+                                    );
+                                }
+                                value = (value << 4) + AS_HEX_AT!(self.buffer, k);
+                                k += 1;
+                            }
+                            if let Some(ch) = char::from_u32(value) {
+                                string.push(ch);
+                            } else {
+                                return self.set_scanner_error(
+                                    "while parsing a quoted scalar",
+                                    start_mark,
+                                    "found invalid Unicode character escape code",
+                                );
+                            }
+
+                            k = 0;
+                            while k < code_length {
+                                SKIP(self);
+                                k += 1;
+                            }
+                        }
+                    } else {
+                        READ_STRING(self, &mut string);
+                    }
+                }
+                CACHE(self, 2)?;
+            }
+            CACHE(self, 1)?;
+            if CHECK!(self.buffer, if single { '\'' } else { '"' }) {
+                break;
+            }
+            CACHE(self, 1)?;
+            while IS_BLANK!(self.buffer) || IS_BREAK!(self.buffer) {
+                if IS_BLANK!(self.buffer) {
+                    if leading_blanks {
+                        SKIP(self);
+                    } else {
+                        READ_STRING(self, &mut whitespaces);
+                    }
+                } else {
+                    CACHE(self, 2)?;
+                    if leading_blanks {
+                        READ_LINE_STRING(self, &mut trailing_breaks);
+                    } else {
+                        whitespaces.clear();
+                        READ_LINE_STRING(self, &mut leading_break);
+                        leading_blanks = true;
+                    }
+                }
+                CACHE(self, 1)?;
+            }
+            if leading_blanks {
+                if leading_break.starts_with('\n') {
+                    if trailing_breaks.is_empty() {
+                        string.push(' ');
+                    } else {
+                        string.push_str(&trailing_breaks);
+                        trailing_breaks.clear();
+                    }
+                    leading_break.clear();
+                } else {
+                    string.push_str(&leading_break);
+                    string.push_str(&trailing_breaks);
+                    leading_break.clear();
+                    trailing_breaks.clear();
+                }
+            } else {
+                string.push_str(&whitespaces);
+                whitespaces.clear();
+            }
+        }
+
+        SKIP(self);
+        let end_mark: Mark = self.mark;
+        *token = Token {
+            data: TokenData::Scalar {
+                value: string,
+                style: if single {
+                    ScalarStyle::SingleQuoted
+                } else {
+                    ScalarStyle::DoubleQuoted
+                },
+            },
+            start_mark,
+            end_mark,
+        };
+        Ok(())
+    }
+
+    fn scan_plain_scalar(&mut self, token: &mut Token) -> Result<(), ScannerError> {
+        let mut end_mark: Mark;
+        let mut string = String::new();
+        let mut leading_break = String::new();
+        let mut trailing_breaks = String::new();
+        let mut whitespaces = String::new();
+        let mut leading_blanks = false;
+        let indent: i32 = self.indent + 1;
+        end_mark = self.mark;
+        let start_mark: Mark = end_mark;
+        loop {
+            CACHE(self, 4)?;
+            if self.mark.column == 0
+                && (CHECK_AT!(self.buffer, '-', 0)
+                    && CHECK_AT!(self.buffer, '-', 1)
+                    && CHECK_AT!(self.buffer, '-', 2)
+                    || CHECK_AT!(self.buffer, '.', 0)
+                        && CHECK_AT!(self.buffer, '.', 1)
+                        && CHECK_AT!(self.buffer, '.', 2))
+                && IS_BLANKZ_AT!(self.buffer, 3)
             {
                 break;
             }
-            if leading_blanks || !whitespaces.is_empty() {
-                if leading_blanks {
-                    if leading_break.starts_with('\n') {
-                        if trailing_breaks.is_empty() {
-                            string.push(' ');
-                        } else {
-                            string.push_str(&trailing_breaks);
-                            trailing_breaks.clear();
-                        }
-                        leading_break.clear();
-                    } else {
-                        string.push_str(&leading_break);
-                        string.push_str(&trailing_breaks);
-                        leading_break.clear();
-                        trailing_breaks.clear();
-                    }
-                    leading_blanks = false;
-                } else {
-                    string.push_str(&whitespaces);
-                    whitespaces.clear();
-                }
+            if CHECK!(self.buffer, '#') {
+                break;
             }
-            READ_STRING(parser, &mut string);
-            end_mark = parser.mark;
-            CACHE(parser, 2)?;
-        }
-        if !(IS_BLANK!(parser.buffer) || IS_BREAK!(parser.buffer)) {
-            break;
-        }
-        CACHE(parser, 1)?;
-
-        while IS_BLANK!(parser.buffer) || IS_BREAK!(parser.buffer) {
-            if IS_BLANK!(parser.buffer) {
-                if leading_blanks && (parser.mark.column as i32) < indent && IS_TAB!(parser.buffer)
+            while !IS_BLANKZ!(self.buffer) {
+                if self.flow_level != 0
+                    && CHECK!(self.buffer, ':')
+                    && (CHECK_AT!(self.buffer, ',', 1)
+                        || CHECK_AT!(self.buffer, '?', 1)
+                        || CHECK_AT!(self.buffer, '[', 1)
+                        || CHECK_AT!(self.buffer, ']', 1)
+                        || CHECK_AT!(self.buffer, '{', 1)
+                        || CHECK_AT!(self.buffer, '}', 1))
                 {
-                    return yaml_parser_set_scanner_error(
-                        parser,
+                    return self.set_scanner_error(
                         "while scanning a plain scalar",
                         start_mark,
-                        "found a tab character that violates indentation",
+                        "found unexpected ':'",
                     );
-                } else if !leading_blanks {
-                    READ_STRING(parser, &mut whitespaces);
-                } else {
-                    SKIP(parser);
                 }
-            } else {
-                CACHE(parser, 2)?;
 
-                if leading_blanks {
-                    READ_LINE_STRING(parser, &mut trailing_breaks);
-                } else {
-                    whitespaces.clear();
-                    READ_LINE_STRING(parser, &mut leading_break);
-                    leading_blanks = true;
+                if CHECK!(self.buffer, ':') && IS_BLANKZ_AT!(self.buffer, 1)
+                    || self.flow_level != 0
+                        && (CHECK!(self.buffer, ',')
+                            || CHECK!(self.buffer, '[')
+                            || CHECK!(self.buffer, ']')
+                            || CHECK!(self.buffer, '{')
+                            || CHECK!(self.buffer, '}'))
+                {
+                    break;
                 }
+                if leading_blanks || !whitespaces.is_empty() {
+                    if leading_blanks {
+                        if leading_break.starts_with('\n') {
+                            if trailing_breaks.is_empty() {
+                                string.push(' ');
+                            } else {
+                                string.push_str(&trailing_breaks);
+                                trailing_breaks.clear();
+                            }
+                            leading_break.clear();
+                        } else {
+                            string.push_str(&leading_break);
+                            string.push_str(&trailing_breaks);
+                            leading_break.clear();
+                            trailing_breaks.clear();
+                        }
+                        leading_blanks = false;
+                    } else {
+                        string.push_str(&whitespaces);
+                        whitespaces.clear();
+                    }
+                }
+                READ_STRING(self, &mut string);
+                end_mark = self.mark;
+                CACHE(self, 2)?;
             }
-            CACHE(parser, 1)?;
-        }
-        if parser.flow_level == 0 && (parser.mark.column as i32) < indent {
-            break;
-        }
-    }
+            if !(IS_BLANK!(self.buffer) || IS_BREAK!(self.buffer)) {
+                break;
+            }
+            CACHE(self, 1)?;
 
-    *token = Token {
-        data: TokenData::Scalar {
-            value: string,
-            style: ScalarStyle::Plain,
-        },
-        start_mark,
-        end_mark,
-    };
-    if leading_blanks {
-        parser.simple_key_allowed = true;
-    }
+            while IS_BLANK!(self.buffer) || IS_BREAK!(self.buffer) {
+                if IS_BLANK!(self.buffer) {
+                    if leading_blanks && (self.mark.column as i32) < indent && IS_TAB!(self.buffer)
+                    {
+                        return self.set_scanner_error(
+                            "while scanning a plain scalar",
+                            start_mark,
+                            "found a tab character that violates indentation",
+                        );
+                    } else if !leading_blanks {
+                        READ_STRING(self, &mut whitespaces);
+                    } else {
+                        SKIP(self);
+                    }
+                } else {
+                    CACHE(self, 2)?;
 
-    Ok(())
+                    if leading_blanks {
+                        READ_LINE_STRING(self, &mut trailing_breaks);
+                    } else {
+                        whitespaces.clear();
+                        READ_LINE_STRING(self, &mut leading_break);
+                        leading_blanks = true;
+                    }
+                }
+                CACHE(self, 1)?;
+            }
+            if self.flow_level == 0 && (self.mark.column as i32) < indent {
+                break;
+            }
+        }
+
+        *token = Token {
+            data: TokenData::Scalar {
+                value: string,
+                style: ScalarStyle::Plain,
+            },
+            start_mark,
+            end_mark,
+        };
+        if leading_blanks {
+            self.simple_key_allowed = true;
+        }
+
+        Ok(())
+    }
 }

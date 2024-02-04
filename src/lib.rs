@@ -42,7 +42,7 @@ pub use crate::emitter::*;
 pub use crate::error::*;
 pub use crate::event::*;
 pub use crate::parser::*;
-pub use crate::scanner::yaml_parser_scan;
+pub use crate::scanner::*;
 pub use crate::token::*;
 pub use crate::writer::yaml_emitter_flush;
 

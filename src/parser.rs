@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::{vec, vec::Vec};
 
-use crate::scanner::{yaml_parser_fetch_more_tokens, Scanner};
+use crate::scanner::Scanner;
 use crate::{
     Encoding, Event, EventData, MappingStyle, Mark, ParserError, ScalarStyle, SequenceStyle,
     TagDirective, Token, TokenData, VersionDirective,
@@ -117,7 +117,7 @@ fn PEEK_TOKEN<'a>(parser: &'a mut Parser) -> Result<&'a Token, ParserError> {
             .front()
             .expect("token_available is true, but token queue is empty"));
     }
-    yaml_parser_fetch_more_tokens(&mut parser.scanner)?;
+    parser.scanner.fetch_more_tokens()?;
     if !parser.scanner.token_available {
         return Err(ParserError::UnexpectedEof);
     }
@@ -136,7 +136,7 @@ fn PEEK_TOKEN_MUT<'a>(parser: &'a mut Parser) -> Result<&'a mut Token, ParserErr
             .front_mut()
             .expect("token_available is true, but token queue is empty"));
     }
-    yaml_parser_fetch_more_tokens(&mut parser.scanner)?;
+    parser.scanner.fetch_more_tokens()?;
     if !parser.scanner.token_available {
         return Err(ParserError::UnexpectedEof);
     }
