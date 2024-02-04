@@ -63,8 +63,6 @@ pub enum ScannerError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParserError {
-    #[error("no more tokens")]
-    UnexpectedEof,
     #[error("{}:{}: {}", mark.line, mark.column, problem)]
     Problem { problem: &'static str, mark: Mark },
     #[error("{}:{}: {} {} ({}:{})", mark.line, mark.column, problem, context, context_mark.line, context_mark.column)]

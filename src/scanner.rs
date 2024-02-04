@@ -224,6 +224,58 @@ impl<'r> Scanner<'r> {
         }
     }
 
+    /// Equivalent of the libyaml `PEEK_TOKEN` macro.
+    pub(crate) fn peek(&mut self) -> Result<&Token, ScannerError> {
+        if self.token_available {
+            return Ok(self
+                .tokens
+                .front()
+                .expect("token_available is true, but token queue is empty"));
+        }
+        self.fetch_more_tokens()?;
+        assert!(
+            self.token_available,
+            "fetch_more_tokens() did not produce any tokens, nor an error"
+        );
+        Ok(self
+            .tokens
+            .front()
+            .expect("token_available is true, but token queue is empty"))
+    }
+
+    /// Equivalent of the libyaml `PEEK_TOKEN` macro.
+    pub(crate) fn peek_mut(&mut self) -> Result<&mut Token, ScannerError> {
+        if self.token_available {
+            return Ok(self
+                .tokens
+                .front_mut()
+                .expect("token_available is true, but token queue is empty"));
+        }
+        self.fetch_more_tokens()?;
+        assert!(
+            self.token_available,
+            "fetch_more_tokens() did not produce any tokens, nor an error"
+        );
+        Ok(self
+            .tokens
+            .front_mut()
+            .expect("token_available is true, but token queue is empty"))
+    }
+
+    /// Equivalent of the libyaml `SKIP_TOKEN` macro.
+    pub(crate) fn skip_token(&mut self) {
+        self.token_available = false;
+        self.tokens_parsed = self.tokens_parsed.wrapping_add(1);
+        let skipped = self.tokens.pop_front().expect("SKIP_TOKEN but EOF");
+        self.stream_end_produced = matches!(
+            skipped,
+            Token {
+                data: TokenData::StreamEnd,
+                ..
+            }
+        );
+    }
+
     fn set_scanner_error<T>(
         &mut self,
         context: &'static str,

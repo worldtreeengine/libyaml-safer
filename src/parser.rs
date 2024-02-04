@@ -4,7 +4,7 @@ use alloc::{vec, vec::Vec};
 use crate::scanner::Scanner;
 use crate::{
     Encoding, Event, EventData, MappingStyle, Mark, ParserError, ScalarStyle, SequenceStyle,
-    TagDirective, Token, TokenData, VersionDirective,
+    TagDirective, TokenData, VersionDirective,
 };
 
 /// The parser structure.
@@ -107,61 +107,6 @@ pub struct AliasData {
     pub index: i32,
     /// The anchor mark.
     pub mark: Mark,
-}
-
-fn PEEK_TOKEN<'a>(parser: &'a mut Parser) -> Result<&'a Token, ParserError> {
-    if parser.scanner.token_available {
-        return Ok(parser
-            .scanner
-            .tokens
-            .front()
-            .expect("token_available is true, but token queue is empty"));
-    }
-    parser.scanner.fetch_more_tokens()?;
-    if !parser.scanner.token_available {
-        return Err(ParserError::UnexpectedEof);
-    }
-    Ok(parser
-        .scanner
-        .tokens
-        .front()
-        .expect("token_available is true, but token queue is empty"))
-}
-
-fn PEEK_TOKEN_MUT<'a>(parser: &'a mut Parser) -> Result<&'a mut Token, ParserError> {
-    if parser.scanner.token_available {
-        return Ok(parser
-            .scanner
-            .tokens
-            .front_mut()
-            .expect("token_available is true, but token queue is empty"));
-    }
-    parser.scanner.fetch_more_tokens()?;
-    if !parser.scanner.token_available {
-        return Err(ParserError::UnexpectedEof);
-    }
-    Ok(parser
-        .scanner
-        .tokens
-        .front_mut()
-        .expect("token_available is true, but token queue is empty"))
-}
-
-fn SKIP_TOKEN(parser: &mut Parser) {
-    parser.scanner.token_available = false;
-    parser.scanner.tokens_parsed = parser.scanner.tokens_parsed.wrapping_add(1);
-    let skipped = parser
-        .scanner
-        .tokens
-        .pop_front()
-        .expect("SKIP_TOKEN but EOF");
-    parser.scanner.stream_end_produced = matches!(
-        skipped,
-        Token {
-            data: TokenData::StreamEnd,
-            ..
-        }
-    );
 }
 
 impl<'r> Iterator for Parser<'r> {
@@ -286,7 +231,7 @@ impl<'r> Parser<'r> {
     }
 
     fn parse_stream_start(&mut self) -> Result<Event, ParserError> {
-        let token = PEEK_TOKEN(self)?;
+        let token = self.scanner.peek()?;
 
         if let TokenData::StreamStart { encoding } = &token.data {
             let event = Event {
@@ -297,7 +242,7 @@ impl<'r> Parser<'r> {
                 end_mark: token.end_mark,
             };
             self.state = ParserState::ImplicitDocumentStart;
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
             Ok(event)
         } else {
             let mark = token.start_mark;
@@ -309,11 +254,11 @@ impl<'r> Parser<'r> {
         let mut version_directive: Option<VersionDirective> = None;
 
         let mut tag_directives = vec![];
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
         if !implicit {
             while let TokenData::DocumentEnd = &token.data {
-                SKIP_TOKEN(self);
-                token = PEEK_TOKEN(self)?;
+                self.scanner.skip_token();
+                token = self.scanner.peek()?;
             }
         }
         if implicit
@@ -342,7 +287,7 @@ impl<'r> Parser<'r> {
             let end_mark: Mark;
             let start_mark: Mark = token.start_mark;
             self.process_directives(Some(&mut version_directive), Some(&mut tag_directives))?;
-            token = PEEK_TOKEN(self)?;
+            token = self.scanner.peek()?;
             if let TokenData::DocumentStart = token.data {
                 end_mark = token.end_mark;
                 let event = Event {
@@ -356,7 +301,7 @@ impl<'r> Parser<'r> {
                 };
                 self.states.push(ParserState::DocumentEnd);
                 self.state = ParserState::DocumentContent;
-                SKIP_TOKEN(self);
+                self.scanner.skip_token();
                 Ok(event)
             } else {
                 Self::set_parser_error("did not find expected <document start>", token.start_mark)
@@ -368,13 +313,13 @@ impl<'r> Parser<'r> {
                 end_mark: token.end_mark,
             };
             self.state = ParserState::End;
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
             Ok(event)
         }
     }
 
     fn parse_document_content(&mut self) -> Result<Event, ParserError> {
-        let token = PEEK_TOKEN(self)?;
+        let token = self.scanner.peek()?;
         if let TokenData::VersionDirective { .. }
         | TokenData::TagDirective { .. }
         | TokenData::DocumentStart
@@ -392,12 +337,12 @@ impl<'r> Parser<'r> {
     fn parse_document_end(&mut self) -> Result<Event, ParserError> {
         let mut end_mark: Mark;
         let mut implicit = true;
-        let token = PEEK_TOKEN(self)?;
+        let token = self.scanner.peek()?;
         end_mark = token.start_mark;
         let start_mark: Mark = end_mark;
         if let TokenData::DocumentEnd = &token.data {
             end_mark = token.end_mark;
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
             implicit = false;
         }
         self.tag_directives.clear();
@@ -422,7 +367,7 @@ impl<'r> Parser<'r> {
             column: 0,
         };
 
-        let mut token = PEEK_TOKEN_MUT(self)?;
+        let mut token = self.scanner.peek_mut()?;
 
         if let TokenData::Alias { value } = &mut token.data {
             let event = Event {
@@ -433,7 +378,7 @@ impl<'r> Parser<'r> {
                 end_mark: token.end_mark,
             };
             self.state = self.states.pop().unwrap();
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
             return Ok(event);
         }
 
@@ -443,14 +388,14 @@ impl<'r> Parser<'r> {
             anchor = Some(core::mem::take(value));
             start_mark = token.start_mark;
             end_mark = token.end_mark;
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN_MUT(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek_mut()?;
             if let TokenData::Tag { handle, suffix } = &mut token.data {
                 tag_handle = Some(core::mem::take(handle));
                 tag_suffix = Some(core::mem::take(suffix));
                 tag_mark = token.start_mark;
                 end_mark = token.end_mark;
-                SKIP_TOKEN(self);
+                self.scanner.skip_token();
             }
         } else if let TokenData::Tag { handle, suffix } = &mut token.data {
             tag_handle = Some(core::mem::take(handle));
@@ -458,12 +403,12 @@ impl<'r> Parser<'r> {
             tag_mark = token.start_mark;
             start_mark = tag_mark;
             end_mark = token.end_mark;
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN_MUT(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek_mut()?;
             if let TokenData::Anchor { value } = &mut token.data {
                 anchor = Some(core::mem::take(value));
                 end_mark = token.end_mark;
-                SKIP_TOKEN(self);
+                self.scanner.skip_token();
             }
         }
 
@@ -489,7 +434,7 @@ impl<'r> Parser<'r> {
             }
         }
 
-        let token = PEEK_TOKEN_MUT(self)?;
+        let token = self.scanner.peek_mut()?;
 
         let implicit = tag.is_none() || tag.as_deref() == Some("");
 
@@ -529,7 +474,7 @@ impl<'r> Parser<'r> {
                 end_mark,
             };
             self.state = self.states.pop().unwrap();
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
             return Ok(event);
         } else if let TokenData::FlowSequenceStart = &token.data {
             end_mark = token.end_mark;
@@ -618,18 +563,18 @@ impl<'r> Parser<'r> {
 
     fn parse_block_sequence_entry(&mut self, first: bool) -> Result<Event, ParserError> {
         if first {
-            let token = PEEK_TOKEN(self)?;
+            let token = self.scanner.peek()?;
             let mark = token.start_mark;
             self.marks.push(mark);
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
         }
 
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
 
         if let TokenData::BlockEntry = &token.data {
             let mark: Mark = token.end_mark;
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek()?;
             if matches!(token.data, TokenData::BlockEntry | TokenData::BlockEnd) {
                 self.state = ParserState::BlockSequenceEntry;
                 Self::process_empty_scalar(mark)
@@ -645,7 +590,7 @@ impl<'r> Parser<'r> {
             };
             self.state = self.states.pop().unwrap();
             let _ = self.marks.pop();
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
             Ok(event)
         } else {
             let token_mark = token.start_mark;
@@ -660,11 +605,11 @@ impl<'r> Parser<'r> {
     }
 
     fn parse_indentless_sequence_entry(&mut self) -> Result<Event, ParserError> {
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
         if let TokenData::BlockEntry = token.data {
             let mark: Mark = token.end_mark;
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek()?;
 
             if matches!(
                 token.data,
@@ -689,17 +634,17 @@ impl<'r> Parser<'r> {
 
     fn parse_block_mapping_key(&mut self, first: bool) -> Result<Event, ParserError> {
         if first {
-            let token = PEEK_TOKEN(self)?;
+            let token = self.scanner.peek()?;
             let mark = token.start_mark;
             self.marks.push(mark);
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
         }
 
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
         if let TokenData::Key = token.data {
             let mark: Mark = token.end_mark;
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek()?;
             if matches!(
                 token.data,
                 TokenData::Key | TokenData::Value | TokenData::BlockEnd
@@ -718,7 +663,7 @@ impl<'r> Parser<'r> {
             };
             self.state = self.states.pop().unwrap();
             _ = self.marks.pop();
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
             Ok(event)
         } else {
             let token_mark = token.start_mark;
@@ -733,11 +678,11 @@ impl<'r> Parser<'r> {
     }
 
     fn parse_block_mapping_value(&mut self) -> Result<Event, ParserError> {
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
         if let TokenData::Value = token.data {
             let mark: Mark = token.end_mark;
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek()?;
             if matches!(
                 token.data,
                 TokenData::Key | TokenData::Value | TokenData::BlockEnd
@@ -757,18 +702,18 @@ impl<'r> Parser<'r> {
 
     fn parse_flow_sequence_entry(&mut self, first: bool) -> Result<Event, ParserError> {
         if first {
-            let token = PEEK_TOKEN(self)?;
+            let token = self.scanner.peek()?;
             let mark = token.start_mark;
             self.marks.push(mark);
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
         }
 
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
         if !matches!(token.data, TokenData::FlowSequenceEnd) {
             if !first {
                 if let TokenData::FlowEntry = token.data {
-                    SKIP_TOKEN(self);
-                    token = PEEK_TOKEN(self)?;
+                    self.scanner.skip_token();
+                    token = self.scanner.peek()?;
                 } else {
                     let token_mark = token.start_mark;
                     let mark = self.marks.pop().unwrap();
@@ -792,7 +737,7 @@ impl<'r> Parser<'r> {
                     end_mark: token.end_mark,
                 };
                 self.state = ParserState::FlowSequenceEntryMappingKey;
-                SKIP_TOKEN(self);
+                self.scanner.skip_token();
                 return Ok(event);
             } else if !matches!(token.data, TokenData::FlowSequenceEnd) {
                 self.states.push(ParserState::FlowSequenceEntry);
@@ -806,18 +751,18 @@ impl<'r> Parser<'r> {
         };
         self.state = self.states.pop().unwrap();
         _ = self.marks.pop();
-        SKIP_TOKEN(self);
+        self.scanner.skip_token();
         Ok(event)
     }
 
     fn parse_flow_sequence_entry_mapping_key(&mut self) -> Result<Event, ParserError> {
-        let token = PEEK_TOKEN(self)?;
+        let token = self.scanner.peek()?;
         if matches!(
             token.data,
             TokenData::Value | TokenData::FlowEntry | TokenData::FlowSequenceEnd
         ) {
             let mark: Mark = token.end_mark;
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
             self.state = ParserState::FlowSequenceEntryMappingValue;
             Self::process_empty_scalar(mark)
         } else {
@@ -827,10 +772,10 @@ impl<'r> Parser<'r> {
     }
 
     fn parse_flow_sequence_entry_mapping_value(&mut self) -> Result<Event, ParserError> {
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
         if let TokenData::Value = token.data {
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek()?;
             if !matches!(
                 token.data,
                 TokenData::FlowEntry | TokenData::FlowSequenceEnd
@@ -845,7 +790,7 @@ impl<'r> Parser<'r> {
     }
 
     fn parse_flow_sequence_entry_mapping_end(&mut self) -> Result<Event, ParserError> {
-        let token = PEEK_TOKEN(self)?;
+        let token = self.scanner.peek()?;
         let start_mark = token.start_mark;
         let end_mark = token.end_mark;
         self.state = ParserState::FlowSequenceEntry;
@@ -858,18 +803,18 @@ impl<'r> Parser<'r> {
 
     fn parse_flow_mapping_key(&mut self, first: bool) -> Result<Event, ParserError> {
         if first {
-            let token = PEEK_TOKEN(self)?;
+            let token = self.scanner.peek()?;
             let mark = token.start_mark;
             self.marks.push(mark);
-            SKIP_TOKEN(self);
+            self.scanner.skip_token();
         }
 
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
         if !matches!(token.data, TokenData::FlowMappingEnd) {
             if !first {
                 if let TokenData::FlowEntry = token.data {
-                    SKIP_TOKEN(self);
-                    token = PEEK_TOKEN(self)?;
+                    self.scanner.skip_token();
+                    token = self.scanner.peek()?;
                 } else {
                     let token_mark = token.start_mark;
                     let mark = self.marks.pop().unwrap();
@@ -882,8 +827,8 @@ impl<'r> Parser<'r> {
                 }
             }
             if let TokenData::Key = token.data {
-                SKIP_TOKEN(self);
-                token = PEEK_TOKEN(self)?;
+                self.scanner.skip_token();
+                token = self.scanner.peek()?;
                 if !matches!(
                     token.data,
                     TokenData::Value | TokenData::FlowEntry | TokenData::FlowMappingEnd
@@ -906,20 +851,20 @@ impl<'r> Parser<'r> {
         };
         self.state = self.states.pop().unwrap();
         _ = self.marks.pop();
-        SKIP_TOKEN(self);
+        self.scanner.skip_token();
         Ok(event)
     }
 
     fn parse_flow_mapping_value(&mut self, empty: bool) -> Result<Event, ParserError> {
-        let mut token = PEEK_TOKEN(self)?;
+        let mut token = self.scanner.peek()?;
         if empty {
             let mark = token.start_mark;
             self.state = ParserState::FlowMappingKey;
             return Self::process_empty_scalar(mark);
         }
         if let TokenData::Value = token.data {
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek()?;
             if !matches!(token.data, TokenData::FlowEntry | TokenData::FlowMappingEnd) {
                 self.states.push(ParserState::FlowMappingKey);
                 return self.parse_node(false, false);
@@ -965,7 +910,7 @@ impl<'r> Parser<'r> {
 
         let mut tag_directives = Vec::with_capacity(16);
 
-        let mut token = PEEK_TOKEN_MUT(self)?;
+        let mut token = self.scanner.peek_mut()?;
 
         loop {
             if !matches!(
@@ -997,8 +942,8 @@ impl<'r> Parser<'r> {
                 tag_directives.push(value);
             }
 
-            SKIP_TOKEN(self);
-            token = PEEK_TOKEN_MUT(self)?;
+            self.scanner.skip_token();
+            token = self.scanner.peek_mut()?;
         }
 
         let start_mark = token.start_mark;
