@@ -11,9 +11,10 @@ license-file = "LICENSE-MIT"
 repository = "https://github.com/simonask/libyaml-safer"
 rust-version = "1.70"
 
-[workspace]
 [dev-dependencies]
+criterion = "0.5.1"
 pretty_assertions = "1.0"
+unsafe-libyaml = "0.2.10"
 unsafe-libyaml-test-suite = { path = "tests/data" }
 
 [lib]
@@ -25,3 +26,7 @@ thiserror = "1.0"
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 rustdoc-args = ["--generate-link-to-definition"]
+
+[[bench]]
+name = "bench"
+harness = false
