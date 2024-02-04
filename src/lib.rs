@@ -1,10 +1,5 @@
-//! [![github]](https://github.com/dtolnay/unsafe-libyaml)&ensp;[![crates-io]](https://crates.io/crates/unsafe-libyaml)&ensp;[![docs-rs]](https://docs.rs/unsafe-libyaml)
-//!
-//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
-//! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
-//! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs
-
-#![doc(html_root_url = "https://docs.rs/unsafe-libyaml/0.2.10")]
+#![doc = include_str!("../README.md")]
+#![doc(html_root_url = "https://docs.rs/libyaml-safer/0.1.0")]
 #![allow(non_snake_case)]
 #![warn(clippy::pedantic)]
 #![allow(
