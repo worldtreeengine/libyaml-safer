@@ -40,9 +40,6 @@ pub(crate) fn test_main(
         let mut is_end = false;
 
         match &event.data {
-            EventData::NoEvent => {
-                _ = writeln!(stdout, "???");
-            }
             EventData::StreamStart { .. } => {
                 _ = writeln!(stdout, "+STR");
             }

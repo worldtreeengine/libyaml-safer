@@ -284,12 +284,7 @@ impl<'w> Emitter<'w> {
     /// [`Document::dump()`](crate::Document::dump) is called.
     pub fn open(&mut self) -> Result<(), EmitterError> {
         assert!(!self.opened);
-        let event = Event {
-            data: EventData::StreamStart {
-                encoding: Encoding::Any,
-            },
-            ..Default::default()
-        };
+        let event = Event::stream_start(Encoding::Any);
         self.emit(event)?;
         self.opened = true;
         Ok(())
@@ -304,10 +299,7 @@ impl<'w> Emitter<'w> {
         if self.closed {
             return Ok(());
         }
-        let event = Event {
-            data: EventData::StreamEnd,
-            ..Default::default()
-        };
+        let event = Event::stream_end();
         self.emit(event)?;
         self.closed = true;
         Ok(())

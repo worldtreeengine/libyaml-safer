@@ -345,7 +345,6 @@ impl Document {
         loop {
             let event = parser.parse()?;
             match event.data {
-                EventData::NoEvent => panic!("empty event"),
                 EventData::StreamStart { .. } => panic!("unexpected stream start event"),
                 EventData::StreamEnd => panic!("unexpected stream end event"),
                 EventData::DocumentStart { .. } => panic!("unexpected document start event"),
@@ -612,23 +611,15 @@ impl Document {
         } else {
             assert!(emitter.opened);
             emitter.anchors = vec![Anchors::default(); self.nodes.len()];
-            let event = Event {
-                data: EventData::DocumentStart {
-                    version_directive: self.version_directive,
-                    tag_directives: core::mem::take(&mut self.tag_directives),
-                    implicit: self.start_implicit,
-                },
-                ..Default::default()
-            };
+            let event = Event::new(EventData::DocumentStart {
+                version_directive: self.version_directive,
+                tag_directives: core::mem::take(&mut self.tag_directives),
+                implicit: self.start_implicit,
+            });
             emitter.emit(event)?;
             self.anchor_node(emitter, 1);
             self.dump_node(emitter, 1)?;
-            let event = Event {
-                data: EventData::DocumentEnd {
-                    implicit: self.end_implicit,
-                },
-                ..Default::default()
-            };
+            let event = Event::document_end(self.end_implicit);
             emitter.emit(event)?;
         }
 
@@ -682,10 +673,7 @@ impl Document {
     }
 
     fn dump_alias(emitter: &mut Emitter, anchor: String) -> Result<(), EmitterError> {
-        let event = Event {
-            data: EventData::Alias { anchor },
-            ..Default::default()
-        };
+        let event = Event::new(EventData::Alias { anchor });
         emitter.emit(event)
     }
 
@@ -700,17 +688,14 @@ impl Document {
         let NodeData::Scalar { value, style } = node.data else {
             unreachable!()
         };
-        let event = Event {
-            data: EventData::Scalar {
-                anchor,
-                tag: node.tag,
-                value,
-                plain_implicit,
-                quoted_implicit,
-                style,
-            },
-            ..Default::default()
-        };
+        let event = Event::new(EventData::Scalar {
+            anchor,
+            tag: node.tag,
+            value,
+            plain_implicit,
+            quoted_implicit,
+            style,
+        });
         emitter.emit(event)
     }
 
@@ -725,24 +710,18 @@ impl Document {
         let NodeData::Sequence { items, style } = node.data else {
             unreachable!()
         };
-        let event = Event {
-            data: EventData::SequenceStart {
-                anchor,
-                tag: node.tag,
-                implicit,
-                style,
-            },
-            ..Default::default()
-        };
+        let event = Event::new(EventData::SequenceStart {
+            anchor,
+            tag: node.tag,
+            implicit,
+            style,
+        });
 
         emitter.emit(event)?;
         for item in items {
             self.dump_node(emitter, item)?;
         }
-        let event = Event {
-            data: EventData::SequenceEnd,
-            ..Default::default()
-        };
+        let event = Event::sequence_end();
         emitter.emit(event)
     }
 
@@ -757,25 +736,19 @@ impl Document {
         let NodeData::Mapping { pairs, style } = node.data else {
             unreachable!()
         };
-        let event = Event {
-            data: EventData::MappingStart {
-                anchor,
-                tag: node.tag,
-                implicit,
-                style,
-            },
-            ..Default::default()
-        };
+        let event = Event::new(EventData::MappingStart {
+            anchor,
+            tag: node.tag,
+            implicit,
+            style,
+        });
 
         emitter.emit(event)?;
         for pair in pairs {
             self.dump_node(emitter, pair.key)?;
             self.dump_node(emitter, pair.value)?;
         }
-        let event = Event {
-            data: EventData::MappingEnd,
-            ..Default::default()
-        };
+        let event = Event::mapping_end();
         emitter.emit(event)
     }
 }

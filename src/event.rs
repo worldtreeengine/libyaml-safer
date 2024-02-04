@@ -3,7 +3,7 @@ use crate::{
 };
 
 /// The event structure.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct Event {
     /// The event data.
@@ -14,10 +14,8 @@ pub struct Event {
     pub end_mark: Mark,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub enum EventData {
-    #[default]
-    NoEvent,
     /// The stream parameters (for YAML_STREAM_START_EVENT).
     StreamStart {
         /// The document encoding.
@@ -84,20 +82,23 @@ pub enum EventData {
 }
 
 impl Event {
+    /// Make an event from its data, setting both marks to zero.
+    pub(crate) fn new(data: EventData) -> Self {
+        Self {
+            data,
+            start_mark: Mark::default(),
+            end_mark: Mark::default(),
+        }
+    }
+
     /// Create the STREAM-START event.
     pub fn stream_start(encoding: Encoding) -> Self {
-        Event {
-            data: EventData::StreamStart { encoding },
-            ..Default::default()
-        }
+        Self::new(EventData::StreamStart { encoding })
     }
 
     /// Create the STREAM-END event.
     pub fn stream_end() -> Self {
-        Event {
-            data: EventData::StreamEnd,
-            ..Default::default()
-        }
+        Self::new(EventData::StreamEnd)
     }
 
     /// Create the DOCUMENT-START event.
@@ -111,14 +112,11 @@ impl Event {
     ) -> Self {
         let tag_directives = tag_directives_in.to_vec();
 
-        Event {
-            data: EventData::DocumentStart {
-                version_directive,
-                tag_directives,
-                implicit,
-            },
-            ..Default::default()
-        }
+        Self::new(EventData::DocumentStart {
+            version_directive,
+            tag_directives,
+            implicit,
+        })
     }
 
     /// Create the DOCUMENT-END event.
@@ -126,20 +124,14 @@ impl Event {
     /// The `implicit` argument is considered as a stylistic parameter and may be
     /// ignored by the emitter.
     pub fn document_end(implicit: bool) -> Self {
-        Event {
-            data: EventData::DocumentEnd { implicit },
-            ..Default::default()
-        }
+        Self::new(EventData::DocumentEnd { implicit })
     }
 
     /// Create an ALIAS event.
     pub fn alias(anchor: &str) -> Self {
-        Event {
-            data: EventData::Alias {
-                anchor: String::from(anchor),
-            },
-            ..Default::default()
-        }
+        Self::new(EventData::Alias {
+            anchor: String::from(anchor),
+        })
     }
 
     /// Create a SCALAR event.
@@ -157,11 +149,6 @@ impl Event {
         quoted_implicit: bool,
         style: ScalarStyle,
     ) -> Self {
-        let mark = Mark {
-            index: 0_u64,
-            line: 0_u64,
-            column: 0_u64,
-        };
         let mut anchor_copy: Option<String> = None;
         let mut tag_copy: Option<String> = None;
 
@@ -172,18 +159,14 @@ impl Event {
             tag_copy = Some(String::from(tag));
         }
 
-        Event {
-            data: EventData::Scalar {
-                anchor: anchor_copy,
-                tag: tag_copy,
-                value: String::from(value),
-                plain_implicit,
-                quoted_implicit,
-                style,
-            },
-            start_mark: mark,
-            end_mark: mark,
-        }
+        Self::new(EventData::Scalar {
+            anchor: anchor_copy,
+            tag: tag_copy,
+            value: String::from(value),
+            plain_implicit,
+            quoted_implicit,
+            style,
+        })
     }
 
     /// Create a SEQUENCE-START event.
@@ -207,23 +190,17 @@ impl Event {
             tag_copy = Some(String::from(tag));
         }
 
-        Event {
-            data: EventData::SequenceStart {
-                anchor: anchor_copy,
-                tag: tag_copy,
-                implicit,
-                style,
-            },
-            ..Default::default()
-        }
+        Self::new(EventData::SequenceStart {
+            anchor: anchor_copy,
+            tag: tag_copy,
+            implicit,
+            style,
+        })
     }
 
     /// Create a SEQUENCE-END event.
     pub fn sequence_end() -> Self {
-        Event {
-            data: EventData::SequenceEnd,
-            ..Default::default()
-        }
+        Self::new(EventData::SequenceEnd)
     }
 
     /// Create a MAPPING-START event.
@@ -248,22 +225,16 @@ impl Event {
             tag_copy = Some(String::from(tag));
         }
 
-        Event {
-            data: EventData::MappingStart {
-                anchor: anchor_copy,
-                tag: tag_copy,
-                implicit,
-                style,
-            },
-            ..Default::default()
-        }
+        Self::new(EventData::MappingStart {
+            anchor: anchor_copy,
+            tag: tag_copy,
+            implicit,
+            style,
+        })
     }
 
     /// Create a MAPPING-END event.
     pub fn mapping_end() -> Self {
-        Event {
-            data: EventData::MappingEnd,
-            ..Default::default()
-        }
+        Self::new(EventData::MappingEnd)
     }
 }

@@ -224,10 +224,7 @@ impl<'r> Parser<'r> {
     /// will break the parser.
     pub fn parse(&mut self) -> Result<Event, ParserError> {
         if self.scanner.stream_end_produced || self.state == ParserState::End {
-            return Ok(Event {
-                data: EventData::StreamEnd,
-                ..Default::default()
-            });
+            return Ok(Event::stream_end());
         }
         self.state_machine()
     }
