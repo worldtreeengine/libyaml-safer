@@ -88,9 +88,8 @@ fn READ_LINE_STRING(parser: &mut Parser, string: &mut String) {
 ///
 /// An application must not alternate the calls of
 /// [`yaml_parser_scan()`](crate::yaml_parser_scan) with the calls of
-/// [`yaml_parser_parse()`](crate::yaml_parser_parse) or
-/// [`yaml_parser_load()`](crate::yaml_parser_load). Doing this will break the
-/// parser.
+/// [`Parser::parse()`] or [`Document::load()`](crate::Document::load). Doing
+/// this will break the parser.
 pub fn yaml_parser_scan(parser: &mut Parser) -> Result<Token, ScannerError> {
     if parser.stream_end_produced {
         return Ok(Token {

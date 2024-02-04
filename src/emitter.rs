@@ -281,7 +281,7 @@ impl<'w> Emitter<'w> {
     /// Start a YAML stream.
     ///
     /// This function should be used before
-    /// [`yaml_emitter_dump()`](crate::yaml_emitter_dump) is called.
+    /// [`Document::dump()`](crate::Document::dump) is called.
     pub fn open(&mut self) -> Result<(), EmitterError> {
         assert!(!self.opened);
         let event = Event {
@@ -298,7 +298,7 @@ impl<'w> Emitter<'w> {
     /// Finish a YAML stream.
     ///
     /// This function should be used after
-    /// [`yaml_emitter_dump()`](crate::yaml_emitter_dump) is called.
+    /// [`Document::dump()`](crate::Document::dump) is called.
     pub fn close(&mut self) -> Result<(), EmitterError> {
         assert!(self.opened);
         if self.closed {
@@ -368,8 +368,8 @@ impl<'w> Emitter<'w> {
     /// Emit an event.
     ///
     /// The event object may be generated using the
-    /// [`yaml_parser_parse()`](crate::yaml_parser_parse) function. The emitter
-    /// takes the responsibility for the event object and destroys its content after
+    /// [`Parser::parse()`](crate::Parser::parse) function. The emitter takes
+    /// the responsibility for the event object and destroys its content after
     /// it is emitted. The event object is destroyed even if the function fails.
     pub fn emit(&mut self, event: Event) -> Result<(), EmitterError> {
         self.events.push_back(event);

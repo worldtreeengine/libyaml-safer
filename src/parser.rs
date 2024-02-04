@@ -10,9 +10,6 @@ use crate::{
 };
 
 /// The parser structure.
-///
-/// All members are internal. Manage the structure using the `yaml_parser_`
-/// family of functions.
 #[non_exhaustive]
 pub struct Parser<'r> {
     /// Read handler.
@@ -250,15 +247,15 @@ impl<'r> Parser<'r> {
 
     /// Parse the input stream and produce the next parsing event.
     ///
-    /// Call the function subsequently to produce a sequence of events corresponding
-    /// to the input stream. The initial event has the type
-    /// [`EventData::StreamStart`](crate::EventData::StreamStart) while the ending
-    /// event has the type [`EventData::StreamEnd`](crate::EventData::StreamEnd).
+    /// Call the function subsequently to produce a sequence of events
+    /// corresponding to the input stream. The initial event has the type
+    /// [`EventData::StreamStart`](crate::EventData::StreamStart) while the
+    /// ending event has the type
+    /// [`EventData::StreamEnd`](crate::EventData::StreamEnd).
     ///
-    /// An application must not alternate the calls of
-    /// [`yaml_parser_parse()`](crate::yaml_parser_parse) with the calls of
-    /// [`yaml_parser_scan()`](crate::yaml_parser_scan) or
-    /// [`yaml_parser_load()`](crate::yaml_parser_load). Doing this will break the
+    /// An application must not alternate the calls of [`Parser::parse()`] with
+    /// the calls of [`yaml_parser_scan()`](crate::yaml_parser_scan) or
+    /// [`Document::load()`](crate::Document::load). Doing this will break the
     /// parser.
     pub fn parse(&mut self) -> Result<Event, ParserError> {
         if self.stream_end_produced || self.state == ParserState::End {

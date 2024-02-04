@@ -255,14 +255,12 @@ impl Document {
     /// Call this function subsequently to produce a sequence of documents
     /// constituting the input stream.
     ///
-    /// If the produced document has no root node, it means that the document end
-    /// has been reached.
+    /// If the produced document has no root node, it means that the document
+    /// end has been reached.
     ///
-    /// An application must not alternate the calls of
-    /// [`yaml_parser_load()`](crate::yaml_parser_load) with the calls of
-    /// [`yaml_parser_scan()`](crate::yaml_parser_scan) or
-    /// [`yaml_parser_parse()`](crate::yaml_parser_parse). Doing this will break the
-    /// parser.
+    /// An application must not alternate the calls of [`Document::load()`] with
+    /// the calls of [`yaml_parser_scan()`](crate::yaml_parser_scan) or
+    /// [`Parser::parse()`]. Doing this will break the parser.
     pub fn load(parser: &mut Parser) -> Result<Document, ComposerError> {
         let mut document = Document::new(None, &[], false, false);
         document.nodes.reserve(16);
@@ -609,9 +607,8 @@ impl Document {
 
     /// Emit a YAML document.
     ///
-    /// The document object may be generated using the
-    /// [`yaml_parser_load()`](crate::yaml_parser_load) function or the
-    /// [`Document::new()`] function.
+    /// The document object may be generated using the [`Document::load()`]
+    /// function or the [`Document::new()`] function.
     pub fn dump(mut self, emitter: &mut Emitter) -> Result<(), EmitterError> {
         if !emitter.opened {
             if let Err(err) = emitter.open() {
