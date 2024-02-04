@@ -1,7 +1,7 @@
 use crate::{
-    AliasData, ComposerError, Event, EventData, MappingStyle, Mark, Parser, ScalarStyle,
-    SequenceStyle, TagDirective, VersionDirective, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG,
-    DEFAULT_SEQUENCE_TAG,
+    AliasData, Anchors, ComposerError, Emitter, EmitterError, Event, EventData, MappingStyle, Mark,
+    Parser, ScalarStyle, SequenceStyle, TagDirective, VersionDirective, DEFAULT_MAPPING_TAG,
+    DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
 };
 
 /// The document structure.
@@ -605,5 +605,192 @@ impl Document {
         self.nodes[index as usize - 1].end_mark = event.end_mark;
         _ = ctx.pop();
         Ok(())
+    }
+
+    /// Emit a YAML document.
+    ///
+    /// The document object may be generated using the
+    /// [`yaml_parser_load()`](crate::yaml_parser_load) function or the
+    /// [`Document::new()`] function.
+    pub fn dump(mut self, emitter: &mut Emitter) -> Result<(), EmitterError> {
+        if !emitter.opened {
+            if let Err(err) = emitter.open() {
+                emitter.reset_anchors();
+                return Err(err);
+            }
+        }
+        if self.nodes.is_empty() {
+            // TODO: Do we really want to close the emitter just because the
+            // document contains no nodes? Isn't it OK to emit multiple documents in
+            // the same stream?
+            emitter.close()?;
+        } else {
+            assert!(emitter.opened);
+            emitter.anchors = vec![Anchors::default(); self.nodes.len()];
+            let event = Event {
+                data: EventData::DocumentStart {
+                    version_directive: self.version_directive,
+                    tag_directives: core::mem::take(&mut self.tag_directives),
+                    implicit: self.start_implicit,
+                },
+                ..Default::default()
+            };
+            emitter.emit(event)?;
+            self.anchor_node(emitter, 1);
+            self.dump_node(emitter, 1)?;
+            let event = Event {
+                data: EventData::DocumentEnd {
+                    implicit: self.end_implicit,
+                },
+                ..Default::default()
+            };
+            emitter.emit(event)?;
+        }
+
+        emitter.reset_anchors();
+        Ok(())
+    }
+
+    fn anchor_node(&self, emitter: &mut Emitter, index: i32) {
+        let node = &self.nodes[index as usize - 1];
+        emitter.anchors[index as usize - 1].references += 1;
+        if emitter.anchors[index as usize - 1].references == 1 {
+            match &node.data {
+                NodeData::Sequence { items, .. } => {
+                    for item in items {
+                        emitter.anchor_node_sub(*item);
+                    }
+                }
+                NodeData::Mapping { pairs, .. } => {
+                    for pair in pairs {
+                        emitter.anchor_node_sub(pair.key);
+                        emitter.anchor_node_sub(pair.value);
+                    }
+                }
+                _ => {}
+            }
+        } else if emitter.anchors[index as usize - 1].references == 2 {
+            emitter.last_anchor_id += 1;
+            emitter.anchors[index as usize - 1].anchor = emitter.last_anchor_id;
+        }
+    }
+
+    fn dump_node(&mut self, emitter: &mut Emitter, index: i32) -> Result<(), EmitterError> {
+        let node = &mut self.nodes[index as usize - 1];
+        let anchor_id: i32 = emitter.anchors[index as usize - 1].anchor;
+        let mut anchor: Option<String> = None;
+        if anchor_id != 0 {
+            anchor = Some(Emitter::generate_anchor(anchor_id));
+        }
+        if emitter.anchors[index as usize - 1].serialized {
+            return Self::dump_alias(emitter, anchor.unwrap());
+        }
+        emitter.anchors[index as usize - 1].serialized = true;
+
+        let node = core::mem::take(node);
+        match node.data {
+            NodeData::Scalar { .. } => Self::dump_scalar(emitter, node, anchor),
+            NodeData::Sequence { .. } => self.dump_sequence(emitter, node, anchor),
+            NodeData::Mapping { .. } => self.dump_mapping(emitter, node, anchor),
+            _ => unreachable!("document node is neither a scalar, sequence, or a mapping"),
+        }
+    }
+
+    fn dump_alias(emitter: &mut Emitter, anchor: String) -> Result<(), EmitterError> {
+        let event = Event {
+            data: EventData::Alias { anchor },
+            ..Default::default()
+        };
+        emitter.emit(event)
+    }
+
+    fn dump_scalar(
+        emitter: &mut Emitter,
+        node: Node,
+        anchor: Option<String>,
+    ) -> Result<(), EmitterError> {
+        let plain_implicit = node.tag.as_deref() == Some(DEFAULT_SCALAR_TAG);
+        let quoted_implicit = node.tag.as_deref() == Some(DEFAULT_SCALAR_TAG); // TODO: Why compare twice?! (even the C code does this)
+
+        let NodeData::Scalar { value, style } = node.data else {
+            unreachable!()
+        };
+        let event = Event {
+            data: EventData::Scalar {
+                anchor,
+                tag: node.tag,
+                value,
+                plain_implicit,
+                quoted_implicit,
+                style,
+            },
+            ..Default::default()
+        };
+        emitter.emit(event)
+    }
+
+    fn dump_sequence(
+        &mut self,
+        emitter: &mut Emitter,
+        node: Node,
+        anchor: Option<String>,
+    ) -> Result<(), EmitterError> {
+        let implicit = node.tag.as_deref() == Some(DEFAULT_SEQUENCE_TAG);
+
+        let NodeData::Sequence { items, style } = node.data else {
+            unreachable!()
+        };
+        let event = Event {
+            data: EventData::SequenceStart {
+                anchor,
+                tag: node.tag,
+                implicit,
+                style,
+            },
+            ..Default::default()
+        };
+
+        emitter.emit(event)?;
+        for item in items {
+            self.dump_node(emitter, item)?;
+        }
+        let event = Event {
+            data: EventData::SequenceEnd,
+            ..Default::default()
+        };
+        emitter.emit(event)
+    }
+
+    fn dump_mapping(
+        &mut self,
+        emitter: &mut Emitter,
+        node: Node,
+        anchor: Option<String>,
+    ) -> Result<(), EmitterError> {
+        let implicit = node.tag.as_deref() == Some(DEFAULT_MAPPING_TAG);
+
+        let NodeData::Mapping { pairs, style } = node.data else {
+            unreachable!()
+        };
+        let event = Event {
+            data: EventData::MappingStart {
+                anchor,
+                tag: node.tag,
+                implicit,
+                style,
+            },
+            ..Default::default()
+        };
+
+        emitter.emit(event)?;
+        for pair in pairs {
+            self.dump_node(emitter, pair.key)?;
+            self.dump_node(emitter, pair.value)?;
+        }
+        let event = Event {
+            data: EventData::MappingEnd,
+            ..Default::default()
+        };
+        emitter.emit(event)
     }
 }

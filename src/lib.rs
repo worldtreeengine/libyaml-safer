@@ -28,7 +28,6 @@ extern crate alloc;
 mod macros;
 
 mod document;
-mod dumper;
 mod emitter;
 mod error;
 mod event;
@@ -39,7 +38,6 @@ mod token;
 mod writer;
 
 pub use crate::document::*;
-pub use crate::dumper::{yaml_emitter_close, yaml_emitter_dump, yaml_emitter_open};
 pub use crate::emitter::*;
 pub use crate::error::*;
 pub use crate::event::*;

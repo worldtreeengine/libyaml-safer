@@ -278,6 +278,41 @@ impl<'w> Emitter<'w> {
         *self = Self::new();
     }
 
+    /// Start a YAML stream.
+    ///
+    /// This function should be used before
+    /// [`yaml_emitter_dump()`](crate::yaml_emitter_dump) is called.
+    pub fn open(&mut self) -> Result<(), EmitterError> {
+        assert!(!self.opened);
+        let event = Event {
+            data: EventData::StreamStart {
+                encoding: Encoding::Any,
+            },
+            ..Default::default()
+        };
+        self.emit(event)?;
+        self.opened = true;
+        Ok(())
+    }
+
+    /// Finish a YAML stream.
+    ///
+    /// This function should be used after
+    /// [`yaml_emitter_dump()`](crate::yaml_emitter_dump) is called.
+    pub fn close(&mut self) -> Result<(), EmitterError> {
+        assert!(self.opened);
+        if self.closed {
+            return Ok(());
+        }
+        let event = Event {
+            data: EventData::StreamEnd,
+            ..Default::default()
+        };
+        self.emit(event)?;
+        self.closed = true;
+        Ok(())
+    }
+
     /// Set a string output.
     ///
     /// The emitter will write the output characters to the `output` buffer.
@@ -1757,5 +1792,22 @@ impl<'w> Emitter<'w> {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn reset_anchors(&mut self) {
+        self.anchors.clear();
+        self.last_anchor_id = 0;
+    }
+
+    pub(crate) fn anchor_node_sub(&mut self, index: i32) {
+        self.anchors[index as usize - 1].references += 1;
+        if self.anchors[index as usize - 1].references == 2 {
+            self.last_anchor_id += 1;
+            self.anchors[index as usize - 1].anchor = self.last_anchor_id;
+        }
+    }
+
+    pub(crate) fn generate_anchor(anchor_id: i32) -> String {
+        alloc::format!("id{anchor_id:03}")
     }
 }
