@@ -115,8 +115,15 @@ impl Document {
     /// Get a node of a YAML document.
     ///
     /// Returns the node object or `None` if `index` is out of range.
-    pub fn get_node(&mut self, index: i32) -> Option<&mut Node> {
+    pub fn get_node_mut(&mut self, index: i32) -> Option<&mut Node> {
         self.nodes.get_mut(index as usize - 1)
+    }
+
+    /// Get a node of a YAML document.
+    ///
+    /// Returns the node object or `None` if `index` is out of range.
+    pub fn get_node(&self, index: i32) -> Option<&Node> {
+        self.nodes.get(index as usize - 1)
     }
 
     /// Get the root of a YAML document node.
