@@ -180,18 +180,27 @@ fn READ_LINE_STRING(scanner: &mut Scanner, string: &mut String) {
     }
 }
 
+impl<'r> Iterator for Scanner<'r> {
+    type Item = Result<Token, ScannerError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.stream_end_produced {
+            None
+        } else {
+            Some(self.scan())
+        }
+    }
+}
+
+impl<'r> core::iter::FusedIterator for Scanner<'r> {}
+
 impl<'r> Scanner<'r> {
     /// Scan the input stream and produce the next token.
     ///
-    /// Call the function subsequently to produce a sequence of tokens corresponding
-    /// to the input stream. The initial token has the type
+    /// Call the function subsequently to produce a sequence of tokens
+    /// corresponding to the input stream. The initial token has the type
     /// [`TokenData::StreamStart`] while the ending token has the type
     /// [`TokenData::StreamEnd`].
-    ///
-    /// An application must not alternate the calls of
-    /// [`yaml_parser_scan()`](crate::yaml_parser_scan) with the calls of
-    /// [`Parser::parse()`] or [`Document::load()`](crate::Document::load). Doing
-    /// this will break the parser.
     pub fn scan(&mut self) -> Result<Token, ScannerError> {
         if self.stream_end_produced {
             return Ok(Token {

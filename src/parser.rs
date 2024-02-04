@@ -164,6 +164,20 @@ fn SKIP_TOKEN(parser: &mut Parser) {
     );
 }
 
+impl<'r> Iterator for Parser<'r> {
+    type Item = Result<Event, ParserError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.scanner.stream_end_produced || self.state == ParserState::End {
+            None
+        } else {
+            Some(self.parse())
+        }
+    }
+}
+
+impl<'r> core::iter::FusedIterator for Parser<'r> {}
+
 impl<'r> Parser<'r> {
     /// Create a parser.
     pub fn new() -> Parser<'r> {
@@ -206,9 +220,8 @@ impl<'r> Parser<'r> {
     /// [`EventData::StreamEnd`](crate::EventData::StreamEnd).
     ///
     /// An application must not alternate the calls of [`Parser::parse()`] with
-    /// the calls of [`yaml_parser_scan()`](crate::yaml_parser_scan) or
-    /// [`Document::load()`](crate::Document::load). Doing this will break the
-    /// parser.
+    /// the calls of [`Document::load()`](crate::Document::load). Doing this
+    /// will break the parser.
     pub fn parse(&mut self) -> Result<Event, ParserError> {
         if self.scanner.stream_end_produced || self.state == ParserState::End {
             return Ok(Event {

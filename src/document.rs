@@ -259,8 +259,7 @@ impl Document {
     /// end has been reached.
     ///
     /// An application must not alternate the calls of [`Document::load()`] with
-    /// the calls of [`yaml_parser_scan()`](crate::yaml_parser_scan) or
-    /// [`Parser::parse()`]. Doing this will break the parser.
+    /// the calls of [`Parser::parse()`]. Doing this will break the parser.
     pub fn load(parser: &mut Parser) -> Result<Document, ComposerError> {
         let mut document = Document::new(None, &[], false, false);
         document.nodes.reserve(16);
