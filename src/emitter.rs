@@ -642,15 +642,13 @@ fn yaml_emitter_emit_sequence_start(
     yaml_emitter_process_anchor(emitter, anchor)?;
     yaml_emitter_process_tag(emitter, tag)?;
 
-    let style = if let EventData::SequenceStart { style, .. } = &event.data {
-        *style
-    } else {
+    let EventData::SequenceStart { style, .. } = &event.data else {
         unreachable!()
     };
 
     if emitter.flow_level != 0
         || emitter.canonical
-        || style == SequenceStyle::Flow
+        || *style == SequenceStyle::Flow
         || yaml_emitter_check_empty_sequence(emitter, event)
     {
         emitter.state = EmitterState::FlowSequenceFirstItem;
@@ -669,15 +667,13 @@ fn yaml_emitter_emit_mapping_start(
     yaml_emitter_process_anchor(emitter, anchor)?;
     yaml_emitter_process_tag(emitter, tag)?;
 
-    let style = if let EventData::MappingStart { style, .. } = &event.data {
-        *style
-    } else {
+    let EventData::MappingStart { style, .. } = &event.data else {
         unreachable!()
     };
 
     if emitter.flow_level != 0
         || emitter.canonical
-        || style == MappingStyle::Flow
+        || *style == MappingStyle::Flow
         || yaml_emitter_check_empty_mapping(emitter, event)
     {
         emitter.state = EmitterState::FlowMappingFirstKey;
@@ -759,66 +755,61 @@ fn yaml_emitter_select_scalar_style(
     scalar_analysis: &mut ScalarAnalysis,
     tag_analysis: &mut Option<TagAnalysis>,
 ) -> Result<(), EmitterError> {
-    if let EventData::Scalar {
+    let EventData::Scalar {
         plain_implicit,
         quoted_implicit,
         style,
         ..
     } = &event.data
-    {
-        let mut style: ScalarStyle = *style;
-        let no_tag = tag_analysis.is_none();
-        if no_tag && !*plain_implicit && !*quoted_implicit {
-            yaml_emitter_set_emitter_error(
-                emitter,
-                "neither tag nor implicit flags are specified",
-            )?;
-        }
-        if style == ScalarStyle::Any {
-            style = ScalarStyle::Plain;
-        }
-        if emitter.canonical {
-            style = ScalarStyle::DoubleQuoted;
-        }
-        if emitter.simple_key_context && scalar_analysis.multiline {
-            style = ScalarStyle::DoubleQuoted;
-        }
-        if style == ScalarStyle::Plain {
-            if emitter.flow_level != 0 && !scalar_analysis.flow_plain_allowed
-                || emitter.flow_level == 0 && !scalar_analysis.block_plain_allowed
-            {
-                style = ScalarStyle::SingleQuoted;
-            }
-            if scalar_analysis.value.is_empty()
-                && (emitter.flow_level != 0 || emitter.simple_key_context)
-            {
-                style = ScalarStyle::SingleQuoted;
-            }
-            if no_tag && !*plain_implicit {
-                style = ScalarStyle::SingleQuoted;
-            }
-        }
-        if style == ScalarStyle::SingleQuoted && !scalar_analysis.single_quoted_allowed {
-            style = ScalarStyle::DoubleQuoted;
-        }
-        if (style == ScalarStyle::Literal || style == ScalarStyle::Folded)
-            && (!scalar_analysis.block_allowed
-                || emitter.flow_level != 0
-                || emitter.simple_key_context)
-        {
-            style = ScalarStyle::DoubleQuoted;
-        }
-        if no_tag && !*quoted_implicit && style != ScalarStyle::Plain {
-            *tag_analysis = Some(TagAnalysis {
-                handle: "!",
-                suffix: "",
-            });
-        }
-        scalar_analysis.style = style;
-        Ok(())
-    } else {
+    else {
         unreachable!()
+    };
+
+    let mut style: ScalarStyle = *style;
+    let no_tag = tag_analysis.is_none();
+    if no_tag && !*plain_implicit && !*quoted_implicit {
+        yaml_emitter_set_emitter_error(emitter, "neither tag nor implicit flags are specified")?;
     }
+    if style == ScalarStyle::Any {
+        style = ScalarStyle::Plain;
+    }
+    if emitter.canonical {
+        style = ScalarStyle::DoubleQuoted;
+    }
+    if emitter.simple_key_context && scalar_analysis.multiline {
+        style = ScalarStyle::DoubleQuoted;
+    }
+    if style == ScalarStyle::Plain {
+        if emitter.flow_level != 0 && !scalar_analysis.flow_plain_allowed
+            || emitter.flow_level == 0 && !scalar_analysis.block_plain_allowed
+        {
+            style = ScalarStyle::SingleQuoted;
+        }
+        if scalar_analysis.value.is_empty()
+            && (emitter.flow_level != 0 || emitter.simple_key_context)
+        {
+            style = ScalarStyle::SingleQuoted;
+        }
+        if no_tag && !*plain_implicit {
+            style = ScalarStyle::SingleQuoted;
+        }
+    }
+    if style == ScalarStyle::SingleQuoted && !scalar_analysis.single_quoted_allowed {
+        style = ScalarStyle::DoubleQuoted;
+    }
+    if (style == ScalarStyle::Literal || style == ScalarStyle::Folded)
+        && (!scalar_analysis.block_allowed || emitter.flow_level != 0 || emitter.simple_key_context)
+    {
+        style = ScalarStyle::DoubleQuoted;
+    }
+    if no_tag && !*quoted_implicit && style != ScalarStyle::Plain {
+        *tag_analysis = Some(TagAnalysis {
+            handle: "!",
+            suffix: "",
+        });
+    }
+    scalar_analysis.style = style;
+    Ok(())
 }
 
 fn yaml_emitter_process_anchor(

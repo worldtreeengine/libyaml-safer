@@ -233,14 +233,12 @@ fn yaml_parser_load_alias(
     document: &mut Document,
     ctx: &[i32],
 ) -> Result<(), ComposerError> {
-    let anchor: &str = if let EventData::Alias { anchor } = &event.data {
-        anchor
-    } else {
+    let EventData::Alias { anchor } = &event.data else {
         unreachable!()
     };
 
     for alias_data in &parser.aliases {
-        if alias_data.anchor == anchor {
+        if alias_data.anchor == *anchor {
             return yaml_parser_load_node_add(document, ctx, alias_data.index);
         }
     }

@@ -167,22 +167,21 @@ fn yaml_emitter_dump_scalar(
     let plain_implicit = node.tag.as_deref() == Some(DEFAULT_SCALAR_TAG);
     let quoted_implicit = node.tag.as_deref() == Some(DEFAULT_SCALAR_TAG); // TODO: Why compare twice?! (even the C code does this)
 
-    if let NodeData::Scalar { value, style } = node.data {
-        let event = Event {
-            data: EventData::Scalar {
-                anchor,
-                tag: node.tag,
-                value,
-                plain_implicit,
-                quoted_implicit,
-                style,
-            },
-            ..Default::default()
-        };
-        yaml_emitter_emit(emitter, event)
-    } else {
+    let NodeData::Scalar { value, style } = node.data else {
         unreachable!()
-    }
+    };
+    let event = Event {
+        data: EventData::Scalar {
+            anchor,
+            tag: node.tag,
+            value,
+            plain_implicit,
+            quoted_implicit,
+            style,
+        },
+        ..Default::default()
+    };
+    yaml_emitter_emit(emitter, event)
 }
 
 fn yaml_emitter_dump_sequence(
@@ -193,29 +192,28 @@ fn yaml_emitter_dump_sequence(
 ) -> Result<(), EmitterError> {
     let implicit = node.tag.as_deref() == Some(DEFAULT_SEQUENCE_TAG);
 
-    if let NodeData::Sequence { items, style } = node.data {
-        let event = Event {
-            data: EventData::SequenceStart {
-                anchor,
-                tag: node.tag,
-                implicit,
-                style,
-            },
-            ..Default::default()
-        };
-
-        yaml_emitter_emit(emitter, event)?;
-        for item in items {
-            yaml_emitter_dump_node(emitter, document, item)?;
-        }
-        let event = Event {
-            data: EventData::SequenceEnd,
-            ..Default::default()
-        };
-        yaml_emitter_emit(emitter, event)
-    } else {
+    let NodeData::Sequence { items, style } = node.data else {
         unreachable!()
+    };
+    let event = Event {
+        data: EventData::SequenceStart {
+            anchor,
+            tag: node.tag,
+            implicit,
+            style,
+        },
+        ..Default::default()
+    };
+
+    yaml_emitter_emit(emitter, event)?;
+    for item in items {
+        yaml_emitter_dump_node(emitter, document, item)?;
     }
+    let event = Event {
+        data: EventData::SequenceEnd,
+        ..Default::default()
+    };
+    yaml_emitter_emit(emitter, event)
 }
 
 fn yaml_emitter_dump_mapping(
@@ -226,28 +224,27 @@ fn yaml_emitter_dump_mapping(
 ) -> Result<(), EmitterError> {
     let implicit = node.tag.as_deref() == Some(DEFAULT_MAPPING_TAG);
 
-    if let NodeData::Mapping { pairs, style } = node.data {
-        let event = Event {
-            data: EventData::MappingStart {
-                anchor,
-                tag: node.tag,
-                implicit,
-                style,
-            },
-            ..Default::default()
-        };
-
-        yaml_emitter_emit(emitter, event)?;
-        for pair in pairs {
-            yaml_emitter_dump_node(emitter, document, pair.key)?;
-            yaml_emitter_dump_node(emitter, document, pair.value)?;
-        }
-        let event = Event {
-            data: EventData::MappingEnd,
-            ..Default::default()
-        };
-        yaml_emitter_emit(emitter, event)
-    } else {
+    let NodeData::Mapping { pairs, style } = node.data else {
         unreachable!()
+    };
+    let event = Event {
+        data: EventData::MappingStart {
+            anchor,
+            tag: node.tag,
+            implicit,
+            style,
+        },
+        ..Default::default()
+    };
+
+    yaml_emitter_emit(emitter, event)?;
+    for pair in pairs {
+        yaml_emitter_dump_node(emitter, document, pair.key)?;
+        yaml_emitter_dump_node(emitter, document, pair.value)?;
     }
+    let event = Event {
+        data: EventData::MappingEnd,
+        ..Default::default()
+    };
+    yaml_emitter_emit(emitter, event)
 }
