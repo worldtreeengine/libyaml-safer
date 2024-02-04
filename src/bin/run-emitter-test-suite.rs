@@ -15,11 +15,7 @@
     clippy::manual_strip
 )]
 
-use libyaml_safer::{
-    yaml_emitter_emit, yaml_emitter_new, yaml_emitter_reset, yaml_emitter_set_canonical,
-    yaml_emitter_set_output, yaml_emitter_set_unicode, Encoding, Event, MappingStyle, ScalarStyle,
-    SequenceStyle,
-};
+use libyaml_safer::{Emitter, Encoding, Event, MappingStyle, ScalarStyle, SequenceStyle};
 use std::env;
 use std::error::Error;
 use std::fs::File;
@@ -30,11 +26,11 @@ pub(crate) fn test_main(
     stdin: &mut dyn Read,
     stdout: &mut dyn Write,
 ) -> Result<(), Box<dyn Error>> {
-    let mut emitter = yaml_emitter_new();
+    let mut emitter = Emitter::new();
 
-    yaml_emitter_set_output(&mut emitter, stdout);
-    yaml_emitter_set_canonical(&mut emitter, false);
-    yaml_emitter_set_unicode(&mut emitter, false);
+    emitter.set_output(stdout);
+    emitter.set_canonical(false);
+    emitter.set_unicode(false);
 
     let mut buf = std::io::BufReader::new(stdin);
     let mut line_buffer = String::with_capacity(1024);
@@ -94,12 +90,11 @@ pub(crate) fn test_main(
             break Err(format!("Unknown event: '{line}'").into());
         };
 
-        if let Err(err) = yaml_emitter_emit(&mut emitter, event) {
+        if let Err(err) = emitter.emit(event) {
             break Err(err.into());
         }
     };
 
-    yaml_emitter_reset(&mut emitter);
     result
 }
 

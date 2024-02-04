@@ -3,11 +3,10 @@ use std::mem::take;
 use alloc::string::String;
 use alloc::vec;
 
-use crate::{
-    yaml_emitter_emit, EmitterError, Encoding, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG,
-    DEFAULT_SEQUENCE_TAG,
-};
 use crate::{Anchors, Document, Emitter, Event, EventData, Node, NodeData};
+use crate::{
+    EmitterError, Encoding, DEFAULT_MAPPING_TAG, DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
+};
 
 /// Start a YAML stream.
 ///
@@ -21,7 +20,7 @@ pub fn yaml_emitter_open(emitter: &mut Emitter) -> Result<(), EmitterError> {
         },
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, event)?;
+    emitter.emit(event)?;
     emitter.opened = true;
     Ok(())
 }
@@ -39,7 +38,7 @@ pub fn yaml_emitter_close(emitter: &mut Emitter) -> Result<(), EmitterError> {
         data: EventData::StreamEnd,
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, event)?;
+    emitter.emit(event)?;
     emitter.closed = true;
     Ok(())
 }
@@ -75,7 +74,7 @@ pub fn yaml_emitter_dump(
             },
             ..Default::default()
         };
-        yaml_emitter_emit(emitter, event)?;
+        emitter.emit(event)?;
         yaml_emitter_anchor_node(emitter, &document, 1);
         yaml_emitter_dump_node(emitter, &mut document, 1)?;
         let event = Event {
@@ -84,7 +83,7 @@ pub fn yaml_emitter_dump(
             },
             ..Default::default()
         };
-        yaml_emitter_emit(emitter, event)?;
+        emitter.emit(event)?;
     }
 
     yaml_emitter_reset_anchors(emitter);
@@ -162,7 +161,7 @@ fn yaml_emitter_dump_alias(emitter: &mut Emitter, anchor: String) -> Result<(), 
         data: EventData::Alias { anchor },
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, event)
+    emitter.emit(event)
 }
 
 fn yaml_emitter_dump_scalar(
@@ -187,7 +186,7 @@ fn yaml_emitter_dump_scalar(
         },
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, event)
+    emitter.emit(event)
 }
 
 fn yaml_emitter_dump_sequence(
@@ -211,7 +210,7 @@ fn yaml_emitter_dump_sequence(
         ..Default::default()
     };
 
-    yaml_emitter_emit(emitter, event)?;
+    emitter.emit(event)?;
     for item in items {
         yaml_emitter_dump_node(emitter, document, item)?;
     }
@@ -219,7 +218,7 @@ fn yaml_emitter_dump_sequence(
         data: EventData::SequenceEnd,
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, event)
+    emitter.emit(event)
 }
 
 fn yaml_emitter_dump_mapping(
@@ -243,7 +242,7 @@ fn yaml_emitter_dump_mapping(
         ..Default::default()
     };
 
-    yaml_emitter_emit(emitter, event)?;
+    emitter.emit(event)?;
     for pair in pairs {
         yaml_emitter_dump_node(emitter, document, pair.key)?;
         yaml_emitter_dump_node(emitter, document, pair.value)?;
@@ -252,5 +251,5 @@ fn yaml_emitter_dump_mapping(
         data: EventData::MappingEnd,
         ..Default::default()
     };
-    yaml_emitter_emit(emitter, event)
+    emitter.emit(event)
 }

@@ -285,14 +285,14 @@ foo: bar
 
     #[test]
     fn integration_hs5t() {
-        let mut emitter = yaml_emitter_new();
+        let mut emitter = Emitter::new();
         let mut output = Vec::new();
-        yaml_emitter_set_output_string(&mut emitter, &mut output);
+        emitter.set_output_string(&mut output);
 
         let event = Event::stream_start(Encoding::Utf8);
-        yaml_emitter_emit(&mut emitter, event).unwrap();
+        emitter.emit(event).unwrap();
         let event = Event::document_start(None, &[], true);
-        yaml_emitter_emit(&mut emitter, event).unwrap();
+        emitter.emit(event).unwrap();
         let event = Event::scalar(
             None,
             None,
@@ -301,11 +301,11 @@ foo: bar
             true,
             ScalarStyle::Plain,
         );
-        yaml_emitter_emit(&mut emitter, event).unwrap();
+        emitter.emit(event).unwrap();
         let event = Event::document_end(true);
-        yaml_emitter_emit(&mut emitter, event).unwrap();
+        emitter.emit(event).unwrap();
         let event = Event::stream_end();
-        yaml_emitter_emit(&mut emitter, event).unwrap();
+        emitter.emit(event).unwrap();
 
         assert_eq!(
             core::str::from_utf8(&output),

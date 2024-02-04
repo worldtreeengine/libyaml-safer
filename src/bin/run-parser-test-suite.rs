@@ -89,7 +89,7 @@ pub(crate) fn test_main(
                     ScalarStyle::Folded => b" >",
                     _ => process::abort(),
                 });
-                print_escaped(stdout, &value);
+                print_escaped(stdout, value);
                 _ = writeln!(stdout);
             }
             EventData::SequenceStart { anchor, tag, .. } => {
