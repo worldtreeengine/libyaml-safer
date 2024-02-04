@@ -516,10 +516,10 @@ impl<'w> Emitter<'w> {
             ];
             let mut implicit = *implicit;
             if let Some(version_directive) = version_directive {
-                self.analyze_version_directive(*version_directive)?;
+                Self::analyze_version_directive(*version_directive)?;
             }
             for tag_directive in tag_directives {
-                self.analyze_tag_directive(tag_directive)?;
+                Self::analyze_tag_directive(tag_directive)?;
                 self.append_tag_directive(tag_directive.clone(), false)?;
             }
             for tag_directive in default_tag_directives {
@@ -552,7 +552,7 @@ impl<'w> Emitter<'w> {
                     self.write_indent()?;
                 }
             }
-            if self.check_empty_document() {
+            if Self::check_empty_document() {
                 implicit = false;
             }
             if !implicit {
@@ -866,7 +866,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn check_empty_document(&self) -> bool {
+    fn check_empty_document() -> bool {
         false
     }
 
@@ -1038,10 +1038,7 @@ impl<'w> Emitter<'w> {
         }
     }
 
-    fn analyze_version_directive(
-        &mut self,
-        version_directive: VersionDirective,
-    ) -> Result<(), EmitterError> {
+    fn analyze_version_directive(version_directive: VersionDirective) -> Result<(), EmitterError> {
         if version_directive.major != 1
             || version_directive.minor != 1 && version_directive.minor != 2
         {
@@ -1050,7 +1047,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn analyze_tag_directive(&mut self, tag_directive: &TagDirective) -> Result<(), EmitterError> {
+    fn analyze_tag_directive(tag_directive: &TagDirective) -> Result<(), EmitterError> {
         if tag_directive.handle.is_empty() {
             return Self::set_emitter_error("tag handle must not be empty");
         }
@@ -1078,11 +1075,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn analyze_anchor<'a>(
-        &mut self,
-        anchor: &'a str,
-        alias: bool,
-    ) -> Result<AnchorAnalysis<'a>, EmitterError> {
+    fn analyze_anchor(anchor: &str, alias: bool) -> Result<AnchorAnalysis<'_>, EmitterError> {
         if anchor.is_empty() {
             Self::set_emitter_error(if alias {
                 "alias value must not be empty"
@@ -1105,7 +1098,6 @@ impl<'w> Emitter<'w> {
     }
 
     fn analyze_tag<'a>(
-        &mut self,
         tag: &'a str,
         tag_directives: &'a [TagDirective],
     ) -> Result<TagAnalysis<'a>, EmitterError> {
@@ -1300,7 +1292,7 @@ impl<'w> Emitter<'w> {
 
         match &event.data {
             EventData::Alias { anchor } => {
-                analysis.anchor = Some(self.analyze_anchor(anchor, true)?);
+                analysis.anchor = Some(Self::analyze_anchor(anchor, true)?);
             }
             EventData::Scalar {
                 anchor,
@@ -1312,10 +1304,11 @@ impl<'w> Emitter<'w> {
             } => {
                 let (plain_implicit, quoted_implicit) = (*plain_implicit, *quoted_implicit);
                 if let Some(anchor) = anchor {
-                    analysis.anchor = Some(self.analyze_anchor(anchor, false)?);
+                    analysis.anchor = Some(Self::analyze_anchor(anchor, false)?);
                 }
                 if tag.is_some() && (self.canonical || !plain_implicit && !quoted_implicit) {
-                    analysis.tag = Some(self.analyze_tag(tag.as_deref().unwrap(), tag_directives)?);
+                    analysis.tag =
+                        Some(Self::analyze_tag(tag.as_deref().unwrap(), tag_directives)?);
                 }
                 analysis.scalar = Some(self.analyze_scalar(value)?);
             }
@@ -1326,10 +1319,11 @@ impl<'w> Emitter<'w> {
                 ..
             } => {
                 if let Some(anchor) = anchor {
-                    analysis.anchor = Some(self.analyze_anchor(anchor, false)?);
+                    analysis.anchor = Some(Self::analyze_anchor(anchor, false)?);
                 }
                 if tag.is_some() && (self.canonical || !*implicit) {
-                    analysis.tag = Some(self.analyze_tag(tag.as_deref().unwrap(), tag_directives)?);
+                    analysis.tag =
+                        Some(Self::analyze_tag(tag.as_deref().unwrap(), tag_directives)?);
                 }
             }
             EventData::MappingStart {
@@ -1339,10 +1333,11 @@ impl<'w> Emitter<'w> {
                 ..
             } => {
                 if let Some(anchor) = anchor {
-                    analysis.anchor = Some(self.analyze_anchor(anchor, false)?);
+                    analysis.anchor = Some(Self::analyze_anchor(anchor, false)?);
                 }
                 if tag.is_some() && (self.canonical || !*implicit) {
-                    analysis.tag = Some(self.analyze_tag(tag.as_deref().unwrap(), tag_directives)?);
+                    analysis.tag =
+                        Some(Self::analyze_tag(tag.as_deref().unwrap(), tag_directives)?);
                 }
             }
             _ => {}
