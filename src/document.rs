@@ -1,6 +1,6 @@
 use crate::{
-    AliasData, Anchors, ComposerError, Emitter, EmitterError, Event, EventData, MappingStyle, Mark,
-    Parser, ScalarStyle, SequenceStyle, TagDirective, VersionDirective, DEFAULT_MAPPING_TAG,
+    AliasData, Anchors, Emitter, Error, Event, EventData, MappingStyle, Mark, Parser, Result,
+    ScalarStyle, SequenceStyle, TagDirective, VersionDirective, DEFAULT_MAPPING_TAG,
     DEFAULT_SCALAR_TAG, DEFAULT_SEQUENCE_TAG,
 };
 
@@ -249,7 +249,7 @@ impl Document {
     ///
     /// An application must not alternate the calls of [`Document::load()`] with
     /// the calls of [`Parser::parse()`]. Doing this will break the parser.
-    pub fn load(parser: &mut Parser) -> Result<Document, ComposerError> {
+    pub fn load(parser: &mut Parser) -> Result<Document> {
         let mut document = Document::new(None, &[], false, false);
         document.nodes.reserve(16);
 
@@ -262,14 +262,14 @@ impl Document {
                 Ok(_) => panic!("expected stream start"),
                 Err(err) => {
                     parser.delete_aliases();
-                    return Err(err.into());
+                    return Err(err);
                 }
             }
         }
         if parser.scanner.stream_end_produced {
             return Ok(document);
         }
-        let err: ComposerError;
+        let err: Error;
         match parser.parse() {
             Ok(event) => {
                 if let EventData::StreamEnd = &event.data {
@@ -284,37 +284,13 @@ impl Document {
                     Err(e) => err = e,
                 }
             }
-            Err(e) => err = e.into(),
+            Err(e) => err = e,
         }
         parser.delete_aliases();
         Err(err)
     }
 
-    fn set_composer_error<T>(
-        problem: &'static str,
-        problem_mark: Mark,
-    ) -> Result<T, ComposerError> {
-        Err(ComposerError::Problem {
-            problem,
-            mark: problem_mark,
-        })
-    }
-
-    fn set_composer_error_context<T>(
-        context: &'static str,
-        context_mark: Mark,
-        problem: &'static str,
-        problem_mark: Mark,
-    ) -> Result<T, ComposerError> {
-        Err(ComposerError::ProblemWithContext {
-            context,
-            context_mark,
-            problem,
-            mark: problem_mark,
-        })
-    }
-
-    fn load_document(&mut self, parser: &mut Parser, event: Event) -> Result<(), ComposerError> {
+    fn load_document(&mut self, parser: &mut Parser, event: Event) -> Result<()> {
         let mut ctx = vec![];
         if let EventData::DocumentStart {
             version_directive,
@@ -338,7 +314,7 @@ impl Document {
         }
     }
 
-    fn load_nodes(&mut self, parser: &mut Parser, ctx: &mut Vec<i32>) -> Result<(), ComposerError> {
+    fn load_nodes(&mut self, parser: &mut Parser, ctx: &mut Vec<i32>) -> Result<()> {
         let end_implicit;
         let end_mark;
 
@@ -383,7 +359,7 @@ impl Document {
         parser: &mut Parser,
         index: i32,
         anchor: Option<String>,
-    ) -> Result<(), ComposerError> {
+    ) -> Result<()> {
         let Some(anchor) = anchor else {
             return Ok(());
         };
@@ -394,19 +370,19 @@ impl Document {
         };
         for alias_data in &parser.aliases {
             if alias_data.anchor == data.anchor {
-                return Self::set_composer_error_context(
+                return Err(Error::composer(
                     "found duplicate anchor; first occurrence",
                     alias_data.mark,
                     "second occurrence",
                     data.mark,
-                );
+                ));
             }
         }
         parser.aliases.push(data);
         Ok(())
     }
 
-    fn load_node_add(&mut self, ctx: &[i32], index: i32) -> Result<(), ComposerError> {
+    fn load_node_add(&mut self, ctx: &[i32], index: i32) -> Result<()> {
         if ctx.is_empty() {
             return Ok(());
         }
@@ -439,12 +415,7 @@ impl Document {
         Ok(())
     }
 
-    fn load_alias(
-        &mut self,
-        parser: &mut Parser,
-        event: Event,
-        ctx: &[i32],
-    ) -> Result<(), ComposerError> {
+    fn load_alias(&mut self, parser: &mut Parser, event: Event, ctx: &[i32]) -> Result<()> {
         let EventData::Alias { anchor } = &event.data else {
             unreachable!()
         };
@@ -455,15 +426,15 @@ impl Document {
             }
         }
 
-        Self::set_composer_error("found undefined alias", event.start_mark)
+        Err(Error::composer(
+            "",
+            Mark::default(),
+            "found undefined alias",
+            event.start_mark,
+        ))
     }
 
-    fn load_scalar(
-        &mut self,
-        parser: &mut Parser,
-        event: Event,
-        ctx: &[i32],
-    ) -> Result<(), ComposerError> {
+    fn load_scalar(&mut self, parser: &mut Parser, event: Event, ctx: &[i32]) -> Result<()> {
         let EventData::Scalar {
             mut tag,
             value,
@@ -495,7 +466,7 @@ impl Document {
         parser: &mut Parser,
         event: Event,
         ctx: &mut Vec<i32>,
-    ) -> Result<(), ComposerError> {
+    ) -> Result<()> {
         let EventData::SequenceStart {
             anchor,
             mut tag,
@@ -530,7 +501,7 @@ impl Document {
         Ok(())
     }
 
-    fn load_sequence_end(&mut self, event: Event, ctx: &mut Vec<i32>) -> Result<(), ComposerError> {
+    fn load_sequence_end(&mut self, event: Event, ctx: &mut Vec<i32>) -> Result<()> {
         assert!(!ctx.is_empty());
         let index: i32 = *ctx.last().unwrap();
         assert!(matches!(
@@ -547,7 +518,7 @@ impl Document {
         parser: &mut Parser,
         event: Event,
         ctx: &mut Vec<i32>,
-    ) -> Result<(), ComposerError> {
+    ) -> Result<()> {
         let EventData::MappingStart {
             anchor,
             mut tag,
@@ -580,7 +551,7 @@ impl Document {
         Ok(())
     }
 
-    fn load_mapping_end(&mut self, event: Event, ctx: &mut Vec<i32>) -> Result<(), ComposerError> {
+    fn load_mapping_end(&mut self, event: Event, ctx: &mut Vec<i32>) -> Result<()> {
         assert!(!ctx.is_empty());
         let index: i32 = *ctx.last().unwrap();
         assert!(matches!(
@@ -596,7 +567,7 @@ impl Document {
     ///
     /// The document object may be generated using the [`Document::load()`]
     /// function or the [`Document::new()`] function.
-    pub fn dump(mut self, emitter: &mut Emitter) -> Result<(), EmitterError> {
+    pub fn dump(mut self, emitter: &mut Emitter) -> Result<()> {
         if !emitter.opened {
             if let Err(err) = emitter.open() {
                 emitter.reset_anchors();
@@ -651,7 +622,7 @@ impl Document {
         }
     }
 
-    fn dump_node(&mut self, emitter: &mut Emitter, index: i32) -> Result<(), EmitterError> {
+    fn dump_node(&mut self, emitter: &mut Emitter, index: i32) -> Result<()> {
         let node = &mut self.nodes[index as usize - 1];
         let anchor_id: i32 = emitter.anchors[index as usize - 1].anchor;
         let mut anchor: Option<String> = None;
@@ -672,16 +643,12 @@ impl Document {
         }
     }
 
-    fn dump_alias(emitter: &mut Emitter, anchor: String) -> Result<(), EmitterError> {
+    fn dump_alias(emitter: &mut Emitter, anchor: String) -> Result<()> {
         let event = Event::new(EventData::Alias { anchor });
         emitter.emit(event)
     }
 
-    fn dump_scalar(
-        emitter: &mut Emitter,
-        node: Node,
-        anchor: Option<String>,
-    ) -> Result<(), EmitterError> {
+    fn dump_scalar(emitter: &mut Emitter, node: Node, anchor: Option<String>) -> Result<()> {
         let plain_implicit = node.tag.as_deref() == Some(DEFAULT_SCALAR_TAG);
         let quoted_implicit = node.tag.as_deref() == Some(DEFAULT_SCALAR_TAG); // TODO: Why compare twice?! (even the C code does this)
 
@@ -704,7 +671,7 @@ impl Document {
         emitter: &mut Emitter,
         node: Node,
         anchor: Option<String>,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         let implicit = node.tag.as_deref() == Some(DEFAULT_SEQUENCE_TAG);
 
         let NodeData::Sequence { items, style } = node.data else {
@@ -730,7 +697,7 @@ impl Document {
         emitter: &mut Emitter,
         node: Node,
         anchor: Option<String>,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         let implicit = node.tag.as_deref() == Some(DEFAULT_MAPPING_TAG);
 
         let NodeData::Mapping { pairs, style } = node.data else {

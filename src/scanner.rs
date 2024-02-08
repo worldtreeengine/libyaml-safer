@@ -5,8 +5,7 @@ use alloc::string::String;
 use crate::macros::{is_blankz, is_break};
 use crate::reader::yaml_parser_update_buffer;
 use crate::{
-    Encoding, Mark, ReaderError, ScalarStyle, ScannerError, SimpleKey, Token, TokenData,
-    INPUT_BUFFER_SIZE,
+    Encoding, Error, Mark, Result, ScalarStyle, SimpleKey, Token, TokenData, INPUT_BUFFER_SIZE,
 };
 
 const MAX_NUMBER_LENGTH: u64 = 9_u64;
@@ -92,7 +91,7 @@ impl<'r> Scanner<'r> {
         self.encoding = encoding;
     }
 
-    fn cache(&mut self, length: usize) -> Result<(), ReaderError> {
+    fn cache(&mut self, length: usize) -> Result<()> {
         if self.buffer.len() >= length {
             Ok(())
         } else {
@@ -170,7 +169,7 @@ impl<'r> Scanner<'r> {
     /// corresponding to the input stream. The initial token has the type
     /// [`TokenData::StreamStart`] while the ending token has the type
     /// [`TokenData::StreamEnd`].
-    pub fn scan(&mut self) -> Result<Token, ScannerError> {
+    pub fn scan(&mut self) -> Result<Token> {
         if self.stream_end_produced {
             return Ok(Token {
                 data: TokenData::StreamEnd,
@@ -194,7 +193,7 @@ impl<'r> Scanner<'r> {
     }
 
     /// Equivalent of the libyaml `PEEK_TOKEN` macro, used by the parser.
-    pub(crate) fn peek(&mut self) -> Result<&Token, ScannerError> {
+    pub(crate) fn peek(&mut self) -> Result<&Token> {
         if self.token_available {
             return Ok(self
                 .tokens
@@ -213,7 +212,7 @@ impl<'r> Scanner<'r> {
     }
 
     /// Equivalent of the libyaml `PEEK_TOKEN` macro, used by the parser.
-    pub(crate) fn peek_mut(&mut self) -> Result<&mut Token, ScannerError> {
+    pub(crate) fn peek_mut(&mut self) -> Result<&mut Token> {
         if self.token_available {
             return Ok(self
                 .tokens
@@ -250,16 +249,11 @@ impl<'r> Scanner<'r> {
         context: &'static str,
         context_mark: Mark,
         problem: &'static str,
-    ) -> Result<T, ScannerError> {
-        Err(ScannerError::Problem {
-            context,
-            context_mark,
-            problem,
-            problem_mark: self.mark,
-        })
+    ) -> Result<T> {
+        Err(Error::scanner(context, context_mark, problem, self.mark))
     }
 
-    pub(crate) fn fetch_more_tokens(&mut self) -> Result<(), ScannerError> {
+    pub(crate) fn fetch_more_tokens(&mut self) -> Result<()> {
         let mut need_more_tokens;
         loop {
             need_more_tokens = false;
@@ -283,7 +277,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_next_token(&mut self) -> Result<(), ScannerError> {
+    fn fetch_next_token(&mut self) -> Result<()> {
         self.cache(1)?;
         if !self.stream_start_produced {
             self.fetch_stream_start();
@@ -394,7 +388,7 @@ impl<'r> Scanner<'r> {
         )
     }
 
-    fn stale_simple_keys(&mut self) -> Result<(), ScannerError> {
+    fn stale_simple_keys(&mut self) -> Result<()> {
         for simple_key in &mut self.simple_keys {
             let mark = simple_key.mark;
             if simple_key.possible
@@ -414,7 +408,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn save_simple_key(&mut self) -> Result<(), ScannerError> {
+    fn save_simple_key(&mut self) -> Result<()> {
         let required = self.flow_level == 0 && self.indent as u64 == self.mark.column;
         if self.simple_key_allowed {
             let simple_key = SimpleKey {
@@ -429,7 +423,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn remove_simple_key(&mut self) -> Result<(), ScannerError> {
+    fn remove_simple_key(&mut self) -> Result<()> {
         let simple_key: &mut SimpleKey = self.simple_keys.last_mut().unwrap();
         if simple_key.possible {
             let mark = simple_key.mark;
@@ -445,7 +439,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn increase_flow_level(&mut self) -> Result<(), ScannerError> {
+    fn increase_flow_level(&mut self) -> Result<()> {
         let empty_simple_key = SimpleKey {
             possible: false,
             required: false,
@@ -472,13 +466,7 @@ impl<'r> Scanner<'r> {
         }
     }
 
-    fn roll_indent(
-        &mut self,
-        column: i64,
-        number: i64,
-        data: TokenData,
-        mark: Mark,
-    ) -> Result<(), ScannerError> {
+    fn roll_indent(&mut self, column: i64, number: i64, data: TokenData, mark: Mark) -> Result<()> {
         if self.flow_level != 0 {
             return Ok(());
         }
@@ -541,7 +529,7 @@ impl<'r> Scanner<'r> {
         self.tokens.push_back(token);
     }
 
-    fn fetch_stream_end(&mut self) -> Result<(), ScannerError> {
+    fn fetch_stream_end(&mut self) -> Result<()> {
         if self.mark.column != 0_u64 {
             self.mark.column = 0_u64;
             self.mark.line += 1;
@@ -558,7 +546,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_directive(&mut self) -> Result<(), ScannerError> {
+    fn fetch_directive(&mut self) -> Result<()> {
         self.unroll_indent(-1_i64);
         self.remove_simple_key()?;
         self.simple_key_allowed = false;
@@ -567,7 +555,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_document_indicator(&mut self, data: TokenData) -> Result<(), ScannerError> {
+    fn fetch_document_indicator(&mut self, data: TokenData) -> Result<()> {
         self.unroll_indent(-1_i64);
         self.remove_simple_key()?;
         self.simple_key_allowed = false;
@@ -586,7 +574,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_flow_collection_start(&mut self, data: TokenData) -> Result<(), ScannerError> {
+    fn fetch_flow_collection_start(&mut self, data: TokenData) -> Result<()> {
         self.save_simple_key()?;
         self.increase_flow_level()?;
         self.simple_key_allowed = true;
@@ -602,7 +590,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_flow_collection_end(&mut self, data: TokenData) -> Result<(), ScannerError> {
+    fn fetch_flow_collection_end(&mut self, data: TokenData) -> Result<()> {
         self.remove_simple_key()?;
         self.decrease_flow_level();
         self.simple_key_allowed = false;
@@ -618,7 +606,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_flow_entry(&mut self) -> Result<(), ScannerError> {
+    fn fetch_flow_entry(&mut self) -> Result<()> {
         self.remove_simple_key()?;
         self.simple_key_allowed = true;
         let start_mark: Mark = self.mark;
@@ -633,7 +621,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_block_entry(&mut self) -> Result<(), ScannerError> {
+    fn fetch_block_entry(&mut self) -> Result<()> {
         if self.flow_level == 0 {
             if !self.simple_key_allowed {
                 return self.set_scanner_error(
@@ -663,7 +651,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_key(&mut self) -> Result<(), ScannerError> {
+    fn fetch_key(&mut self) -> Result<()> {
         if self.flow_level == 0 {
             if !self.simple_key_allowed {
                 return self.set_scanner_error(
@@ -693,7 +681,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_value(&mut self) -> Result<(), ScannerError> {
+    fn fetch_value(&mut self) -> Result<()> {
         let simple_key: &mut SimpleKey = self.simple_keys.last_mut().unwrap();
         if simple_key.possible {
             let token = Token {
@@ -746,7 +734,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_anchor(&mut self, fetch_alias_instead_of_anchor: bool) -> Result<(), ScannerError> {
+    fn fetch_anchor(&mut self, fetch_alias_instead_of_anchor: bool) -> Result<()> {
         self.save_simple_key()?;
         self.simple_key_allowed = false;
         let token = self.scan_anchor(fetch_alias_instead_of_anchor)?;
@@ -754,7 +742,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_tag(&mut self) -> Result<(), ScannerError> {
+    fn fetch_tag(&mut self) -> Result<()> {
         self.save_simple_key()?;
         self.simple_key_allowed = false;
         let token = self.scan_tag()?;
@@ -762,7 +750,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_block_scalar(&mut self, literal: bool) -> Result<(), ScannerError> {
+    fn fetch_block_scalar(&mut self, literal: bool) -> Result<()> {
         self.remove_simple_key()?;
         self.simple_key_allowed = true;
         let token = self.scan_block_scalar(literal)?;
@@ -770,7 +758,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_flow_scalar(&mut self, single: bool) -> Result<(), ScannerError> {
+    fn fetch_flow_scalar(&mut self, single: bool) -> Result<()> {
         self.save_simple_key()?;
         self.simple_key_allowed = false;
         let token = self.scan_flow_scalar(single)?;
@@ -778,7 +766,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn fetch_plain_scalar(&mut self) -> Result<(), ScannerError> {
+    fn fetch_plain_scalar(&mut self) -> Result<()> {
         self.save_simple_key()?;
         self.simple_key_allowed = false;
         let token = self.scan_plain_scalar()?;
@@ -786,7 +774,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn scan_to_next_token(&mut self) -> Result<(), ScannerError> {
+    fn scan_to_next_token(&mut self) -> Result<()> {
         loop {
             self.cache(1)?;
             if self.mark.column == 0 && IS_BOM!(self.buffer) {
@@ -817,7 +805,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn scan_directive(&mut self) -> Result<Token, ScannerError> {
+    fn scan_directive(&mut self) -> Result<Token> {
         let end_mark: Mark;
         let mut major: i32 = 0;
         let mut minor: i32 = 0;
@@ -882,7 +870,7 @@ impl<'r> Scanner<'r> {
         }
     }
 
-    fn scan_directive_name(&mut self, start_mark: Mark) -> Result<String, ScannerError> {
+    fn scan_directive_name(&mut self, start_mark: Mark) -> Result<String> {
         let mut string = String::new();
         self.cache(1)?;
 
@@ -916,7 +904,7 @@ impl<'r> Scanner<'r> {
         start_mark: Mark,
         major: &mut i32,
         minor: &mut i32,
-    ) -> Result<(), ScannerError> {
+    ) -> Result<()> {
         self.cache(1)?;
         while IS_BLANK!(self.buffer) {
             self.skip_char();
@@ -934,11 +922,7 @@ impl<'r> Scanner<'r> {
         self.scan_version_directive_number(start_mark, minor)
     }
 
-    fn scan_version_directive_number(
-        &mut self,
-        start_mark: Mark,
-        number: &mut i32,
-    ) -> Result<(), ScannerError> {
+    fn scan_version_directive_number(&mut self, start_mark: Mark, number: &mut i32) -> Result<()> {
         let mut value: i32 = 0;
         let mut length = 0;
         self.cache(1)?;
@@ -967,10 +951,7 @@ impl<'r> Scanner<'r> {
     }
 
     // Returns (handle, prefix)
-    fn scan_tag_directive_value(
-        &mut self,
-        start_mark: Mark,
-    ) -> Result<(String, String), ScannerError> {
+    fn scan_tag_directive_value(&mut self, start_mark: Mark) -> Result<(String, String)> {
         self.cache(1)?;
 
         loop {
@@ -1010,7 +991,7 @@ impl<'r> Scanner<'r> {
         }
     }
 
-    fn scan_anchor(&mut self, scan_alias_instead_of_anchor: bool) -> Result<Token, ScannerError> {
+    fn scan_anchor(&mut self, scan_alias_instead_of_anchor: bool) -> Result<Token> {
         let mut length: i32 = 0;
 
         let mut string = String::new();
@@ -1060,7 +1041,7 @@ impl<'r> Scanner<'r> {
         }
     }
 
-    fn scan_tag(&mut self) -> Result<Token, ScannerError> {
+    fn scan_tag(&mut self) -> Result<Token> {
         let mut handle;
         let mut suffix;
 
@@ -1115,11 +1096,7 @@ impl<'r> Scanner<'r> {
         })
     }
 
-    fn scan_tag_handle(
-        &mut self,
-        directive: bool,
-        start_mark: Mark,
-    ) -> Result<String, ScannerError> {
+    fn scan_tag_handle(&mut self, directive: bool, start_mark: Mark) -> Result<String> {
         let mut string = String::new();
         self.cache(1)?;
 
@@ -1162,7 +1139,7 @@ impl<'r> Scanner<'r> {
         directive: bool,
         head: Option<&str>,
         start_mark: Mark,
-    ) -> Result<String, ScannerError> {
+    ) -> Result<String> {
         let head = head.unwrap_or("");
         let mut length = head.len();
         let mut string = String::new();
@@ -1223,7 +1200,7 @@ impl<'r> Scanner<'r> {
         directive: bool,
         start_mark: Mark,
         string: &mut String,
-    ) -> Result<(), ScannerError> {
+    ) -> Result<()> {
         let mut width: i32 = 0;
         loop {
             self.cache(3)?;
@@ -1289,7 +1266,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn scan_block_scalar(&mut self, literal: bool) -> Result<Token, ScannerError> {
+    fn scan_block_scalar(&mut self, literal: bool) -> Result<Token> {
         let mut end_mark: Mark;
         let mut string = String::new();
         let mut leading_break = String::new();
@@ -1447,7 +1424,7 @@ impl<'r> Scanner<'r> {
         breaks: &mut String,
         start_mark: Mark,
         end_mark: &mut Mark,
-    ) -> Result<(), ScannerError> {
+    ) -> Result<()> {
         let mut max_indent: i32 = 0;
         *end_mark = self.mark;
         loop {
@@ -1485,7 +1462,7 @@ impl<'r> Scanner<'r> {
         Ok(())
     }
 
-    fn scan_flow_scalar(&mut self, single: bool) -> Result<Token, ScannerError> {
+    fn scan_flow_scalar(&mut self, single: bool) -> Result<Token> {
         let mut string = String::new();
         let mut leading_break = String::new();
         let mut trailing_breaks = String::new();
@@ -1718,7 +1695,7 @@ impl<'r> Scanner<'r> {
         })
     }
 
-    fn scan_plain_scalar(&mut self) -> Result<Token, ScannerError> {
+    fn scan_plain_scalar(&mut self) -> Result<Token> {
         let mut end_mark: Mark;
         let mut string = String::new();
         let mut leading_break = String::new();
@@ -1856,7 +1833,7 @@ impl<'r> Default for Scanner<'r> {
 }
 
 impl<'r> Iterator for Scanner<'r> {
-    type Item = Result<Token, ScannerError>;
+    type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.stream_end_produced {

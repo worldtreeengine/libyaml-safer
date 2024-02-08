@@ -2,27 +2,13 @@ use std::io::BufRead;
 
 use alloc::collections::VecDeque;
 
-use crate::{scanner::Scanner, Encoding, ReaderError};
-
-fn yaml_parser_set_reader_error<T>(
-    problem: &'static str,
-    offset: usize,
-    value: i32,
-) -> Result<T, ReaderError> {
-    Err(ReaderError::Problem {
-        problem,
-        offset,
-        value,
-    })
-}
+use crate::{scanner::Scanner, Encoding, Error, Result};
 
 const BOM_UTF8: [u8; 3] = [0xef, 0xbb, 0xbf];
 const BOM_UTF16LE: [u8; 2] = [0xff, 0xfe];
 const BOM_UTF16BE: [u8; 2] = [0xfe, 0xff];
 
-fn yaml_parser_determine_encoding(
-    reader: &mut dyn BufRead,
-) -> Result<Option<Encoding>, ReaderError> {
+fn yaml_parser_determine_encoding(reader: &mut dyn BufRead) -> Result<Option<Encoding>> {
     let initial_bytes = reader.fill_buf()?;
     if initial_bytes.is_empty() {
         return Ok(None);
@@ -35,7 +21,11 @@ fn yaml_parser_determine_encoding(
             if bom == BOM_UTF8 {
                 Ok(Some(Encoding::Utf8))
             } else {
-                Err(ReaderError::InvalidBom)
+                Err(Error::reader(
+                    "invalid byte order marker",
+                    0,
+                    i32::from_be_bytes([bom[0], bom[1], bom[2], 0]),
+                ))
             }
         }
         0xff | 0xfe => {
@@ -46,7 +36,11 @@ fn yaml_parser_determine_encoding(
             } else if bom == BOM_UTF16BE {
                 Ok(Some(Encoding::Utf16Be))
             } else {
-                Err(ReaderError::InvalidBom)
+                Err(Error::reader(
+                    "invalid byte order marker",
+                    0,
+                    i32::from_le_bytes([bom[0], bom[1], 0, 0]),
+                ))
             }
         }
         _ => Ok(Some(Encoding::Utf8)),
@@ -60,7 +54,7 @@ fn read_utf8_buffered(
     reader: &mut dyn BufRead,
     out: &mut VecDeque<char>,
     offset: &mut usize,
-) -> Result<bool, ReaderError> {
+) -> Result<bool> {
     let available = loop {
         match reader.fill_buf() {
             Ok([]) => return Ok(false),
@@ -96,9 +90,11 @@ fn read_utf8_buffered(
             }
 
             match err.error_len() {
-                Some(_invalid_len) => Err(ReaderError::InvalidUtf8 {
-                    value: available[valid_bytes],
-                }),
+                Some(_invalid_len) => Err(Error::reader(
+                    "invalid UTF-8",
+                    *offset,
+                    available[valid_bytes] as _,
+                )),
                 None => {
                     if valid_bytes != 0 {
                         // Some valid UTF-8 characters were present, and the
@@ -128,7 +124,7 @@ fn read_utf8_char_unbuffered(
     out: &mut VecDeque<char>,
     initial: u8,
     offset: &mut usize,
-) -> Result<(), ReaderError> {
+) -> Result<()> {
     let width = utf8_char_width(initial);
     let mut buffer = [0; 4];
     reader.read_exact(&mut buffer[..width])?;
@@ -143,7 +139,7 @@ fn read_utf8_char_unbuffered(
     } else {
         // Since we read the exact character width, the only
         // possible error here is invalid Unicode.
-        Err(ReaderError::InvalidUtf8 { value: buffer[0] })
+        Err(Error::reader("invalid UTF-8", *offset, buffer[0] as _))
     }
 }
 
@@ -151,7 +147,7 @@ fn read_utf16_buffered<const BIG_ENDIAN: bool>(
     reader: &mut dyn BufRead,
     out: &mut VecDeque<char>,
     offset: &mut usize,
-) -> Result<bool, ReaderError> {
+) -> Result<bool> {
     let available = loop {
         match reader.fill_buf() {
             Ok([]) => return Ok(false),
@@ -206,7 +202,7 @@ fn read_utf16_char_unbuffered<const BIG_ENDIAN: bool>(
     reader: &mut dyn BufRead,
     out: &mut VecDeque<char>,
     offset: &mut usize,
-) -> Result<(), ReaderError> {
+) -> Result<()> {
     let mut buffer = [0; 2];
     reader.read_exact(&mut buffer)?;
     let first = if BIG_ENDIAN {
@@ -229,9 +225,11 @@ fn read_utf16_char_unbuffered<const BIG_ENDIAN: bool>(
                 *offset += 4;
                 Ok(())
             }
-            Some(Err(err)) => Err(ReaderError::InvalidUtf16 {
-                value: err.unpaired_surrogate(),
-            }),
+            Some(Err(err)) => Err(Error::reader(
+                "invalid UTF-16",
+                *offset,
+                err.unpaired_surrogate() as _,
+            )),
             None => unreachable!(),
         }
     } else {
@@ -264,7 +262,7 @@ fn is_utf16_surrogate(value: u16) -> bool {
     matches!(value, 0xD800..=0xDFFF)
 }
 
-fn push_char(out: &mut VecDeque<char>, ch: char, offset: usize) -> Result<(), ReaderError> {
+fn push_char(out: &mut VecDeque<char>, ch: char, offset: usize) -> Result<()> {
     if !(ch == '\x09'
         || ch == '\x0A'
         || ch == '\x0D'
@@ -274,16 +272,17 @@ fn push_char(out: &mut VecDeque<char>, ch: char, offset: usize) -> Result<(), Re
         || ch >= '\u{E000}' && ch <= '\u{FFFD}'
         || ch >= '\u{10000}' && ch <= '\u{10FFFF}')
     {
-        return yaml_parser_set_reader_error("control characters are not allowed", offset, ch as _);
+        return Err(Error::reader(
+            "control characters are not allowed",
+            offset,
+            ch as _,
+        ));
     }
     out.push_back(ch);
     Ok(())
 }
 
-pub(crate) fn yaml_parser_update_buffer(
-    parser: &mut Scanner,
-    length: usize,
-) -> Result<(), ReaderError> {
+pub(crate) fn yaml_parser_update_buffer(parser: &mut Scanner, length: usize) -> Result<()> {
     let reader = parser.read_handler.as_deref_mut().expect("no read handler");
     if parser.buffer.len() >= length {
         return Ok(());
@@ -319,7 +318,7 @@ pub(crate) fn yaml_parser_update_buffer(
     }
 
     if parser.offset >= (!0_usize).wrapping_div(2_usize) {
-        return yaml_parser_set_reader_error("input is too long", parser.offset, -1);
+        return Err(Error::reader("input is too long", parser.offset, -1));
     }
     Ok(())
 }

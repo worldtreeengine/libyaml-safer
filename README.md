@@ -45,10 +45,6 @@ errors may be reported with reduced fidelity compared with libyaml (e.g., error
 messages may look slightly different), but the same inputs should generate the
 same general errors.
 
-This library introduces no new dependencies except for
-[`thiserror`](https://docs.rs/thiserror) for convenience. This dependency may go
-away in the future.
-
 ### Compatibility and interoperability
 
 While this library matches the behavior of libyaml, it is not intended as a

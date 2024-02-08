@@ -6,8 +6,8 @@ use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_breakz, is_printable, is_space,
 };
 use crate::{
-    Break, EmitterError, Encoding, Event, EventData, MappingStyle, ScalarStyle, SequenceStyle,
-    TagDirective, VersionDirective, WriterError, OUTPUT_BUFFER_SIZE,
+    Break, Encoding, Error, Event, EventData, MappingStyle, Result, ScalarStyle, SequenceStyle,
+    TagDirective, VersionDirective, OUTPUT_BUFFER_SIZE,
 };
 
 /// The emitter structure.
@@ -176,10 +176,6 @@ struct ScalarAnalysis<'a> {
 }
 
 impl<'w> Emitter<'w> {
-    fn set_emitter_error<T>(problem: &'static str) -> Result<T, EmitterError> {
-        Err(EmitterError::Problem(problem))
-    }
-
     /// Create an self.
     pub fn new() -> Emitter<'w> {
         Emitter {
@@ -224,7 +220,7 @@ impl<'w> Emitter<'w> {
     ///
     /// This function should be used before
     /// [`Document::dump()`](crate::Document::dump) is called.
-    pub fn open(&mut self) -> Result<(), EmitterError> {
+    pub fn open(&mut self) -> Result<()> {
         assert!(!self.opened);
         let event = Event::stream_start(Encoding::Any);
         self.emit(event)?;
@@ -236,7 +232,7 @@ impl<'w> Emitter<'w> {
     ///
     /// This function should be used after
     /// [`Document::dump()`](crate::Document::dump) is called.
-    pub fn close(&mut self) -> Result<(), EmitterError> {
+    pub fn close(&mut self) -> Result<()> {
         assert!(self.opened);
         if self.closed {
             return Ok(());
@@ -305,7 +301,7 @@ impl<'w> Emitter<'w> {
     /// [`Parser::parse()`](crate::Parser::parse) function. The emitter takes
     /// the responsibility for the event object and destroys its content after
     /// it is emitted. The event object is destroyed even if the function fails.
-    pub fn emit(&mut self, event: Event) -> Result<(), EmitterError> {
+    pub fn emit(&mut self, event: Event) -> Result<()> {
         self.events.push_back(event);
         while let Some(event) = self.needs_mode_events() {
             let tag_directives = core::mem::take(&mut self.tag_directives);
@@ -323,7 +319,7 @@ impl<'w> Emitter<'w> {
     }
 
     /// Equivalent of the libyaml `FLUSH` macro.
-    fn flush_if_needed(&mut self) -> Result<(), WriterError> {
+    fn flush_if_needed(&mut self) -> Result<()> {
         if self.buffer.len() < OUTPUT_BUFFER_SIZE - 5 {
             Ok(())
         } else {
@@ -332,7 +328,7 @@ impl<'w> Emitter<'w> {
     }
 
     /// Equivalent of the libyaml `PUT` macro.
-    fn put(&mut self, value: char) -> Result<(), WriterError> {
+    fn put(&mut self, value: char) -> Result<()> {
         self.flush_if_needed()?;
         self.buffer.push(value);
         self.column += 1;
@@ -340,7 +336,7 @@ impl<'w> Emitter<'w> {
     }
 
     /// Equivalent of the libyaml `PUT_BREAK` macro.
-    fn put_break(&mut self) -> Result<(), WriterError> {
+    fn put_break(&mut self) -> Result<()> {
         self.flush_if_needed()?;
         if self.line_break == Break::Cr {
             self.buffer.push('\r');
@@ -357,7 +353,7 @@ impl<'w> Emitter<'w> {
     /// Write UTF-8 charanters from `string` to `emitter` and increment
     /// `emitter.column` the appropriate number of times. It is assumed that the
     /// string does not contain line breaks!
-    fn write_str(&mut self, string: &str) -> Result<(), WriterError> {
+    fn write_str(&mut self, string: &str) -> Result<()> {
         if self.buffer.len() + string.len() > OUTPUT_BUFFER_SIZE {
             self.flush()?;
         }
@@ -376,7 +372,7 @@ impl<'w> Emitter<'w> {
     }
 
     /// Equivalent of the libyaml `WRITE` macro.
-    fn write_char(&mut self, ch: char) -> Result<(), WriterError> {
+    fn write_char(&mut self, ch: char) -> Result<()> {
         self.flush_if_needed()?;
         self.buffer.push(ch);
         self.column += 1;
@@ -384,7 +380,7 @@ impl<'w> Emitter<'w> {
     }
 
     /// Equivalent of the libyaml `WRITE_BREAK` macro.
-    fn write_break(&mut self, ch: char) -> Result<(), WriterError> {
+    fn write_break(&mut self, ch: char) -> Result<()> {
         self.flush_if_needed()?;
         if ch == '\n' {
             self.put_break()?;
@@ -437,17 +433,13 @@ impl<'w> Emitter<'w> {
         None
     }
 
-    fn append_tag_directive(
-        &mut self,
-        value: TagDirective,
-        allow_duplicates: bool,
-    ) -> Result<(), EmitterError> {
+    fn append_tag_directive(&mut self, value: TagDirective, allow_duplicates: bool) -> Result<()> {
         for tag_directive in &self.tag_directives {
             if value.handle == tag_directive.handle {
                 if allow_duplicates {
                     return Ok(());
                 }
-                return Self::set_emitter_error("duplicate %TAG directive");
+                return Err(Error::emitter("duplicate %TAG directive"));
             }
         }
         self.tag_directives.push(value);
@@ -463,11 +455,7 @@ impl<'w> Emitter<'w> {
         }
     }
 
-    fn state_machine<'a>(
-        &mut self,
-        event: &'a Event,
-        analysis: &mut Analysis<'a>,
-    ) -> Result<(), EmitterError> {
+    fn state_machine<'a>(&mut self, event: &'a Event, analysis: &mut Analysis<'a>) -> Result<()> {
         match self.state {
             EmitterState::StreamStart => self.emit_stream_start(event),
             EmitterState::FirstDocumentStart => self.emit_document_start(event, true),
@@ -500,11 +488,11 @@ impl<'w> Emitter<'w> {
             EmitterState::BlockMappingValue => {
                 self.emit_block_mapping_value(event, false, analysis)
             }
-            EmitterState::End => Self::set_emitter_error("expected nothing after STREAM-END"),
+            EmitterState::End => Err(Error::emitter("expected nothing after STREAM-END")),
         }
     }
 
-    fn emit_stream_start(&mut self, event: &Event) -> Result<(), EmitterError> {
+    fn emit_stream_start(&mut self, event: &Event) -> Result<()> {
         self.open_ended = 0;
         if let EventData::StreamStart { ref encoding } = event.data {
             if self.encoding == Encoding::Any {
@@ -536,10 +524,10 @@ impl<'w> Emitter<'w> {
             self.state = EmitterState::FirstDocumentStart;
             return Ok(());
         }
-        Self::set_emitter_error("expected STREAM-START")
+        Err(Error::emitter("expected STREAM-START"))
     }
 
-    fn emit_document_start(&mut self, event: &Event, first: bool) -> Result<(), EmitterError> {
+    fn emit_document_start(&mut self, event: &Event, first: bool) -> Result<()> {
         if let EventData::DocumentStart {
             version_directive,
             tag_directives,
@@ -619,19 +607,15 @@ impl<'w> Emitter<'w> {
             return Ok(());
         }
 
-        Self::set_emitter_error("expected DOCUMENT-START or STREAM-END")
+        Err(Error::emitter("expected DOCUMENT-START or STREAM-END"))
     }
 
-    fn emit_document_content(
-        &mut self,
-        event: &Event,
-        analysis: &mut Analysis,
-    ) -> Result<(), EmitterError> {
+    fn emit_document_content(&mut self, event: &Event, analysis: &mut Analysis) -> Result<()> {
         self.states.push(EmitterState::DocumentEnd);
         self.emit_node(event, true, false, false, false, analysis)
     }
 
-    fn emit_document_end(&mut self, event: &Event) -> Result<(), EmitterError> {
+    fn emit_document_end(&mut self, event: &Event) -> Result<()> {
         if let EventData::DocumentEnd { implicit } = &event.data {
             let implicit = *implicit;
             self.write_indent()?;
@@ -648,7 +632,7 @@ impl<'w> Emitter<'w> {
             return Ok(());
         }
 
-        Self::set_emitter_error("expected DOCUMENT-END")
+        Err(Error::emitter("expected DOCUMENT-END"))
     }
 
     fn emit_flow_sequence_item(
@@ -656,7 +640,7 @@ impl<'w> Emitter<'w> {
         event: &Event,
         first: bool,
         analysis: &mut Analysis,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         if first {
             self.write_indicator("[", true, true, false)?;
             self.increase_indent(true, false);
@@ -688,7 +672,7 @@ impl<'w> Emitter<'w> {
         event: &Event,
         first: bool,
         analysis: &mut Analysis,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         if first {
             self.write_indicator("{", true, true, false)?;
             self.increase_indent(true, false);
@@ -727,7 +711,7 @@ impl<'w> Emitter<'w> {
         event: &Event,
         simple: bool,
         analysis: &mut Analysis,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         if simple {
             self.write_indicator(":", false, false, false)?;
         } else {
@@ -745,7 +729,7 @@ impl<'w> Emitter<'w> {
         event: &Event,
         first: bool,
         analysis: &mut Analysis,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         if first {
             self.increase_indent(false, self.mapping_context && !self.indention);
         }
@@ -765,7 +749,7 @@ impl<'w> Emitter<'w> {
         event: &Event,
         first: bool,
         analysis: &mut Analysis,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         if first {
             self.increase_indent(false, false);
         }
@@ -790,7 +774,7 @@ impl<'w> Emitter<'w> {
         event: &Event,
         simple: bool,
         analysis: &mut Analysis,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         if simple {
             self.write_indicator(":", false, false, false)?;
         } else {
@@ -809,7 +793,7 @@ impl<'w> Emitter<'w> {
         mapping: bool,
         simple_key: bool,
         analysis: &mut Analysis,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         self.root_context = root;
         self.sequence_context = sequence;
         self.mapping_context = mapping;
@@ -820,17 +804,13 @@ impl<'w> Emitter<'w> {
             EventData::Scalar { .. } => self.emit_scalar(event, analysis),
             EventData::SequenceStart { .. } => self.emit_sequence_start(event, analysis),
             EventData::MappingStart { .. } => self.emit_mapping_start(event, analysis),
-            _ => {
-                Self::set_emitter_error("expected SCALAR, SEQUENCE-START, MAPPING-START, or ALIAS")
-            }
+            _ => Err(Error::emitter(
+                "expected SCALAR, SEQUENCE-START, MAPPING-START, or ALIAS",
+            )),
         }
     }
 
-    fn emit_alias(
-        &mut self,
-        _event: &Event,
-        analysis: &Option<AnchorAnalysis>,
-    ) -> Result<(), EmitterError> {
+    fn emit_alias(&mut self, _event: &Event, analysis: &Option<AnchorAnalysis>) -> Result<()> {
         self.process_anchor(analysis)?;
         if self.simple_key_context {
             self.put(' ')?;
@@ -839,7 +819,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn emit_scalar(&mut self, event: &Event, analysis: &mut Analysis) -> Result<(), EmitterError> {
+    fn emit_scalar(&mut self, event: &Event, analysis: &mut Analysis) -> Result<()> {
         let Analysis {
             anchor,
             tag,
@@ -859,11 +839,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn emit_sequence_start(
-        &mut self,
-        event: &Event,
-        analysis: &Analysis,
-    ) -> Result<(), EmitterError> {
+    fn emit_sequence_start(&mut self, event: &Event, analysis: &Analysis) -> Result<()> {
         let Analysis { anchor, tag, .. } = analysis;
         self.process_anchor(anchor)?;
         self.process_tag(tag)?;
@@ -884,11 +860,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn emit_mapping_start(
-        &mut self,
-        event: &Event,
-        analysis: &Analysis,
-    ) -> Result<(), EmitterError> {
+    fn emit_mapping_start(&mut self, event: &Event, analysis: &Analysis) -> Result<()> {
         let Analysis { anchor, tag, .. } = analysis;
         self.process_anchor(anchor)?;
         self.process_tag(tag)?;
@@ -980,7 +952,7 @@ impl<'w> Emitter<'w> {
         event: &Event,
         scalar_analysis: &mut ScalarAnalysis,
         tag_analysis: &mut Option<TagAnalysis>,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         let EventData::Scalar {
             plain_implicit,
             quoted_implicit,
@@ -994,7 +966,9 @@ impl<'w> Emitter<'w> {
         let mut style: ScalarStyle = *style;
         let no_tag = tag_analysis.is_none();
         if no_tag && !*plain_implicit && !*quoted_implicit {
-            Self::set_emitter_error("neither tag nor implicit flags are specified")?;
+            return Err(Error::emitter(
+                "neither tag nor implicit flags are specified",
+            ));
         }
         if style == ScalarStyle::Any {
             style = ScalarStyle::Plain;
@@ -1037,7 +1011,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn process_anchor(&mut self, analysis: &Option<AnchorAnalysis>) -> Result<(), EmitterError> {
+    fn process_anchor(&mut self, analysis: &Option<AnchorAnalysis>) -> Result<()> {
         let Some(analysis) = analysis.as_ref() else {
             return Ok(());
         };
@@ -1045,7 +1019,7 @@ impl<'w> Emitter<'w> {
         self.write_anchor(analysis.anchor)
     }
 
-    fn process_tag(&mut self, analysis: &Option<TagAnalysis>) -> Result<(), EmitterError> {
+    fn process_tag(&mut self, analysis: &Option<TagAnalysis>) -> Result<()> {
         let Some(analysis) = analysis.as_ref() else {
             return Ok(());
         };
@@ -1066,7 +1040,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn process_scalar(&mut self, analysis: &ScalarAnalysis) -> Result<(), EmitterError> {
+    fn process_scalar(&mut self, analysis: &ScalarAnalysis) -> Result<()> {
         match analysis.style {
             ScalarStyle::Plain => self.write_plain_scalar(analysis.value, !self.simple_key_context),
             ScalarStyle::SingleQuoted => {
@@ -1081,59 +1055,59 @@ impl<'w> Emitter<'w> {
         }
     }
 
-    fn analyze_version_directive(version_directive: VersionDirective) -> Result<(), EmitterError> {
+    fn analyze_version_directive(version_directive: VersionDirective) -> Result<()> {
         if version_directive.major != 1
             || version_directive.minor != 1 && version_directive.minor != 2
         {
-            return Self::set_emitter_error("incompatible %YAML directive");
+            return Err(Error::emitter("incompatible %YAML directive"));
         }
         Ok(())
     }
 
-    fn analyze_tag_directive(tag_directive: &TagDirective) -> Result<(), EmitterError> {
+    fn analyze_tag_directive(tag_directive: &TagDirective) -> Result<()> {
         if tag_directive.handle.is_empty() {
-            return Self::set_emitter_error("tag handle must not be empty");
+            return Err(Error::emitter("tag handle must not be empty"));
         }
         if !tag_directive.handle.starts_with('!') {
-            return Self::set_emitter_error("tag handle must start with '!'");
+            return Err(Error::emitter("tag handle must start with '!'"));
         }
         if !tag_directive.handle.ends_with('!') {
-            return Self::set_emitter_error("tag handle must end with '!'");
+            return Err(Error::emitter("tag handle must end with '!'"));
         }
         if tag_directive.handle.len() > 2 {
             let tag_content = &tag_directive.handle[1..tag_directive.handle.len() - 1];
             for ch in tag_content.chars() {
                 if !is_alpha(ch) {
-                    return Self::set_emitter_error(
+                    return Err(Error::emitter(
                         "tag handle must contain alphanumerical characters only",
-                    );
+                    ));
                 }
             }
         }
 
         if tag_directive.prefix.is_empty() {
-            return Self::set_emitter_error("tag prefix must not be empty");
+            return Err(Error::emitter("tag prefix must not be empty"));
         }
 
         Ok(())
     }
 
-    fn analyze_anchor(anchor: &str, alias: bool) -> Result<AnchorAnalysis<'_>, EmitterError> {
+    fn analyze_anchor(anchor: &str, alias: bool) -> Result<AnchorAnalysis<'_>> {
         if anchor.is_empty() {
-            Self::set_emitter_error(if alias {
+            return Err(Error::emitter(if alias {
                 "alias value must not be empty"
             } else {
                 "anchor value must not be empty"
-            })?;
+            }));
         }
 
         for ch in anchor.chars() {
             if !is_alpha(ch) {
-                Self::set_emitter_error(if alias {
+                return Err(Error::emitter(if alias {
                     "alias value must contain alphanumerical characters only"
                 } else {
                     "anchor value must contain alphanumerical characters only"
-                })?;
+                }));
             }
         }
 
@@ -1143,9 +1117,9 @@ impl<'w> Emitter<'w> {
     fn analyze_tag<'a>(
         tag: &'a str,
         tag_directives: &'a [TagDirective],
-    ) -> Result<TagAnalysis<'a>, EmitterError> {
+    ) -> Result<TagAnalysis<'a>> {
         if tag.is_empty() {
-            Self::set_emitter_error("tag value must not be empty")?;
+            return Err(Error::emitter("tag value must not be empty"));
         }
 
         let mut handle = "";
@@ -1163,7 +1137,7 @@ impl<'w> Emitter<'w> {
         Ok(TagAnalysis { handle, suffix })
     }
 
-    fn analyze_scalar<'a>(&mut self, value: &'a str) -> Result<ScalarAnalysis<'a>, EmitterError> {
+    fn analyze_scalar<'a>(&mut self, value: &'a str) -> Result<ScalarAnalysis<'a>> {
         let mut block_indicators = false;
         let mut flow_indicators = false;
         let mut line_breaks = false;
@@ -1330,7 +1304,7 @@ impl<'w> Emitter<'w> {
         &mut self,
         event: &'a Event,
         tag_directives: &'a [TagDirective],
-    ) -> Result<Analysis<'a>, EmitterError> {
+    ) -> Result<Analysis<'a>> {
         let mut analysis = Analysis::default();
 
         match &event.data {
@@ -1389,13 +1363,13 @@ impl<'w> Emitter<'w> {
         Ok(analysis)
     }
 
-    fn write_bom(&mut self) -> Result<(), EmitterError> {
+    fn write_bom(&mut self) -> Result<()> {
         self.flush_if_needed()?;
         self.buffer.push('\u{feff}');
         Ok(())
     }
 
-    fn write_indent(&mut self) -> Result<(), EmitterError> {
+    fn write_indent(&mut self) -> Result<()> {
         let indent = if self.indent >= 0 { self.indent } else { 0 };
         if !self.indention || self.column > indent || self.column == indent && !self.whitespace {
             self.put_break()?;
@@ -1414,7 +1388,7 @@ impl<'w> Emitter<'w> {
         need_whitespace: bool,
         is_whitespace: bool,
         is_indention: bool,
-    ) -> Result<(), EmitterError> {
+    ) -> Result<()> {
         if need_whitespace && !self.whitespace {
             self.put(' ')?;
         }
@@ -1424,14 +1398,14 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn write_anchor(&mut self, value: &str) -> Result<(), EmitterError> {
+    fn write_anchor(&mut self, value: &str) -> Result<()> {
         self.write_str(value)?;
         self.whitespace = false;
         self.indention = false;
         Ok(())
     }
 
-    fn write_tag_handle(&mut self, value: &str) -> Result<(), EmitterError> {
+    fn write_tag_handle(&mut self, value: &str) -> Result<()> {
         if !self.whitespace {
             self.put(' ')?;
         }
@@ -1441,11 +1415,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn write_tag_content(
-        &mut self,
-        value: &str,
-        need_whitespace: bool,
-    ) -> Result<(), EmitterError> {
+    fn write_tag_content(&mut self, value: &str, need_whitespace: bool) -> Result<()> {
         if need_whitespace && !self.whitespace {
             self.put(' ')?;
         }
@@ -1486,7 +1456,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn write_plain_scalar(&mut self, value: &str, allow_breaks: bool) -> Result<(), EmitterError> {
+    fn write_plain_scalar(&mut self, value: &str, allow_breaks: bool) -> Result<()> {
         let mut spaces = false;
         let mut breaks = false;
         if !self.whitespace && (!value.is_empty() || self.flow_level != 0) {
@@ -1526,11 +1496,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn write_single_quoted_scalar(
-        &mut self,
-        value: &str,
-        allow_breaks: bool,
-    ) -> Result<(), EmitterError> {
+    fn write_single_quoted_scalar(&mut self, value: &str, allow_breaks: bool) -> Result<()> {
         let mut spaces = false;
         let mut breaks = false;
         self.write_indicator("'", true, false, false)?;
@@ -1584,11 +1550,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn write_double_quoted_scalar(
-        &mut self,
-        value: &str,
-        allow_breaks: bool,
-    ) -> Result<(), EmitterError> {
+    fn write_double_quoted_scalar(&mut self, value: &str, allow_breaks: bool) -> Result<()> {
         let mut spaces = false;
         self.write_indicator("\"", true, false, false)?;
         let mut chars = value.chars();
@@ -1701,7 +1663,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn write_block_scalar_hints(&mut self, string: &str) -> Result<(), EmitterError> {
+    fn write_block_scalar_hints(&mut self, string: &str) -> Result<()> {
         let mut chomp_hint: Option<&str> = None;
 
         let first = string.chars().next();
@@ -1736,7 +1698,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn write_literal_scalar(&mut self, value: &str) -> Result<(), EmitterError> {
+    fn write_literal_scalar(&mut self, value: &str) -> Result<()> {
         let mut breaks = true;
         self.write_indicator("|", true, false, false)?;
         self.write_block_scalar_hints(value)?;
@@ -1761,7 +1723,7 @@ impl<'w> Emitter<'w> {
         Ok(())
     }
 
-    fn write_folded_scalar(&mut self, value: &str) -> Result<(), EmitterError> {
+    fn write_folded_scalar(&mut self, value: &str) -> Result<()> {
         let mut breaks = true;
         let mut leading_spaces = true;
         self.write_indicator(">", true, false, false)?;
@@ -1806,7 +1768,7 @@ impl<'w> Emitter<'w> {
     }
 
     /// Flush the accumulated characters to the output.
-    pub fn flush(&mut self) -> Result<(), WriterError> {
+    pub fn flush(&mut self) -> Result<()> {
         assert!((self.write_handler).is_some());
         assert_ne!(self.encoding, Encoding::Any);
 

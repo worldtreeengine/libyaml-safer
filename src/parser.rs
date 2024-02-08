@@ -3,7 +3,7 @@ use alloc::{vec, vec::Vec};
 
 use crate::scanner::Scanner;
 use crate::{
-    Encoding, Event, EventData, MappingStyle, Mark, ParserError, ScalarStyle, SequenceStyle,
+    Encoding, Error, Event, EventData, MappingStyle, Mark, Result, ScalarStyle, SequenceStyle,
     TagDirective, TokenData, VersionDirective,
 };
 
@@ -110,7 +110,7 @@ pub struct AliasData {
 }
 
 impl<'r> Iterator for Parser<'r> {
-    type Item = Result<Event, ParserError>;
+    type Item = Result<Event>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.scanner.stream_end_produced || self.state == ParserState::End {
@@ -167,35 +167,14 @@ impl<'r> Parser<'r> {
     /// An application must not alternate the calls of [`Parser::parse()`] with
     /// the calls of [`Document::load()`](crate::Document::load). Doing this
     /// will break the parser.
-    pub fn parse(&mut self) -> Result<Event, ParserError> {
+    pub fn parse(&mut self) -> Result<Event> {
         if self.scanner.stream_end_produced || self.state == ParserState::End {
             return Ok(Event::stream_end());
         }
         self.state_machine()
     }
 
-    fn set_parser_error<T>(problem: &'static str, problem_mark: Mark) -> Result<T, ParserError> {
-        Err(ParserError::Problem {
-            problem,
-            mark: problem_mark,
-        })
-    }
-
-    fn set_parser_error_context<T>(
-        context: &'static str,
-        context_mark: Mark,
-        problem: &'static str,
-        problem_mark: Mark,
-    ) -> Result<T, ParserError> {
-        Err(ParserError::ProblemWithContext {
-            context,
-            context_mark,
-            problem,
-            mark: problem_mark,
-        })
-    }
-
-    fn state_machine(&mut self) -> Result<Event, ParserError> {
+    fn state_machine(&mut self) -> Result<Event> {
         match self.state {
             ParserState::StreamStart => self.parse_stream_start(),
             ParserState::ImplicitDocumentStart => self.parse_document_start(true),
@@ -230,7 +209,7 @@ impl<'r> Parser<'r> {
         }
     }
 
-    fn parse_stream_start(&mut self) -> Result<Event, ParserError> {
+    fn parse_stream_start(&mut self) -> Result<Event> {
         let token = self.scanner.peek()?;
 
         if let TokenData::StreamStart { encoding } = &token.data {
@@ -246,11 +225,16 @@ impl<'r> Parser<'r> {
             Ok(event)
         } else {
             let mark = token.start_mark;
-            Self::set_parser_error("did not find expected <stream-start>", mark)
+            Err(Error::parser(
+                "",
+                Mark::default(),
+                "did not find expected <stream-start>",
+                mark,
+            ))
         }
     }
 
-    fn parse_document_start(&mut self, implicit: bool) -> Result<Event, ParserError> {
+    fn parse_document_start(&mut self, implicit: bool) -> Result<Event> {
         let mut version_directive: Option<VersionDirective> = None;
 
         let mut tag_directives = vec![];
@@ -304,7 +288,12 @@ impl<'r> Parser<'r> {
                 self.scanner.skip_token();
                 Ok(event)
             } else {
-                Self::set_parser_error("did not find expected <document start>", token.start_mark)
+                Err(Error::parser(
+                    "",
+                    Mark::default(),
+                    "did not find expected <document start>",
+                    token.start_mark,
+                ))
             }
         } else {
             let event = Event {
@@ -318,7 +307,7 @@ impl<'r> Parser<'r> {
         }
     }
 
-    fn parse_document_content(&mut self) -> Result<Event, ParserError> {
+    fn parse_document_content(&mut self) -> Result<Event> {
         let token = self.scanner.peek()?;
         if let TokenData::VersionDirective { .. }
         | TokenData::TagDirective { .. }
@@ -334,7 +323,7 @@ impl<'r> Parser<'r> {
         }
     }
 
-    fn parse_document_end(&mut self) -> Result<Event, ParserError> {
+    fn parse_document_end(&mut self) -> Result<Event> {
         let mut end_mark: Mark;
         let mut implicit = true;
         let token = self.scanner.peek()?;
@@ -354,7 +343,7 @@ impl<'r> Parser<'r> {
         })
     }
 
-    fn parse_node(&mut self, block: bool, indentless_sequence: bool) -> Result<Event, ParserError> {
+    fn parse_node(&mut self, block: bool, indentless_sequence: bool) -> Result<Event> {
         let mut anchor: Option<String> = None;
         let mut tag_handle: Option<String> = None;
         let mut tag_suffix: Option<String> = None;
@@ -424,12 +413,12 @@ impl<'r> Parser<'r> {
                     }
                 }
                 if tag.is_none() {
-                    return Self::set_parser_error_context(
+                    return Err(Error::parser(
                         "while parsing a node",
                         start_mark,
                         "found undefined tag handle",
                         tag_mark,
-                    );
+                    ));
                 }
             }
         }
@@ -548,7 +537,7 @@ impl<'r> Parser<'r> {
             };
             return Ok(event);
         } else {
-            return Self::set_parser_error_context(
+            return Err(Error::parser(
                 if block {
                     "while parsing a block node"
                 } else {
@@ -557,11 +546,11 @@ impl<'r> Parser<'r> {
                 start_mark,
                 "did not find expected node content",
                 token.start_mark,
-            );
+            ));
         }
     }
 
-    fn parse_block_sequence_entry(&mut self, first: bool) -> Result<Event, ParserError> {
+    fn parse_block_sequence_entry(&mut self, first: bool) -> Result<Event> {
         if first {
             let token = self.scanner.peek()?;
             let mark = token.start_mark;
@@ -595,16 +584,16 @@ impl<'r> Parser<'r> {
         } else {
             let token_mark = token.start_mark;
             let mark = self.marks.pop().unwrap();
-            return Self::set_parser_error_context(
+            return Err(Error::parser(
                 "while parsing a block collection",
                 mark,
                 "did not find expected '-' indicator",
                 token_mark,
-            );
+            ));
         }
     }
 
-    fn parse_indentless_sequence_entry(&mut self) -> Result<Event, ParserError> {
+    fn parse_indentless_sequence_entry(&mut self) -> Result<Event> {
         let mut token = self.scanner.peek()?;
         if let TokenData::BlockEntry = token.data {
             let mark: Mark = token.end_mark;
@@ -632,7 +621,7 @@ impl<'r> Parser<'r> {
         }
     }
 
-    fn parse_block_mapping_key(&mut self, first: bool) -> Result<Event, ParserError> {
+    fn parse_block_mapping_key(&mut self, first: bool) -> Result<Event> {
         if first {
             let token = self.scanner.peek()?;
             let mark = token.start_mark;
@@ -668,16 +657,16 @@ impl<'r> Parser<'r> {
         } else {
             let token_mark = token.start_mark;
             let mark = self.marks.pop().unwrap();
-            Self::set_parser_error_context(
+            Err(Error::parser(
                 "while parsing a block mapping",
                 mark,
                 "did not find expected key",
                 token_mark,
-            )
+            ))
         }
     }
 
-    fn parse_block_mapping_value(&mut self) -> Result<Event, ParserError> {
+    fn parse_block_mapping_value(&mut self) -> Result<Event> {
         let mut token = self.scanner.peek()?;
         if let TokenData::Value = token.data {
             let mark: Mark = token.end_mark;
@@ -700,7 +689,7 @@ impl<'r> Parser<'r> {
         }
     }
 
-    fn parse_flow_sequence_entry(&mut self, first: bool) -> Result<Event, ParserError> {
+    fn parse_flow_sequence_entry(&mut self, first: bool) -> Result<Event> {
         if first {
             let token = self.scanner.peek()?;
             let mark = token.start_mark;
@@ -717,12 +706,12 @@ impl<'r> Parser<'r> {
                 } else {
                     let token_mark = token.start_mark;
                     let mark = self.marks.pop().unwrap();
-                    return Self::set_parser_error_context(
+                    return Err(Error::parser(
                         "while parsing a flow sequence",
                         mark,
                         "did not find expected ',' or ']'",
                         token_mark,
-                    );
+                    ));
                 }
             }
             if let TokenData::Key = token.data {
@@ -755,7 +744,7 @@ impl<'r> Parser<'r> {
         Ok(event)
     }
 
-    fn parse_flow_sequence_entry_mapping_key(&mut self) -> Result<Event, ParserError> {
+    fn parse_flow_sequence_entry_mapping_key(&mut self) -> Result<Event> {
         let token = self.scanner.peek()?;
         if matches!(
             token.data,
@@ -771,7 +760,7 @@ impl<'r> Parser<'r> {
         }
     }
 
-    fn parse_flow_sequence_entry_mapping_value(&mut self) -> Result<Event, ParserError> {
+    fn parse_flow_sequence_entry_mapping_value(&mut self) -> Result<Event> {
         let mut token = self.scanner.peek()?;
         if let TokenData::Value = token.data {
             self.scanner.skip_token();
@@ -789,7 +778,7 @@ impl<'r> Parser<'r> {
         Self::process_empty_scalar(mark)
     }
 
-    fn parse_flow_sequence_entry_mapping_end(&mut self) -> Result<Event, ParserError> {
+    fn parse_flow_sequence_entry_mapping_end(&mut self) -> Result<Event> {
         let token = self.scanner.peek()?;
         let start_mark = token.start_mark;
         let end_mark = token.end_mark;
@@ -801,7 +790,7 @@ impl<'r> Parser<'r> {
         })
     }
 
-    fn parse_flow_mapping_key(&mut self, first: bool) -> Result<Event, ParserError> {
+    fn parse_flow_mapping_key(&mut self, first: bool) -> Result<Event> {
         if first {
             let token = self.scanner.peek()?;
             let mark = token.start_mark;
@@ -818,12 +807,12 @@ impl<'r> Parser<'r> {
                 } else {
                     let token_mark = token.start_mark;
                     let mark = self.marks.pop().unwrap();
-                    return Self::set_parser_error_context(
+                    return Err(Error::parser(
                         "while parsing a flow mapping",
                         mark,
                         "did not find expected ',' or '}'",
                         token_mark,
-                    );
+                    ));
                 }
             }
             if let TokenData::Key = token.data {
@@ -855,7 +844,7 @@ impl<'r> Parser<'r> {
         Ok(event)
     }
 
-    fn parse_flow_mapping_value(&mut self, empty: bool) -> Result<Event, ParserError> {
+    fn parse_flow_mapping_value(&mut self, empty: bool) -> Result<Event> {
         let mut token = self.scanner.peek()?;
         if empty {
             let mark = token.start_mark;
@@ -875,7 +864,7 @@ impl<'r> Parser<'r> {
         Self::process_empty_scalar(mark)
     }
 
-    fn process_empty_scalar(mark: Mark) -> Result<Event, ParserError> {
+    fn process_empty_scalar(mark: Mark) -> Result<Event> {
         Ok(Event {
             data: EventData::Scalar {
                 anchor: None,
@@ -894,7 +883,7 @@ impl<'r> Parser<'r> {
         &mut self,
         version_directive_ref: Option<&mut Option<VersionDirective>>,
         tag_directives_ref: Option<&mut Vec<TagDirective>>,
-    ) -> Result<(), ParserError> {
+    ) -> Result<()> {
         let default_tag_directives: [TagDirective; 2] = [
             // TODO: Get rid of these heap allocations.
             TagDirective {
@@ -923,9 +912,19 @@ impl<'r> Parser<'r> {
             if let TokenData::VersionDirective { major, minor } = &token.data {
                 let mark = token.start_mark;
                 if version_directive.is_some() {
-                    return Self::set_parser_error("found duplicate %YAML directive", mark);
+                    return Err(Error::parser(
+                        "",
+                        Mark::default(),
+                        "found duplicate %YAML directive",
+                        mark,
+                    ));
                 } else if *major != 1 || *minor != 1 && *minor != 2 {
-                    return Self::set_parser_error("found incompatible YAML document", mark);
+                    return Err(Error::parser(
+                        "",
+                        Mark::default(),
+                        "found incompatible YAML document",
+                        mark,
+                    ));
                 }
                 version_directive = Some(VersionDirective {
                     major: *major,
@@ -973,13 +972,18 @@ impl<'r> Parser<'r> {
         value: TagDirective,
         allow_duplicates: bool,
         mark: Mark,
-    ) -> Result<(), ParserError> {
+    ) -> Result<()> {
         for tag_directive in &self.tag_directives {
             if value.handle == tag_directive.handle {
                 if allow_duplicates {
                     return Ok(());
                 }
-                return Self::set_parser_error("found duplicate %TAG directive", mark);
+                return Err(Error::parser(
+                    "",
+                    Mark::default(),
+                    "found duplicate %TAG directive",
+                    mark,
+                ));
             }
         }
         self.tag_directives.push(value);
