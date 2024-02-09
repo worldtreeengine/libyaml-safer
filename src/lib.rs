@@ -173,8 +173,7 @@ mod tests {
 
     #[test]
     fn sanity() {
-        const SANITY_INPUT: &str = r#"
-unicode: "Sosa did fine.\u263A"
+        const SANITY_INPUT: &str = r#"unicode: "Sosa did fine.\u263A"
 control: "\b1998\t1999\t2000\n"
 hex esc: "\x0d\x0a is \r\n"
 
@@ -182,127 +181,23 @@ single: '"Howdy!" he cried.'
 quoted: ' # Not a ''comment''.'
 tie-fighter: '|\-*-/|'
 "#;
+        const SANITY_OUTPUT: &str = r#"unicode: "Sosa did fine.\u263A"
+control: "\b1998\t1999\t2000\n"
+hex esc: "\r\n is \r\n"
+single: '"Howdy!" he cried.'
+quoted: ' # Not a ''comment''.'
+tie-fighter: '|\-*-/|'
+"#;
         let mut parser = Parser::new();
-        // const SANITY_INPUT: &'static str =
-        //     "Mark McGwire:\n  hr: 65\n  avg: 0.278\nSammy Sosa:\n  hr: 63\n  avg: 0.288\n";
         let mut read_in = SANITY_INPUT.as_bytes();
         parser.set_input_string(&mut read_in);
-        let _doc = Document::load(&mut parser).unwrap();
-        // let mut doc = doc.assume_init();
+        let doc = Document::load(&mut parser).unwrap();
 
-        // let mut emitter = core::mem::MaybeUninit::uninit();
-        // yaml_emitter_initialize(emitter.as_mut_ptr()).unwrap();
-        // let mut emitter = emitter.assume_init();
-
-        // let mut output = vec![0u8; 1024];
-        // let mut size_written = 0;
-        // yaml_emitter_set_output_string(
-        //     &mut emitter,
-        //     output.as_mut_ptr(),
-        //     1024,
-        //     &mut size_written,
-        // );
-
-        // if yaml_emitter_dump(&mut emitter, &mut doc).is_err() {
-        //     panic!("emitter error: {:?} {:?}", emitter.error, emitter.problem);
-        // }
-        // output.resize(size_written as _, 0);
-        // let output_str = core::str::from_utf8(&output).expect("invalid UTF-8");
-        // assert_eq!(output_str, SANITY_INPUT);
-    }
-
-    const TEST_CASE_QF4Y: &str = r"[
-foo: bar
-]
-";
-
-    #[test]
-    fn test_case() {
-        let mut parser = Parser::new();
-        let mut input = TEST_CASE_QF4Y.as_bytes();
-        parser.set_input_string(&mut input);
-        let _doc = Document::load(&mut parser).unwrap();
-    }
-
-    // #[test]
-    // fn integration_s7bg() {
-    //     unsafe {
-    //         let mut emitter = emitter_new();
-    //         let mut output = vec![0u8; 1024];
-    //         let mut size_written = 0;
-    //         yaml_emitter_set_output_string(
-    //             &mut emitter,
-    //             output.as_mut_ptr(),
-    //             1024,
-    //             &mut size_written,
-    //         );
-
-    //         let mut event = yaml_event_t::default();
-    //         yaml_stream_start_event_initialize(&mut event, YAML_UTF8_ENCODING).unwrap();
-    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-    //         yaml_document_start_event_initialize(&mut event, None, &[], true).unwrap();
-    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-    //         yaml_sequence_start_event_initialize(
-    //             &mut event,
-    //             None,
-    //             None,
-    //             false,
-    //             YAML_BLOCK_SEQUENCE_STYLE,
-    //         )
-    //         .unwrap();
-    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-    //         yaml_scalar_event_initialize(
-    //             &mut event,
-    //             None,
-    //             None,
-    //             ":,",
-    //             true,
-    //             true,
-    //             YAML_PLAIN_SCALAR_STYLE,
-    //         )
-    //         .unwrap();
-    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-    //         yaml_sequence_end_event_initialize(&mut event).unwrap();
-    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-    //         yaml_document_end_event_initialize(&mut event, true).unwrap();
-    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-    //         yaml_stream_end_event_initialize(&mut event).unwrap();
-    //         yaml_emitter_emit(&mut emitter, core::mem::take(&mut event)).unwrap();
-
-    //         assert_eq!(
-    //             core::str::from_utf8(&output[0..size_written as usize]).unwrap(),
-    //             "- :,\n"
-    //         );
-    //     }
-    // }
-
-    #[test]
-    fn integration_hs5t() {
         let mut emitter = Emitter::new();
         let mut output = Vec::new();
-        emitter.set_output_string(&mut output);
-
-        let event = Event::stream_start(Encoding::Utf8);
-        emitter.emit(event).unwrap();
-        let event = Event::document_start(None, &[], true);
-        emitter.emit(event).unwrap();
-        let event = Event::scalar(
-            None,
-            None,
-            "1st non-empty\n2nd non-empty 3rd non-empty",
-            true,
-            true,
-            ScalarStyle::Plain,
-        );
-        emitter.emit(event).unwrap();
-        let event = Event::document_end(true);
-        emitter.emit(event).unwrap();
-        let event = Event::stream_end();
-        emitter.emit(event).unwrap();
-
-        assert_eq!(
-            core::str::from_utf8(&output),
-            Ok("'1st non-empty\n\n  2nd non-empty 3rd non-empty'\n")
-        );
+        emitter.set_output(&mut output);
+        doc.dump(&mut emitter).unwrap();
+        let output_str = core::str::from_utf8(&output).expect("invalid UTF-8");
+        assert_eq!(output_str, SANITY_OUTPUT);
     }
 }
