@@ -383,31 +383,26 @@ impl Document {
     }
 
     fn load_node_add(&mut self, ctx: &[i32], index: i32) -> Result<()> {
-        if ctx.is_empty() {
+        let Some(parent_index) = ctx.last() else {
             return Ok(());
-        }
-        let parent_index: i32 = *ctx.last().unwrap();
+        };
+        let parent_index = *parent_index;
         let parent = &mut self.nodes[parent_index as usize - 1];
         match parent.data {
             NodeData::Sequence { ref mut items, .. } => {
                 items.push(index);
             }
-            NodeData::Mapping { ref mut pairs, .. } => {
-                let mut pair = NodePair::default();
-                let mut do_push = true;
-                if !pairs.is_empty() {
-                    let p: &mut NodePair = pairs.last_mut().unwrap();
-                    if p.key != 0 && p.value == 0 {
-                        p.value = index;
-                        do_push = false;
-                    }
+            NodeData::Mapping { ref mut pairs, .. } => match pairs.last_mut() {
+                // If the last pair does not have a value, set `index` as the value.
+                Some(pair @ NodePair { value: 0, .. }) => {
+                    pair.value = index;
                 }
-                if do_push {
-                    pair.key = index;
-                    pair.value = 0;
-                    pairs.push(pair);
-                }
-            }
+                // Otherwise push a new pair where `index` is the key.
+                _ => pairs.push(NodePair {
+                    key: index,
+                    value: 0,
+                }),
+            },
             _ => {
                 panic!("document parent node is not a sequence or a mapping")
             }
@@ -502,14 +497,15 @@ impl Document {
     }
 
     fn load_sequence_end(&mut self, event: Event, ctx: &mut Vec<i32>) -> Result<()> {
-        assert!(!ctx.is_empty());
-        let index: i32 = *ctx.last().unwrap();
+        let Some(index) = ctx.last().copied() else {
+            panic!("sequence_end without a current sequence")
+        };
         assert!(matches!(
             self.nodes[index as usize - 1].data,
             NodeData::Sequence { .. }
         ));
         self.nodes[index as usize - 1].end_mark = event.end_mark;
-        _ = ctx.pop();
+        ctx.pop();
         Ok(())
     }
 
@@ -552,14 +548,15 @@ impl Document {
     }
 
     fn load_mapping_end(&mut self, event: Event, ctx: &mut Vec<i32>) -> Result<()> {
-        assert!(!ctx.is_empty());
-        let index: i32 = *ctx.last().unwrap();
+        let Some(index) = ctx.last().copied() else {
+            panic!("mapping_end without a current mapping")
+        };
         assert!(matches!(
             self.nodes[index as usize - 1].data,
             NodeData::Mapping { .. }
         ));
         self.nodes[index as usize - 1].end_mark = event.end_mark;
-        _ = ctx.pop();
+        ctx.pop();
         Ok(())
     }
 
@@ -623,6 +620,7 @@ impl Document {
     }
 
     fn dump_node(&mut self, emitter: &mut Emitter, index: i32) -> Result<()> {
+        assert!(index > 0);
         let node = &mut self.nodes[index as usize - 1];
         let anchor_id: i32 = emitter.anchors[index as usize - 1].anchor;
         let mut anchor: Option<String> = None;
