@@ -3,7 +3,7 @@ use crate::{
 };
 
 /// The event structure.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[non_exhaustive]
 pub struct Event {
     /// The event data.
@@ -14,7 +14,7 @@ pub struct Event {
     pub end_mark: Mark,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum EventData {
     /// The stream parameters (for YAML_STREAM_START_EVENT).
     StreamStart {

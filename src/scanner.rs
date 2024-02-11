@@ -129,7 +129,7 @@ impl<'r> Scanner<'r> {
     fn read_char(&mut self, string: &mut String) {
         if let Some(popped) = self.buffer.pop_front() {
             string.push(popped);
-            self.mark.index = popped.len_utf8() as u64;
+            self.mark.index += popped.len_utf8() as u64;
             self.mark.column += 1;
         } else {
             panic!("unexpected end of input")

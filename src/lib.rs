@@ -73,7 +73,7 @@ pub const DEFAULT_SEQUENCE_TAG: &str = SEQ_TAG;
 pub const DEFAULT_MAPPING_TAG: &str = MAP_TAG;
 
 /// The version directive data.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct VersionDirective {
     /// The major version number.
@@ -83,7 +83,7 @@ pub struct VersionDirective {
 }
 
 /// The tag directive data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct TagDirective {
     /// The tag handle.
@@ -199,5 +199,201 @@ tie-fighter: '|\-*-/|'
         doc.dump(&mut emitter).unwrap();
         let output_str = core::str::from_utf8(&output).expect("invalid UTF-8");
         assert_eq!(output_str, SANITY_OUTPUT);
+    }
+
+    #[test]
+    fn scanner_marks() {
+        const INPUT: &str = "b:
+c: true";
+        let mut scanner = Scanner::new();
+        let mut read_in = INPUT.as_bytes();
+        scanner.set_input(&mut read_in);
+        let events = scanner.collect::<Result<Vec<_>, _>>().unwrap();
+        let expected = &[
+            Token {
+                data: TokenData::StreamStart {
+                    encoding: Encoding::Utf8,
+                },
+                start_mark: Mark {
+                    index: 0,
+                    line: 0,
+                    column: 0,
+                },
+                end_mark: Mark {
+                    index: 0,
+                    line: 0,
+                    column: 0,
+                },
+            },
+            Token {
+                data: TokenData::BlockMappingStart,
+                start_mark: Mark {
+                    index: 0,
+                    line: 0,
+                    column: 0,
+                },
+                end_mark: Mark {
+                    index: 0,
+                    line: 0,
+                    column: 0,
+                },
+            },
+            Token {
+                data: TokenData::Key,
+                start_mark: Mark {
+                    index: 0,
+                    line: 0,
+                    column: 0,
+                },
+                end_mark: Mark {
+                    index: 0,
+                    line: 0,
+                    column: 0,
+                },
+            },
+            Token {
+                data: TokenData::Scalar {
+                    value: String::from("b"),
+                    style: ScalarStyle::Plain,
+                },
+                start_mark: Mark {
+                    index: 0,
+                    line: 0,
+                    column: 0,
+                },
+                end_mark: Mark {
+                    index: 1,
+                    line: 0,
+                    column: 1,
+                },
+            },
+            Token {
+                data: TokenData::Value,
+                start_mark: Mark {
+                    index: 1,
+                    line: 0,
+                    column: 1,
+                },
+                end_mark: Mark {
+                    index: 2,
+                    line: 0,
+                    column: 2,
+                },
+            },
+            Token {
+                data: TokenData::Key,
+                start_mark: Mark {
+                    index: 3,
+                    line: 1,
+                    column: 0,
+                },
+                end_mark: Mark {
+                    index: 3,
+                    line: 1,
+                    column: 0,
+                },
+            },
+            Token {
+                data: TokenData::Scalar {
+                    value: String::from("c"),
+                    style: ScalarStyle::Plain,
+                },
+                start_mark: Mark {
+                    index: 3,
+                    line: 1,
+                    column: 0,
+                },
+                end_mark: Mark {
+                    index: 4,
+                    line: 1,
+                    column: 1,
+                },
+            },
+            Token {
+                data: TokenData::Value,
+                start_mark: Mark {
+                    index: 4,
+                    line: 1,
+                    column: 1,
+                },
+                end_mark: Mark {
+                    index: 5,
+                    line: 1,
+                    column: 2,
+                },
+            },
+            Token {
+                data: TokenData::Scalar {
+                    value: String::from("true"),
+                    style: ScalarStyle::Plain,
+                },
+                start_mark: Mark {
+                    index: 6,
+                    line: 1,
+                    column: 3,
+                },
+                end_mark: Mark {
+                    index: 10,
+                    line: 1,
+                    column: 7,
+                },
+            },
+            Token {
+                data: TokenData::BlockEnd,
+                start_mark: Mark {
+                    index: 10,
+                    line: 2,
+                    column: 0,
+                },
+                end_mark: Mark {
+                    index: 10,
+                    line: 2,
+                    column: 0,
+                },
+            },
+            Token {
+                data: TokenData::StreamEnd,
+                start_mark: Mark {
+                    index: 10,
+                    line: 2,
+                    column: 0,
+                },
+                end_mark: Mark {
+                    index: 10,
+                    line: 2,
+                    column: 0,
+                },
+            },
+        ];
+        assert_eq!(
+            events,
+            expected,
+            "diff:\n{}",
+            zip_longest(
+                format!("{events:#?}").lines(),
+                format!("{expected:#?}").lines()
+            )
+            .map(|(a, b)| {
+                let a = a.unwrap_or_default();
+                let b = b.unwrap_or_default();
+                format!("{a:<40} {b}")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+        );
+    }
+
+    fn zip_longest<A: Iterator, B: Iterator>(
+        a: A,
+        b: B,
+    ) -> impl Iterator<Item = (Option<A::Item>, Option<B::Item>)> {
+        let mut a = a.map(Some).collect::<Vec<_>>();
+        let mut b = b.map(Some).collect::<Vec<_>>();
+        let len = a.len().max(b.len());
+        a.resize_with(len, || None);
+        b.resize_with(len, || None);
+        a.into_iter()
+            .zip(b)
+            .take_while(|(a, b)| a.is_some() || b.is_some())
     }
 }
