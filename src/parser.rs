@@ -1,6 +1,3 @@
-use alloc::string::String;
-use alloc::{vec, vec::Vec};
-
 use crate::scanner::Scanner;
 use crate::{
     Encoding, Error, Event, EventData, MappingStyle, Mark, Result, ScalarStyle, SequenceStyle,

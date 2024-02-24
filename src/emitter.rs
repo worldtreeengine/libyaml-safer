@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
 
-use alloc::string::String;
-
 use crate::macros::{
     is_alpha, is_ascii, is_blank, is_blankz, is_bom, is_break, is_breakz, is_printable, is_space,
 };
