@@ -215,3 +215,18 @@ macro_rules! IS_BLANKZ {
         IS_BLANKZ_AT!($string, 0)
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn printable() {
+        for ch in "🎉".chars() {
+            assert!(is_printable(ch));
+        }
+        for ch in "\u{1f389}".chars() {
+            assert!(is_printable(ch));
+        }
+    }
+}

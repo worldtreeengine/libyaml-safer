@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
 
-use alloc::string::String;
-
 use crate::macros::{is_blankz, is_break};
 use crate::reader::yaml_parser_update_buffer;
 use crate::{

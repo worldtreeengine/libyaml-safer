@@ -167,8 +167,6 @@ pub enum MappingStyle {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec::Vec;
-
     use super::*;
 
     #[test]
