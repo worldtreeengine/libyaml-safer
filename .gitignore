@@ -2,3 +2,5 @@
 /rust-toolchain
 target
 Cargo.lock
+/.vscode/launch.json
+/.vscode/settings.json
