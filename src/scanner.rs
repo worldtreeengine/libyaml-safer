@@ -140,7 +140,7 @@ impl<'r> Scanner<'r> {
             panic!("unexpected end of input");
         };
 
-        if let Some('\r') = self.buffer.get(1).copied() {
+        if let ('\r', Some('\n')) = (front, self.buffer.get(1).copied()) {
             string.push('\n');
             self.buffer.drain(0..2);
             self.mark.index += 2;
